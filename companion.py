@@ -17,7 +17,7 @@ from memory import Memory
 
 MODEL = "amy"           # created from Modelfile: `ollama create amy -f Modelfile`
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
-SELF_PORTRAIT = os.path.join(os.path.dirname(__file__), "amy_face.jpg")
+SELF_PORTRAIT = os.path.join(os.path.dirname(__file__), "amyglitch.png")
 
 # Canonical persona lives HERE and is sent every turn. A system message in the
 # request overrides the Modelfile's SYSTEM, so if we only sent memories the
