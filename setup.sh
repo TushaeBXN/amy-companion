@@ -22,5 +22,15 @@ if [ ! -f "$VOICE" ]; then
   curl -sL "$BASE/en_US-amy-medium.onnx.json" -o "$VOICE.json"
 fi
 
+echo "==> Downloading Whisper model (base.en, ~142MB) if missing"
+mkdir -p whisper-models
+WMODEL="whisper-models/ggml-base.en.bin"
+WBASE="https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
+if [ ! -f "$WMODEL" ]; then
+  curl -sL "$WBASE/ggml-base.en.bin" -o "$WMODEL"
+fi
+
 echo
 echo "Done. Start Amy with:  python3 companion.py"
+echo "  /listen     — hear you speak (push-to-talk)"
+echo "  /converse   — voice conversation mode (with another AI or you)"

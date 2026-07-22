@@ -2,6 +2,9 @@
 voices/*.onnx
 voices/*.onnx.json
 
+# Whisper speech-to-text models (~142MB); setup.sh re-downloads them
+whisper-models/*.bin
+
 # Amy's private runtime memory + logs (personal data — stays local)
 ava_memory.db
 ava_thoughts.log

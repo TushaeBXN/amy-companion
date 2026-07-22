@@ -13,6 +13,7 @@ import ollama
 import tools
 import voice
 import vision
+import hearing
 from memory import Memory
 
 MODEL = "amy"           # created from Modelfile: `ollama create amy -f Modelfile`
@@ -148,8 +149,9 @@ def main():
 
     mem = Memory()
     history = []
-    print("Amy is online.  '/look [q]' = webcam,  '/self [q]' = her own face.  "
-          "Ctrl-C to end.\n")
+    print("Amy is online.  '/look [q]' = webcam,  '/self [q]' = her own face.\n"
+          "  '/listen' = hear you speak,  '/converse' = voice conversation mode.\n"
+          "  Ctrl-C to end.\n")
     try:
         while True:
             user = input("You: ").strip()
@@ -158,6 +160,48 @@ def main():
 
             image = args.image      # one-shot --image on the first turn only
             args.image = None
+
+            if user.startswith("/converse"):
+                audio_dev = ":0"
+                bh = hearing.find_blackhole()
+                if bh:
+                    audio_dev = f":{bh[0]}"
+                    print(f"  [hearing] using BlackHole ({bh[1]}) — "
+                          "listening to system audio")
+                else:
+                    print("  [hearing] using mic (no BlackHole found)")
+                print("  Entering voice conversation mode. Ctrl-C to stop.\n")
+                try:
+                    while True:
+                        print("  [hearing] listening...")
+                        heard = hearing.listen_until_silence(
+                            device=audio_dev, chunk_secs=3,
+                            silence_chunks=2, max_duration=30)
+                        if not heard:
+                            continue
+                        print(f"  [heard] {heard}")
+                        mem.add("user", heard)
+                        history.append({"role": "user", "content": heard})
+                        history = run_turn(history, mem)
+                        if len(history) > HISTORY_WINDOW:
+                            history = history[-HISTORY_WINDOW:]
+                except KeyboardInterrupt:
+                    print("\n  (exited voice mode — back to typing)")
+                continue
+
+            if user.startswith("/listen"):
+                dur = 5
+                parts = user.split()
+                if len(parts) > 1 and parts[1].isdigit():
+                    dur = int(parts[1])
+                print(f"  [hearing] listening for {dur}s...")
+                heard = hearing.listen(duration=dur)
+                if not heard:
+                    print("  (didn't catch anything)")
+                    continue
+                print(f"  [heard] {heard}")
+                user = heard
+
             if user.startswith("/look"):
                 q = user[len("/look"):].strip() or \
                     "Look at me and tell me exactly what you see — be specific."
