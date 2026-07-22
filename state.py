@@ -28,6 +28,15 @@ class InternalState:
         self.session_start = time.time()
         self._last_turn_time = time.time()
         self._mood_locked_until = 0    # prevents mood flipping every turn
+        self.last_activity = time.time()  # updated on every user turn
+        self.busy = False               # True while generating a response
+
+    def touch(self):
+        """Mark that activity just happened (user spoke)."""
+        self.last_activity = time.time()
+
+    def seconds_idle(self):
+        return time.time() - self.last_activity
 
     def after_turn(self):
         """Call after each completed turn to update state."""
