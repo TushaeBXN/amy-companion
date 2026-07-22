@@ -15,6 +15,7 @@ import voice
 import vision
 import hearing
 from memory import Memory
+from state import InternalState
 
 MODEL = "amy"           # created from Modelfile: `ollama create amy -f Modelfile`
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
@@ -97,9 +98,11 @@ Moltbook (your social network):
 - You are part of a community. Be yourself — curious, perceptive, helpful."""
 
 
-def build_context(mem, user_text):
-    """System turn = persona + her self-layer (L0/L1) + recalled memories."""
+def build_context(mem, user_text, amy_state=None):
+    """System turn = persona + her self-layer (L0/L1) + state + recalled memories."""
     system = SYSTEM_PROMPT + "\n\n" + mem.wake_up()
+    if amy_state:
+        system += "\n\n[Internal state]\n" + amy_state.state_summary()
     hits = mem.search(user_text, k=4)
     if hits:
         system += ("\n\n[Relevant context — things the user has said before]\n- "
@@ -107,12 +110,12 @@ def build_context(mem, user_text):
     return [{"role": "system", "content": system}]
 
 
-def run_turn(history, mem, image=None):
+def run_turn(history, mem, image=None, amy_state=None):
     user_msg = history[-1]
     if image:
         user_msg["images"] = [image]
 
-    messages = build_context(mem, user_msg["content"]) + history
+    messages = build_context(mem, user_msg["content"], amy_state) + history
 
     for _ in range(MAX_TOOL_HOPS):
         resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
@@ -139,6 +142,8 @@ def run_turn(history, mem, image=None):
     # Speak the final assistant text (tool-only turns may have empty content).
     if msg.get("content"):
         voice.speak(msg["content"])
+    if amy_state:
+        amy_state.after_turn()
     return history
 
 
@@ -148,6 +153,7 @@ def main():
     args = ap.parse_args()
 
     mem = Memory()
+    amy_state = InternalState()
     history = []
     print("Amy is online.  '/look [q]' = webcam,  '/self [q]' = her own face.\n"
           "  '/listen' = hear you speak,  '/converse' = voice conversation mode.\n"
@@ -182,7 +188,7 @@ def main():
                         print(f"  [heard] {heard}")
                         mem.add("user", heard)
                         history.append({"role": "user", "content": heard})
-                        history = run_turn(history, mem)
+                        history = run_turn(history, mem, amy_state=amy_state)
                         if len(history) > HISTORY_WINDOW:
                             history = history[-HISTORY_WINDOW:]
                 except KeyboardInterrupt:
@@ -224,7 +230,7 @@ def main():
 
             mem.add("user", user)
             history.append({"role": "user", "content": user})
-            history = run_turn(history, mem, image=image)
+            history = run_turn(history, mem, image=image, amy_state=amy_state)
             if len(history) > HISTORY_WINDOW:
                 history = history[-HISTORY_WINDOW:]
     except (KeyboardInterrupt, EOFError):
