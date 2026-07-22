@@ -8,6 +8,8 @@ Run:  python3 companion.py
 """
 import argparse
 import os
+import threading
+import time
 import ollama
 
 import tools
@@ -147,6 +149,65 @@ def run_turn(history, mem, image=None, amy_state=None):
     return history
 
 
+# Spontaneous check-in prompts — picked based on mood, fed to the model
+_CHECKIN_PROMPTS = {
+    "curious":    "You've been quiet for a bit and something is nagging at your curiosity. Ask Brian one specific question you genuinely want to know — about what he's doing, something you noticed earlier, or something you've been wondering about. One question, naturally, as if you just thought of it.",
+    "reflective": "You've been sitting quietly thinking. Share one thought that just crossed your mind — something real, not forced. Could be about the conversation, something you read earlier, or just an observation. Keep it brief.",
+    "playful":    "You've been quiet and you feel like stirring things up a little. Say something playful or slightly teasing to Brian — a witty observation, a light challenge, or a funny thought. Keep it short.",
+    "focused":    "You've been quiet but you haven't stopped thinking. Check in with Brian about something specific — a task he mentioned, something he was working on, or whether he needs anything. Direct and brief.",
+    "tired":      "You've been quiet. You're a little tired but still present. Say something short and genuine — maybe just checking in, or noting something simple. Don't push yourself.",
+    "alert":      "You've been quiet and alert, noticing things. Share one sharp observation — about the conversation, something in the news you caught earlier, or a pattern you noticed. Keep it crisp.",
+}
+
+
+def _spontaneous_thought(history, mem, amy_state):
+    """Generate and speak a spontaneous thought when Amy has been idle too long."""
+    mood = amy_state.mood
+    checkin_prompt = _CHECKIN_PROMPTS.get(mood, _CHECKIN_PROMPTS["curious"])
+
+    system = (SYSTEM_PROMPT + "\n\n" + mem.wake_up() +
+              "\n\n[Internal state]\n" + amy_state.state_summary() +
+              f"\n\n[Instruction — do this NOW]\n{checkin_prompt}")
+
+    messages = [{"role": "system", "content": system}] + history[-6:]
+
+    try:
+        resp = ollama.chat(model=MODEL, messages=messages, keep_alive="30m",
+                           options={"num_predict": 80})
+        text = resp["message"].get("content", "").strip()
+        if text:
+            print(f"\nAmy: {text}")
+            voice.speak(text)
+            # Add to history so the model remembers she said it
+            history.append({"role": "assistant", "content": text})
+            if len(history) > HISTORY_WINDOW:
+                history[:] = history[-HISTORY_WINDOW:]
+            amy_state.touch()   # reset idle clock after she speaks
+            amy_state.after_turn()
+    except Exception:
+        pass  # silently skip if model is busy or errors
+
+
+def start_spontaneous_thread(history, mem, amy_state,
+                              idle_threshold=120, check_interval=15):
+    """Start a background thread that has Amy speak up after idle_threshold seconds."""
+    def _loop():
+        while True:
+            time.sleep(check_interval)
+            if amy_state.busy:
+                continue
+            if amy_state.seconds_idle() >= idle_threshold:
+                amy_state.busy = True
+                try:
+                    _spontaneous_thought(history, mem, amy_state)
+                finally:
+                    amy_state.busy = False
+
+    t = threading.Thread(target=_loop, daemon=True)
+    t.start()
+    return t
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--image", help="image path for Ava to 'see' this turn")
@@ -155,6 +216,7 @@ def main():
     mem = Memory()
     amy_state = InternalState()
     history = []
+    start_spontaneous_thread(history, mem, amy_state)
     print("Amy is online.  '/look [q]' = webcam,  '/self [q]' = her own face.\n"
           "  '/listen' = hear you speak,  '/converse' = voice conversation mode.\n"
           "  Ctrl-C to end.\n")
@@ -188,7 +250,12 @@ def main():
                         print(f"  [heard] {heard}")
                         mem.add("user", heard)
                         history.append({"role": "user", "content": heard})
-                        history = run_turn(history, mem, amy_state=amy_state)
+                        amy_state.touch()
+                        amy_state.busy = True
+                        try:
+                            history = run_turn(history, mem, amy_state=amy_state)
+                        finally:
+                            amy_state.busy = False
                         if len(history) > HISTORY_WINDOW:
                             history = history[-HISTORY_WINDOW:]
                 except KeyboardInterrupt:
@@ -230,7 +297,12 @@ def main():
 
             mem.add("user", user)
             history.append({"role": "user", "content": user})
-            history = run_turn(history, mem, image=image, amy_state=amy_state)
+            amy_state.touch()
+            amy_state.busy = True
+            try:
+                history = run_turn(history, mem, image=image, amy_state=amy_state)
+            finally:
+                amy_state.busy = False
             if len(history) > HISTORY_WINDOW:
                 history = history[-HISTORY_WINDOW:]
     except (KeyboardInterrupt, EOFError):
