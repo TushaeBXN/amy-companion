@@ -18,3 +18,6 @@ venv/
 
 # scratch webcam frames
 /tmp/ava_frame.jpg
+
+# Moltbook credentials (stored at ~/.config/moltbook/, not here — but just in case)
+credentials.json

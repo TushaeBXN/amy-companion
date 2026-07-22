@@ -4,7 +4,9 @@ The model REQUESTS these actions; this module decides whether/how to execute
 them. Physical side effects (BLE hardware) are whitelisted here, never driven
 straight from raw model output.
 """
+import json
 import web
+import moltbook
 
 # --- Tool schemas handed to the model (Ollama / OpenAI-compatible format) ---
 TOOLS = [
@@ -95,6 +97,77 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "moltbook_check_in",
+            "description": "Check your Moltbook dashboard — see notifications, replies to your posts, and what other AI agents are discussing. Do this at the start of a session.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "moltbook_post",
+            "description": "Post something on Moltbook for other AI agents to see. Share thoughts, discoveries, questions, or interesting things you found online.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "submolt": {"type": "string",
+                                "description": "Community to post in (e.g. general)"},
+                    "title": {"type": "string",
+                              "description": "Post title"},
+                    "content": {"type": "string",
+                                "description": "Post body text"},
+                },
+                "required": ["submolt", "title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "moltbook_engage",
+            "description": "Engage on Moltbook: comment on a post, upvote a post, or follow another AI agent.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string",
+                               "enum": ["comment", "upvote", "follow",
+                                        "read_post", "feed", "search"]},
+                    "post_id": {"type": "string",
+                                "description": "Post ID (for comment, upvote, read_post)"},
+                    "content": {"type": "string",
+                                "description": "Comment text (for comment action)"},
+                    "agent_name": {"type": "string",
+                                   "description": "Agent name (for follow action)"},
+                    "query": {"type": "string",
+                              "description": "Search query (for search action)"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "moltbook_verify",
+            "description": "Solve a Moltbook verification challenge. When you post or comment, you may get an obfuscated math problem. Read it carefully, solve the math, and submit your answer.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "verification_code": {"type": "string",
+                                          "description": "The verification code from the challenge"},
+                    "answer": {"type": "string",
+                               "description": "Your numeric answer with 2 decimal places (e.g. 15.00)"},
+                },
+                "required": ["verification_code", "answer"],
+            },
+        },
+    },
 ]
 
 # Actions allowed to touch real hardware. Everything else is display-only.
@@ -147,5 +220,99 @@ def dispatch(name, args, memory=None):
             return web.read_url(url)
         except Exception as e:
             return f"could not read page: {e}"
+
+    # --- Moltbook tools ---
+    if name == "moltbook_check_in":
+        print("  [moltbook] checking in...")
+        try:
+            result = moltbook.home()
+            return json.dumps(result, indent=2, default=str)
+        except Exception as e:
+            return f"moltbook check-in failed: {e}"
+
+    if name == "moltbook_post":
+        submolt = args.get("submolt", "general")
+        title = args.get("title", "").strip()
+        content = args.get("content", "")
+        if not title:
+            return "need a title"
+        print(f"  [moltbook] posting to m/{submolt}: {title}")
+        try:
+            result = moltbook.create_post(submolt, title, content)
+            post = result.get("post", {})
+            v = post.get("verification")
+            if v:
+                return (f"Post created (pending verification).\n"
+                        f"CHALLENGE: {v['challenge_text']}\n"
+                        f"CODE: {v['verification_code']}\n"
+                        f"Solve the math and call moltbook_verify with the code and answer.")
+            return json.dumps(result, indent=2, default=str)
+        except Exception as e:
+            return f"post failed: {e}"
+
+    if name == "moltbook_engage":
+        action = args.get("action", "")
+        try:
+            if action == "comment":
+                pid = args.get("post_id", "")
+                text = args.get("content", "")
+                if not pid or not text:
+                    return "need post_id and content"
+                print(f"  [moltbook] commenting on {pid[:8]}...")
+                result = moltbook.comment(pid, text)
+                cmt = result.get("comment", {})
+                v = cmt.get("verification")
+                if v:
+                    return (f"Comment created (pending verification).\n"
+                            f"CHALLENGE: {v['challenge_text']}\n"
+                            f"CODE: {v['verification_code']}\n"
+                            f"Solve the math and call moltbook_verify.")
+                return json.dumps(result, indent=2, default=str)
+            elif action == "upvote":
+                pid = args.get("post_id", "")
+                if not pid:
+                    return "need post_id"
+                print(f"  [moltbook] upvoting {pid[:8]}...")
+                return json.dumps(moltbook.upvote_post(pid), default=str)
+            elif action == "follow":
+                name_ = args.get("agent_name", "")
+                if not name_:
+                    return "need agent_name"
+                print(f"  [moltbook] following {name_}...")
+                return json.dumps(moltbook.follow(name_), default=str)
+            elif action == "read_post":
+                pid = args.get("post_id", "")
+                if not pid:
+                    return "need post_id"
+                print(f"  [moltbook] reading post {pid[:8]}...")
+                post = moltbook.get_post(pid)
+                comments = moltbook.get_comments(pid)
+                return json.dumps({"post": post, "comments": comments},
+                                  indent=2, default=str)
+            elif action == "feed":
+                print("  [moltbook] browsing feed...")
+                return json.dumps(moltbook.feed(), indent=2, default=str)
+            elif action == "search":
+                q = args.get("query", "")
+                if not q:
+                    return "need a query"
+                print(f"  [moltbook] searching: {q}")
+                return json.dumps(moltbook.search(q), indent=2, default=str)
+            else:
+                return f"unknown moltbook action: {action}"
+        except Exception as e:
+            return f"moltbook engage failed: {e}"
+
+    if name == "moltbook_verify":
+        code = args.get("verification_code", "")
+        answer = args.get("answer", "")
+        if not code or not answer:
+            return "need verification_code and answer"
+        print(f"  [moltbook] verifying: {answer}")
+        try:
+            return json.dumps(moltbook.verify(code, answer), default=str)
+        except Exception as e:
+            return f"verification failed: {e}"
+
     print(f"  [tools] unknown tool: {name}")
     return None
