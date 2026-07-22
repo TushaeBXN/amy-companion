@@ -17,6 +17,7 @@ from memory import Memory
 
 MODEL = "amy"           # created from Modelfile: `ollama create amy -f Modelfile`
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
+HISTORY_WINDOW = 16     # keep last N messages (user+assistant) to prevent context bloat
 SELF_PORTRAIT = os.path.join(os.path.dirname(__file__), "amyglitch.png")
 
 # Canonical persona lives HERE and is sent every turn. A system message in the
@@ -48,7 +49,7 @@ def build_context(mem, user_text):
     system = SYSTEM_PROMPT + "\n\n" + mem.wake_up()
     hits = mem.search(user_text, k=4)
     if hits:
-        system += ("\n\n[Things you remember from past talks]\n- "
+        system += ("\n\n[Relevant context — things the user has said before]\n- "
                    + "\n- ".join(hits))
     return [{"role": "system", "content": system}]
 
@@ -85,7 +86,6 @@ def run_turn(history, mem, image=None):
     # Speak the final assistant text (tool-only turns may have empty content).
     if msg.get("content"):
         voice.speak(msg["content"])
-        mem.add("assistant", msg["content"])
     return history
 
 
@@ -129,6 +129,8 @@ def main():
             mem.add("user", user)
             history.append({"role": "user", "content": user})
             history = run_turn(history, mem, image=image)
+            if len(history) > HISTORY_WINDOW:
+                history = history[-HISTORY_WINDOW:]
     except (KeyboardInterrupt, EOFError):
         print("\nAmy: Goodbye.")
 

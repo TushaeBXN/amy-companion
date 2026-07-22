@@ -92,7 +92,7 @@ class Memory:
         self.learn_fact(text, ftype, confidence)
         self.add("fact", text)
 
-    def search(self, query, k=4, min_score=0.55):
+    def search(self, query, k=4, min_score=0.65):
         rows = self.db.execute("SELECT text, emb FROM mem").fetchall()
         if not rows:
             return []
