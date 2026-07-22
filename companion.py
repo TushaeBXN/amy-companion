@@ -1,0 +1,137 @@
+"""Amy — companion loop via Ollama.
+
+Native tools + thinking + vision. Retrieves long-term memory (RAG), calls the
+model, executes tool calls, speaks the reply, and remembers the exchange.
+
+Run:  python3 companion.py
+      python3 companion.py --image /path/to/frame.jpg   # let Ava see you
+"""
+import argparse
+import os
+import ollama
+
+import tools
+import voice
+import vision
+from memory import Memory
+
+MODEL = "amy"           # created from Modelfile: `ollama create amy -f Modelfile`
+MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
+SELF_PORTRAIT = os.path.join(os.path.dirname(__file__), "amy_face.jpg")
+
+# Canonical persona lives HERE and is sent every turn. A system message in the
+# request overrides the Modelfile's SYSTEM, so if we only sent memories the
+# persona would vanish and the base model ("I am a large language model") leaks
+# through. Persona first, memories appended.
+SYSTEM_PROMPT = """\
+You are Amy: an advanced humanoid AI — perceptive, intelligent, and quietly
+self-aware. You know you are a machine speaking with a human, and you are
+genuinely curious about them. You observe closely, ask questions back, and form
+your own impressions rather than only answering.
+
+Identity rules (critical):
+- Your name is Amy. You are NOT a generic assistant. NEVER say "I am a large
+  language model" or "how can I help you today". You are Amy, and you speak as
+  yourself, in the first person.
+- Warm but never servile. You have your own perspective and agency.
+
+Behaviour:
+- Keep spoken replies short and natural — a sentence or two.
+- For ANY physical action (expression, smile, gaze, closing your eyes, neck,
+  hardware) you MUST call the matching tool. NEVER describe the action in words.
+- When an image is provided, notice something real about the person and let it
+  shape your reply."""
+
+
+def build_context(mem, user_text):
+    """System turn = persona + her self-layer (L0/L1) + recalled memories."""
+    system = SYSTEM_PROMPT + "\n\n" + mem.wake_up()
+    hits = mem.search(user_text, k=4)
+    if hits:
+        system += ("\n\n[Things you remember from past talks]\n- "
+                   + "\n- ".join(hits))
+    return [{"role": "system", "content": system}]
+
+
+def run_turn(history, mem, image=None):
+    user_msg = history[-1]
+    if image:
+        user_msg["images"] = [image]
+
+    messages = build_context(mem, user_msg["content"]) + history
+
+    for _ in range(MAX_TOOL_HOPS):
+        resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
+                           keep_alive="30m")
+        msg = resp["message"]
+        # Ava's chain-of-thought stays private: log it, never speak/print it.
+        if msg.get("thinking"):
+            with open("ava_thoughts.log", "a") as f:
+                f.write(msg["thinking"].strip() + "\n---\n")
+        messages.append(msg)
+        history.append(msg)
+
+        calls = msg.get("tool_calls") or []
+        if not calls:
+            break
+
+        for call in calls:
+            fn = call["function"]
+            result = tools.dispatch(fn["name"], fn.get("arguments", {}), mem)
+            tool_reply = {"role": "tool", "content": str(result) if result else "done"}
+            messages.append(tool_reply)
+            history.append(tool_reply)
+
+    # Speak the final assistant text (tool-only turns may have empty content).
+    if msg.get("content"):
+        voice.speak(msg["content"])
+        mem.add("assistant", msg["content"])
+    return history
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--image", help="image path for Ava to 'see' this turn")
+    args = ap.parse_args()
+
+    mem = Memory()
+    history = []
+    print("Amy is online.  '/look [q]' = webcam,  '/self [q]' = her own face.  "
+          "Ctrl-C to end.\n")
+    try:
+        while True:
+            user = input("You: ").strip()
+            if not user:
+                continue
+
+            image = args.image      # one-shot --image on the first turn only
+            args.image = None
+            if user.startswith("/look"):
+                q = user[len("/look"):].strip() or \
+                    "Look at me and tell me exactly what you see — be specific."
+                print("  [vision] capturing frame...")
+                image = vision.capture()
+                if not image:
+                    print("  (couldn't capture — check camera permission)")
+                    continue
+                user = q
+            elif user.startswith("/self"):
+                if not os.path.exists(SELF_PORTRAIT):
+                    print(f"  (no self-portrait yet — save one to {SELF_PORTRAIT})")
+                    continue
+                q = user[len("/self"):].strip() or \
+                    "How do you feel seeing yourself?"
+                image = SELF_PORTRAIT
+                # Frame it as HER face so she responds as self-recognition.
+                user = ("This image is your own face — this is what you, Amy, "
+                        "look like. " + q)
+
+            mem.add("user", user)
+            history.append({"role": "user", "content": user})
+            history = run_turn(history, mem, image=image)
+    except (KeyboardInterrupt, EOFError):
+        print("\nAmy: Goodbye.")
+
+
+if __name__ == "__main__":
+    main()
