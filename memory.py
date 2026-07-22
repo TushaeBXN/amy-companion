@@ -92,6 +92,37 @@ class Memory:
         self.learn_fact(text, ftype, confidence)
         self.add("fact", text)
 
+    # --- Contradiction detection -------------------------------------------
+    def check_contradiction(self, new_text, similarity_threshold=0.82):
+        """Find past facts that cover the same topic as new_text.
+
+        Returns a list of (past_text, score) pairs that are highly similar —
+        same topic — so Amy can decide if they conflict. We don't try to
+        auto-detect contradiction here (too noisy); instead we surface the
+        candidates and let the prompt handle honesty.
+        """
+        rows = self.db.execute(
+            "SELECT text, emb FROM mem WHERE role IN ('user','fact')"
+        ).fetchall()
+        if not rows:
+            return []
+
+        q = self._embed(new_text)
+        q /= (np.linalg.norm(q) + 1e-9)
+
+        candidates = []
+        for text, blob in rows:
+            if text.strip() == new_text.strip():
+                continue
+            v = _from_blob(blob)
+            v /= (np.linalg.norm(v) + 1e-9)
+            score = float(np.dot(q, v))
+            if score >= similarity_threshold:
+                candidates.append((text, score))
+
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        return candidates[:3]  # top 3 near-matches
+
     def search(self, query, k=4, min_score=0.65):
         rows = self.db.execute("SELECT text, emb FROM mem").fetchall()
         if not rows:
