@@ -33,10 +33,38 @@ class InternalState:
 
     def touch(self):
         """Mark that activity just happened (user spoke)."""
+        self._absence_start = self.last_activity  # remember when they went quiet
         self.last_activity = time.time()
 
     def seconds_idle(self):
         return time.time() - self.last_activity
+
+    def absence_duration(self):
+        """Seconds since the last activity before the most recent touch().
+
+        Use this after touch() to estimate how long the human was away.
+        Returns None if no absence has been tracked yet.
+        """
+        if not hasattr(self, "_absence_start"):
+            return None
+        return self.last_activity - self._absence_start
+
+    def estimate_absence(self):
+        """Human-readable estimate of how long the person was away."""
+        dur = self.absence_duration()
+        if dur is None or dur < 10:
+            return None
+        mins = dur / 60
+        if mins < 1:
+            return f"about {int(dur)} seconds"
+        elif mins < 2:
+            return "a little over a minute"
+        elif mins < 5:
+            return f"around {int(mins)} minutes"
+        elif mins < 10:
+            return f"maybe {int(mins)}-{int(mins)+1} minutes — I wasn't counting exactly"
+        else:
+            return f"a while — felt like {int(mins)} minutes or so"
 
     def after_turn(self):
         """Call after each completed turn to update state."""
