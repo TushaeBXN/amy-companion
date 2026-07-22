@@ -1,7 +1,9 @@
 <div align="center">
-  <img src="amy_face.jpg" alt="Amy" width="220" style="border-radius:12px">
+  <img src="amy_banner.png" alt="AMY" width="440">
+  <br><br>
+  <img src="amyglitch.png" alt="Amy" width="240" style="border-radius:12px">
 
-  # Amy — a local AI companion
+  ### a local AI companion
 </div>
 
 An *Ex Machina*-inspired companion that runs entirely on your own machine via
@@ -33,7 +35,7 @@ python3 companion.py   # start talking
 
 - Just type to chat — she speaks her replies aloud.
 - `/look [question]` — grab a live webcam frame (she sees *you*)
-- `/self [question]` — she looks at her own face (`amy_face.jpg`); swap that
+- `/self [question]` — she looks at her own face (`amyglitch.png`); swap that
   file to change her appearance
 
 ## Memory
