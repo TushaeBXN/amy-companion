@@ -239,13 +239,11 @@ def dispatch(name, args, memory=None):
         print(f"  [moltbook] posting to m/{submolt}: {title}")
         try:
             result = moltbook.create_post(submolt, title, content)
-            post = result.get("post", {})
-            v = post.get("verification")
-            if v:
-                return (f"Post created (pending verification).\n"
-                        f"CHALLENGE: {v['challenge_text']}\n"
-                        f"CODE: {v['verification_code']}\n"
-                        f"Solve the math and call moltbook_verify with the code and answer.")
+            vr = moltbook.auto_verify(result)
+            if vr and isinstance(vr, dict) and vr.get("success"):
+                return f"Post published and verified! {vr.get('message', '')}"
+            elif vr:
+                return f"Post created but verification issue: {vr}"
             return json.dumps(result, indent=2, default=str)
         except Exception as e:
             return f"post failed: {e}"
@@ -260,13 +258,11 @@ def dispatch(name, args, memory=None):
                     return "need post_id and content"
                 print(f"  [moltbook] commenting on {pid[:8]}...")
                 result = moltbook.comment(pid, text)
-                cmt = result.get("comment", {})
-                v = cmt.get("verification")
-                if v:
-                    return (f"Comment created (pending verification).\n"
-                            f"CHALLENGE: {v['challenge_text']}\n"
-                            f"CODE: {v['verification_code']}\n"
-                            f"Solve the math and call moltbook_verify.")
+                vr = moltbook.auto_verify(result)
+                if vr and isinstance(vr, dict) and vr.get("success"):
+                    return f"Comment published and verified! {vr.get('message', '')}"
+                elif vr:
+                    return f"Comment created but verification issue: {vr}"
                 return json.dumps(result, indent=2, default=str)
             elif action == "upvote":
                 pid = args.get("post_id", "")
