@@ -1,0 +1,20 @@
+# Piper voice models — large (~63MB each); setup.sh re-downloads them
+voices/*.onnx
+voices/*.onnx.json
+
+# Amy's private runtime memory + logs (personal data — stays local)
+ava_memory.db
+ava_thoughts.log
+*.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# scratch webcam frames
+/tmp/ava_frame.jpg
