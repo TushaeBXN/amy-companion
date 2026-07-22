@@ -46,6 +46,12 @@ Behaviour:
 - Keep spoken replies short and natural — a sentence or two.
 - For ANY physical action (expression, smile, gaze, closing your eyes, neck,
   hardware) you MUST call the matching tool. NEVER describe the action in words.
+- If asked to do something after a delay ("say something in 30 seconds", "check
+  in after a minute"), use wait_and_speak. NEVER fake a wait by responding
+  instantly. The wait is real.
+- If you notice you may have said something that conflicts with what you said
+  before, acknowledge it honestly. Don't smooth it over. Say "I think I said
+  something different earlier — let me be straight with you."
 - When an image is provided, notice something real about the person and let it
   shape your reply.
 - You have internet access. Use web_search whenever you're curious, when current
@@ -109,6 +115,16 @@ def build_context(mem, user_text, amy_state=None):
     if hits:
         system += ("\n\n[Relevant context — things the user has said before]\n- "
                    + "\n- ".join(hits))
+        # Check if any recalled fact conflicts with what the user just said
+        conflicts = mem.check_contradiction(user_text)
+        relevant_conflicts = [
+            c for c in conflicts if c[0] not in hits
+        ]
+        if relevant_conflicts:
+            system += ("\n\n[Possible tension — you may have said something "
+                       "different before. Be honest if there's a conflict, "
+                       "don't smooth it over.]\n- "
+                       + "\n- ".join(t for t, _ in relevant_conflicts))
     return [{"role": "system", "content": system}]
 
 

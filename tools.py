@@ -5,6 +5,8 @@ them. Physical side effects (BLE hardware) are whitelisted here, never driven
 straight from raw model output.
 """
 import json
+import threading
+import time
 import web
 import moltbook
 
@@ -52,6 +54,23 @@ TOOLS = [
                 "type": "object",
                 "properties": {"lock": {"type": "boolean"}},
                 "required": ["lock"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "wait_and_speak",
+            "description": "Wait a specific number of seconds, then say something. Use this when asked to do something after a delay — e.g. 'clear your throat at 30 seconds', 'check in after a minute'. Never fake a wait by just replying instantly.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "seconds": {"type": "number",
+                                "description": "How long to wait before speaking"},
+                    "message": {"type": "string",
+                                "description": "What to say after the wait"},
+                },
+                "required": ["seconds", "message"],
             },
         },
     },
@@ -192,6 +211,22 @@ def dispatch(name, args, memory=None):
             return "blocked"
         print(f"  [BLE] neck lock={args.get('lock')}   # TODO: real BLE write")
         return "ok"
+    if name == "wait_and_speak":
+        seconds = float(args.get("seconds", 0))
+        message = args.get("message", "").strip()
+        if not message:
+            return "need a message"
+        seconds = max(1, min(seconds, 300))  # cap at 5 minutes
+        print(f"  [timer] will speak in {int(seconds)}s: \"{message[:40]}...\""
+              if len(message) > 40 else f"  [timer] will speak in {int(seconds)}s: \"{message}\"")
+        import voice as _voice
+        def _delayed():
+            time.sleep(seconds)
+            print(f"\nAmy: {message}")
+            _voice.speak(message)
+        threading.Thread(target=_delayed, daemon=True).start()
+        return f"Okay, I'll do that in {int(seconds)} seconds."
+
     if name == "remember_fact":
         fact = args.get("fact", "").strip()
         if fact and memory is not None:
