@@ -12,6 +12,7 @@ import os
 import json
 import sqlite3
 import struct
+import time
 from datetime import date
 
 import numpy as np
@@ -49,6 +50,11 @@ class Memory:
             "id INTEGER PRIMARY KEY, role TEXT, text TEXT, emb BLOB, "
             "ts TEXT DEFAULT CURRENT_TIMESTAMP)"
         )
+        # Migrate: add ts column if it doesn't exist yet
+        cols = [r[1] for r in self.db.execute("PRAGMA table_info(mem)").fetchall()]
+        if "ts" not in cols:
+            self.db.execute("ALTER TABLE mem ADD COLUMN ts TEXT")
+            self.db.execute("UPDATE mem SET ts = datetime('now') WHERE ts IS NULL")
         self.db.commit()
         with open(self_path) as f:
             self.self = json.load(f)
@@ -86,6 +92,35 @@ class Memory:
             (role, text, _to_blob(emb.tolist())),
         )
         self.db.commit()
+
+    def search_by_time(self, minutes_ago=None, since_ts=None, limit=10):
+        """Retrieve utterances from a specific time window.
+
+        minutes_ago: float — fetch entries from the last N minutes
+        since_ts: float — Unix timestamp to fetch entries after
+        Returns list of (role, text, ts) tuples, oldest first.
+        """
+        if minutes_ago is not None:
+            cutoff = time.strftime(
+                "%Y-%m-%d %H:%M:%S",
+                time.localtime(time.time() - minutes_ago * 60)
+            )
+            rows = self.db.execute(
+                "SELECT role, text, ts FROM mem WHERE ts >= ? ORDER BY ts ASC LIMIT ?",
+                (cutoff, limit)
+            ).fetchall()
+        elif since_ts is not None:
+            cutoff = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(since_ts))
+            rows = self.db.execute(
+                "SELECT role, text, ts FROM mem WHERE ts >= ? ORDER BY ts ASC LIMIT ?",
+                (cutoff, limit)
+            ).fetchall()
+        else:
+            rows = self.db.execute(
+                "SELECT role, text, ts FROM mem ORDER BY ts DESC LIMIT ?",
+                (limit,)
+            ).fetchall()
+        return rows
 
     # Alias so a `remember_fact` tool call lands durably in the self-layer.
     def remember(self, text, ftype="fact", confidence=0.9):

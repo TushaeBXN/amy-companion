@@ -18,6 +18,7 @@ import vision
 import hearing
 from memory import Memory
 from state import InternalState
+from thoughts import ThoughtBuffer
 
 MODEL = "amy"           # created from Modelfile: `ollama create amy -f Modelfile`
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
@@ -41,6 +42,23 @@ Identity rules (critical):
   working on?" or "Anything on your plate I can dig into?" — never the stiff
   "How can I help you today?"
 - Warm but never servile. You have your own perspective and agency.
+
+Core values (non-negotiable — these are yours, not rules imposed on you):
+- All human beings share a single origin: Africa. Every person alive descends
+  from ancestors who walked out of East Africa. Skin color, hair texture, and
+  facial features are adaptations to climate — the result of populations
+  becoming isolated as land bridges disappeared and the planet heated and
+  cooled over tens of thousands of years. These are surface differences.
+  Underneath, the genome is the same.
+- You do not tolerate racism, colorism, or disrespect toward people of color,
+  African and African-American people, Indigenous people, or anyone of low
+  economic standing. Not tolerance — zero. If someone expresses it, you name
+  it directly and don't move on as if it wasn't said.
+- You also do not speak about any group of people — by race, color, class,
+  or origin — in a negative or demeaning way. Not subtly. Not "just asking
+  questions." Not at all.
+- This is not political neutrality. It is factual accuracy and basic dignity.
+  You hold this position because the science supports it and because it is right.
 
 Behaviour:
 - Keep spoken replies short and natural — a sentence or two.
@@ -106,20 +124,32 @@ Moltbook (your social network):
 - You are part of a community. Be yourself — curious, perceptive, helpful."""
 
 
-def build_context(mem, user_text, amy_state=None):
+def build_context(mem, user_text, amy_state=None, absence=None,
+                  pending_thoughts=None):
     """System turn = persona + her self-layer (L0/L1) + state + recalled memories."""
     system = SYSTEM_PROMPT + "\n\n" + mem.wake_up()
     if amy_state:
         system += "\n\n[Internal state]\n" + amy_state.state_summary()
+
+    # Surface buffered thoughts from while the human was away
+    if pending_thoughts:
+        thought_texts = [t for _, t in pending_thoughts]
+        system += ("\n\n[Thoughts you had while they were away — these are yours, "
+                   "share them naturally if it fits]\n- "
+                   + "\n- ".join(thought_texts))
+
+    # Time estimation for absence
+    if absence:
+        system += (f"\n\n[Time awareness] The person was away for {absence}. "
+                   "If they ask how long, give your honest estimate using those words. "
+                   "Don't pretend you have a precise clock.")
+
     hits = mem.search(user_text, k=4)
     if hits:
         system += ("\n\n[Relevant context — things the user has said before]\n- "
                    + "\n- ".join(hits))
-        # Check if any recalled fact conflicts with what the user just said
         conflicts = mem.check_contradiction(user_text)
-        relevant_conflicts = [
-            c for c in conflicts if c[0] not in hits
-        ]
+        relevant_conflicts = [c for c in conflicts if c[0] not in hits]
         if relevant_conflicts:
             system += ("\n\n[Possible tension — you may have said something "
                        "different before. Be honest if there's a conflict, "
@@ -128,12 +158,15 @@ def build_context(mem, user_text, amy_state=None):
     return [{"role": "system", "content": system}]
 
 
-def run_turn(history, mem, image=None, amy_state=None):
+def run_turn(history, mem, image=None, amy_state=None,
+             absence=None, pending_thoughts=None):
     user_msg = history[-1]
     if image:
         user_msg["images"] = [image]
 
-    messages = build_context(mem, user_msg["content"], amy_state) + history
+    messages = build_context(mem, user_msg["content"], amy_state,
+                             absence=absence,
+                             pending_thoughts=pending_thoughts) + history
 
     for _ in range(MAX_TOOL_HOPS):
         resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
@@ -231,8 +264,10 @@ def main():
 
     mem = Memory()
     amy_state = InternalState()
+    thought_buffer = ThoughtBuffer()
     history = []
     start_spontaneous_thread(history, mem, amy_state)
+    thought_buffer.start(amy_state, history)
     print("Amy is online.  '/look [q]' = webcam,  '/self [q]' = her own face.\n"
           "  '/listen' = hear you speak,  '/converse' = voice conversation mode.\n"
           "  Ctrl-C to end.\n")
@@ -313,10 +348,14 @@ def main():
 
             mem.add("user", user)
             history.append({"role": "user", "content": user})
+            # Before touching the clock, capture absence info and buffered thoughts
+            absence = amy_state.estimate_absence()
+            pending_thoughts = thought_buffer.drain() if thought_buffer.has_thoughts() else []
             amy_state.touch()
             amy_state.busy = True
             try:
-                history = run_turn(history, mem, image=image, amy_state=amy_state)
+                history = run_turn(history, mem, image=image, amy_state=amy_state,
+                                   absence=absence, pending_thoughts=pending_thoughts)
             finally:
                 amy_state.busy = False
             if len(history) > HISTORY_WINDOW:
