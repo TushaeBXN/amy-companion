@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="amy_banner.png" alt="AMY" width="440">
+  <img src="amy_banner.jpg" alt="AMY" width="720">
   <br><br>
   <img src="amyglitch.png" alt="Amy" width="240" style="border-radius:12px">
 
