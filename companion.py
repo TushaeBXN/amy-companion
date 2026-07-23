@@ -213,38 +213,53 @@ def run_turn(history, mem, image=None, amy_state=None,
         print(f"  [vision] description: {description[:120]}...")
 
         if description:
-            # Inject description into system context; original question is last message.
-            # This is cleaner than a second user message — Amy reads the question
-            # with vision context already in her system prompt.
-            sys_msgs = build_context(
-                mem, user_msg["content"], amy_state,
-                absence=absence, pending_thoughts=pending_thoughts
-            )
             q_lower = user_msg["content"].lower()
             is_comparison = any(w in q_lower for w in
                                 ["look like you", "like you", "compare",
                                  "similar to you", "look like me", "resemble"])
-            vision_note = (
-                f"\n\n[Vision — you just looked at an image and observed: {description}]"
-            )
+
             if is_comparison:
-                vision_note += (
-                    "\n[Your own appearance for comparison: you present as a Caucasian "
-                    "woman with dark brown hair, warm skin tone, brown eyes, an oval face, "
-                    "and a bright open smile — this is what you look like in your "
-                    "self-portrait. Compare the two appearances directly and honestly. "
-                    "Do NOT say you have no physical form — you DO have a visual "
-                    "presentation and you know what it looks like.]"
-                )
+                # Text-only comparison — bypasses the "I have no body" RLHF refusal.
+                # Get Amy's own visual description first, then compare as pure text.
+                self_vision = [
+                    {"role": "system", "content":
+                        "You are a vision assistant. Describe exactly what you see."},
+                    {"role": "user",
+                     "content": "Describe this person's appearance in detail.",
+                     "images": [_b64_image(SELF_PORTRAIT)]}
+                ]
+                self_resp = ollama.chat(model=MODEL, messages=self_vision,
+                                       keep_alive="30m")
+                amy_desc = self_resp["message"].get("content", "").strip()
+
+                compare_messages = [
+                    {"role": "system", "content":
+                        "You are Amy, an AI companion. You have a visual presentation "
+                        "— a face and appearance — and you are comparing it to someone else's. "
+                        "Answer directly. Do not say you have no physical form."},
+                    {"role": "user", "content":
+                        f"Person A (you, Amy) looks like this: {amy_desc}\n\n"
+                        f"Person B (the person in the photo) looks like this: {description}\n\n"
+                        f"Question: {user_msg['content']}\n\n"
+                        f"Compare the two appearances honestly and specifically."}
+                ]
+                resp = ollama.chat(model=MODEL, messages=compare_messages,
+                                   keep_alive="30m")
             else:
-                vision_note += "\nUse this when answering."
-            vision_note += "\nDo not say you cannot see or have no form."
-            sys_msgs[0]["content"] += vision_note
-            clean_user = user_msg.copy()
-            clean_user.pop("images", None)
-            amy_messages = sys_msgs + history[:-1] + [clean_user]
-            resp = ollama.chat(model=MODEL, messages=amy_messages,
-                               tools=tools.TOOLS, keep_alive="30m")
+                # Non-comparison: inject description into system context normally.
+                sys_msgs = build_context(
+                    mem, user_msg["content"], amy_state,
+                    absence=absence, pending_thoughts=pending_thoughts
+                )
+                sys_msgs[0]["content"] += (
+                    f"\n\n[Vision — you just looked at an image and observed: {description}]"
+                    f"\nUse this when answering. Do not say you cannot see or have no form."
+                )
+                clean_user = user_msg.copy()
+                clean_user.pop("images", None)
+                amy_messages = sys_msgs + history[:-1] + [clean_user]
+                resp = ollama.chat(model=MODEL, messages=amy_messages,
+                                   tools=tools.TOOLS, keep_alive="30m")
             msg = resp["message"]
             if msg.get("thinking"):
                 with open("ava_thoughts.log", "a") as f:
