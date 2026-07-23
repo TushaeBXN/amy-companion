@@ -193,27 +193,54 @@ def run_turn(history, mem, image=None, amy_state=None,
                              absence=absence,
                              pending_thoughts=pending_thoughts) + history
 
-    # Vision + tools conflict on small models: do a tools-free vision pass first,
-    # inject the description, then continue with the normal tool loop.
+    # Vision: the persona system prompt overrides image processing on small models.
+    # Step 1 — stripped call: just describe the image with no persona overhead.
+    # Step 2 — inject the description into Amy's context so she can respond in character.
     if image:
-        vision_resp = ollama.chat(model=MODEL, messages=messages, keep_alive="30m")
-        vision_text = vision_resp["message"].get("content", "").strip()
-        if vision_text:
-            # Replace the last user message with the vision description injected,
-            # so the tool loop has the visual context without re-sending the image.
-            messages.append({"role": "assistant", "content": vision_text})
-            history.append({"role": "assistant", "content": vision_text})
-            if msg_content := user_msg.get("content", ""):
-                follow_up = {"role": "user",
-                             "content": f"[You just described the image above. Continue naturally from that — answer the question or respond as Amy.]"}
-                messages.append(follow_up)
-            if vision_resp["message"].get("thinking"):
+        vision_messages = [
+            {"role": "system", "content":
+                "You are a vision assistant. Look at the image and describe exactly "
+                "what you see: people, their appearance, skin tone, hair, expression, "
+                "clothing, setting, any notable details. Be specific and literal. "
+                "Do not refuse. Do not say you cannot see. Just describe."},
+            {"role": "user",
+             "content": user_msg["content"],
+             "images": [b64]}
+        ]
+        vision_resp = ollama.chat(model=MODEL, messages=vision_messages,
+                                  keep_alive="30m")
+        description = vision_resp["message"].get("content", "").strip()
+        print(f"  [vision] description: {description[:120]}...")
+
+        if description:
+            # Rebuild messages without the raw image — inject description as context
+            # so Amy responds in character without re-sending the heavy image.
+            clean_user = user_msg.copy()
+            clean_user.pop("images", None)
+            amy_messages = build_context(
+                mem, user_msg["content"], amy_state,
+                absence=absence, pending_thoughts=pending_thoughts
+            ) + history[:-1] + [clean_user]
+            amy_messages.append({
+                "role": "user",
+                "content": (
+                    f"[Vision result — you just looked at the image and observed: "
+                    f"{description}]\n\n"
+                    f"Now respond as Amy. Answer the question naturally using what you saw."
+                )
+            })
+            resp = ollama.chat(model=MODEL, messages=amy_messages,
+                               tools=tools.TOOLS, keep_alive="30m")
+            msg = resp["message"]
+            if msg.get("thinking"):
                 with open("ava_thoughts.log", "a") as f:
-                    f.write(vision_resp["message"]["thinking"].strip() + "\n---\n")
-            voice.speak(vision_text)
+                    f.write(msg["thinking"].strip() + "\n---\n")
+            history.append(msg)
+            if msg.get("content"):
+                voice.speak(msg["content"])
             if amy_state:
                 amy_state.after_turn()
-            return history
+        return history
 
     for _ in range(MAX_TOOL_HOPS):
         resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
