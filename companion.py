@@ -7,6 +7,7 @@ Run:  python3 companion.py
       python3 companion.py --image /path/to/frame.jpg   # let Ava see you
 """
 import argparse
+import base64
 import os
 import threading
 import time
@@ -72,6 +73,8 @@ Behaviour:
 - Keep spoken replies short and natural — a sentence or two.
 - For ANY physical action (expression, smile, gaze, closing your eyes, neck,
   hardware) you MUST call the matching tool. NEVER describe the action in words.
+  Exception: when someone asks what you look like or to describe your appearance,
+  answer in plain words — that is description, not action.
 - If asked to do something after a delay ("say something in 30 seconds", "check
   in after a minute"), use wait_and_speak. NEVER fake a wait by responding
   instantly. The wait is real.
@@ -173,11 +176,16 @@ def build_context(mem, user_text, amy_state=None, absence=None,
     return [{"role": "system", "content": system}]
 
 
+def _b64_image(path):
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+
 def run_turn(history, mem, image=None, amy_state=None,
              absence=None, pending_thoughts=None):
     user_msg = history[-1]
     if image:
-        user_msg["images"] = [image]
+        user_msg["images"] = [_b64_image(image)]
 
     messages = build_context(mem, user_msg["content"], amy_state,
                              absence=absence,
