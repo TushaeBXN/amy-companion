@@ -11,7 +11,7 @@ import time
 import ollama
 
 HERE = os.path.dirname(__file__)
-LOG_PATH = os.path.join(HERE, "ava_thoughts.log")
+LOG_PATH = os.path.join(HERE, "amy_thoughts.log")
 
 # How long to wait before generating a thought (seconds)
 THOUGHT_INTERVAL = 90

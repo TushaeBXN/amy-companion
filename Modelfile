@@ -1,4 +1,4 @@
-FROM amy-base
+FROM gemma4:e2b
 
 # Amy — an Ex Machina-inspired companion persona.
 # Original character. Do not reproduce dialogue from the film.

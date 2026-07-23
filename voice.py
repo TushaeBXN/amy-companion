@@ -10,6 +10,7 @@ import sys
 import shutil
 import tempfile
 import subprocess
+import time
 
 # Spoken-only respellings for any names the TTS mangles (displayed text is
 # unchanged). Amy pronounces "Amy" correctly, so this is empty; add tuples like
@@ -57,7 +58,12 @@ def speak(text, emotion="neutral"):
         )
         player = _player()
         if player:
-            subprocess.run(player + [wav], check=False)
+            r = subprocess.run(player + [wav], check=False,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if r.returncode != 0:
+                time.sleep(0.3)
+                subprocess.run(player + [wav], check=False,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:  # noqa: BLE001 - never crash the chat loop on TTS
         print(f"  [voice] tts failed: {e}")
     finally:
