@@ -185,7 +185,9 @@ def run_turn(history, mem, image=None, amy_state=None,
              absence=None, pending_thoughts=None):
     user_msg = history[-1]
     if image:
-        user_msg["images"] = [_b64_image(image)]
+        b64 = _b64_image(image)
+        user_msg["images"] = [b64]
+        print(f"  [vision] image attached ({len(b64)//1024}KB b64)")
 
     messages = build_context(mem, user_msg["content"], amy_state,
                              absence=absence,
@@ -378,9 +380,15 @@ def main():
                 q = user[len("/self"):].strip() or \
                     "How do you feel seeing yourself?"
                 image = SELF_PORTRAIT
-                # Frame it as HER face so she responds as self-recognition.
-                user = ("This image is your own face — this is what you, Amy, "
-                        "look like. " + q)
+                # Very directive framing — small models need explicit instruction
+                # to describe an image rather than philosophize about it.
+                user = (
+                    "You are looking at a photograph of your own face right now. "
+                    "Do not say you don't have a body. Do not philosophize. "
+                    "Look at the image and describe exactly what you see: "
+                    "hair color, skin tone, eye color, facial structure, expression. "
+                    "Then answer this: " + q
+                )
 
             mem.add("user", user)
             history.append({"role": "user", "content": user})
