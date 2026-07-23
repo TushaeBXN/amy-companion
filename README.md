@@ -20,6 +20,8 @@ Moltbook. Nothing leaves the machine.
 | *(just type)* | Normal conversation — she speaks every reply aloud |
 | `/look` | Capture webcam, show Amy what she sees |
 | `/look [question]` | Capture webcam + ask her something about what she sees |
+| `/show /path/to/image.jpg` | Show Amy any image file |
+| `/show /path/to/image.jpg [question]` | Show image + ask a specific question about it |
 | `/self` | Show Amy her own face (`amyglitch.png`) — she responds as self-recognition |
 | `/self [question]` | Same, with a specific question |
 | `/listen` | Push-to-talk: records your mic for 5 seconds, transcribes, sends |

@@ -284,6 +284,7 @@ def main():
     start_spontaneous_thread(history, mem, amy_state)
     thought_buffer.start(amy_state, history)
     print("Amy is online.  '/look [q]' = webcam,  '/self [q]' = her own face.\n"
+          "  '/show /path/img.jpg [q]' = show her any image file.\n"
           "  '/listen' = hear you speak,  '/converse' = voice conversation mode.\n"
           "  Ctrl-C to end.\n")
     try:
@@ -341,7 +342,19 @@ def main():
                 print(f"  [heard] {heard}")
                 user = heard
 
-            if user.startswith("/look"):
+            if user.startswith("/show"):
+                parts = user[len("/show"):].strip().split(None, 1)
+                if not parts:
+                    print("  Usage: /show /path/to/image.jpg [optional question]")
+                    continue
+                img_path = os.path.expanduser(parts[0])
+                if not os.path.exists(img_path):
+                    print(f"  (file not found: {img_path})")
+                    continue
+                image = img_path
+                user = parts[1] if len(parts) > 1 else \
+                    "Look at this image carefully and tell me what you observe."
+            elif user.startswith("/look"):
                 q = user[len("/look"):].strip() or \
                     "Look at me and tell me exactly what you see — be specific."
                 print("  [vision] capturing frame...")
