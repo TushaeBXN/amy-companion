@@ -362,8 +362,15 @@ def main():
                     print(f"  (file not found: {img_path})")
                     continue
                 image = img_path
-                user = parts[1] if len(parts) > 1 else \
+                q = parts[1] if len(parts) > 1 else \
                     "Look at this image carefully and tell me what you observe."
+                user = (
+                    "There is an image attached. Look at it directly. "
+                    "Do not say you have no physical form or cannot see. "
+                    "Describe what you actually see: person or object, "
+                    "appearance, colors, expression, anything notable. "
+                    "Then answer this: " + q
+                )
             elif user.startswith("/look"):
                 q = user[len("/look"):].strip() or \
                     "Look at me and tell me exactly what you see — be specific."
