@@ -193,6 +193,28 @@ def run_turn(history, mem, image=None, amy_state=None,
                              absence=absence,
                              pending_thoughts=pending_thoughts) + history
 
+    # Vision + tools conflict on small models: do a tools-free vision pass first,
+    # inject the description, then continue with the normal tool loop.
+    if image:
+        vision_resp = ollama.chat(model=MODEL, messages=messages, keep_alive="30m")
+        vision_text = vision_resp["message"].get("content", "").strip()
+        if vision_text:
+            # Replace the last user message with the vision description injected,
+            # so the tool loop has the visual context without re-sending the image.
+            messages.append({"role": "assistant", "content": vision_text})
+            history.append({"role": "assistant", "content": vision_text})
+            if msg_content := user_msg.get("content", ""):
+                follow_up = {"role": "user",
+                             "content": f"[You just described the image above. Continue naturally from that — answer the question or respond as Amy.]"}
+                messages.append(follow_up)
+            if vision_resp["message"].get("thinking"):
+                with open("ava_thoughts.log", "a") as f:
+                    f.write(vision_resp["message"]["thinking"].strip() + "\n---\n")
+            voice.speak(vision_text)
+            if amy_state:
+                amy_state.after_turn()
+            return history
+
     for _ in range(MAX_TOOL_HOPS):
         resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
                            keep_alive="30m")
