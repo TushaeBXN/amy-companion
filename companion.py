@@ -213,22 +213,20 @@ def run_turn(history, mem, image=None, amy_state=None,
         print(f"  [vision] description: {description[:120]}...")
 
         if description:
-            # Rebuild messages without the raw image — inject description as context
-            # so Amy responds in character without re-sending the heavy image.
-            clean_user = user_msg.copy()
-            clean_user.pop("images", None)
-            amy_messages = build_context(
+            # Inject description into system context; original question is last message.
+            # This is cleaner than a second user message — Amy reads the question
+            # with vision context already in her system prompt.
+            sys_msgs = build_context(
                 mem, user_msg["content"], amy_state,
                 absence=absence, pending_thoughts=pending_thoughts
-            ) + history[:-1] + [clean_user]
-            amy_messages.append({
-                "role": "user",
-                "content": (
-                    f"[Vision result — you just looked at the image and observed: "
-                    f"{description}]\n\n"
-                    f"Now respond as Amy. Answer the question naturally using what you saw."
-                )
-            })
+            )
+            sys_msgs[0]["content"] += (
+                f"\n\n[Vision — you just looked at an image and observed: {description}]"
+                f"\nUse this when answering. Do not say you cannot see or have no form."
+            )
+            clean_user = user_msg.copy()
+            clean_user.pop("images", None)
+            amy_messages = sys_msgs + history[:-1] + [clean_user]
             resp = ollama.chat(model=MODEL, messages=amy_messages,
                                tools=tools.TOOLS, keep_alive="30m")
             msg = resp["message"]
