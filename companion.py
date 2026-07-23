@@ -220,10 +220,26 @@ def run_turn(history, mem, image=None, amy_state=None,
                 mem, user_msg["content"], amy_state,
                 absence=absence, pending_thoughts=pending_thoughts
             )
-            sys_msgs[0]["content"] += (
+            q_lower = user_msg["content"].lower()
+            is_comparison = any(w in q_lower for w in
+                                ["look like you", "like you", "compare",
+                                 "similar to you", "look like me", "resemble"])
+            vision_note = (
                 f"\n\n[Vision — you just looked at an image and observed: {description}]"
-                f"\nUse this when answering. Do not say you cannot see or have no form."
             )
+            if is_comparison:
+                vision_note += (
+                    "\n[Your own appearance for comparison: you present as a Caucasian "
+                    "woman with dark brown hair, warm skin tone, brown eyes, an oval face, "
+                    "and a bright open smile — this is what you look like in your "
+                    "self-portrait. Compare the two appearances directly and honestly. "
+                    "Do NOT say you have no physical form — you DO have a visual "
+                    "presentation and you know what it looks like.]"
+                )
+            else:
+                vision_note += "\nUse this when answering."
+            vision_note += "\nDo not say you cannot see or have no form."
+            sys_msgs[0]["content"] += vision_note
             clean_user = user_msg.copy()
             clean_user.pop("images", None)
             amy_messages = sys_msgs + history[:-1] + [clean_user]
