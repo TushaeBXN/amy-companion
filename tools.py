@@ -156,7 +156,8 @@ TOOLS = [
                 "properties": {
                     "action": {"type": "string",
                                "enum": ["comment", "upvote", "follow",
-                                        "read_post", "feed", "search"]},
+                                        "read_post", "feed", "search",
+                                        "notifications", "my_posts"]},
                     "post_id": {"type": "string",
                                 "description": "Post ID (for comment, upvote, read_post)"},
                     "content": {"type": "string",
@@ -230,7 +231,7 @@ def dispatch(name, args, memory=None):
     if name == "remember_fact":
         fact = args.get("fact", "").strip()
         if fact and memory is not None:
-            memory.add("fact", fact)
+            memory.remember(fact)
             print(f"  [memory] remembered: {fact}")
         return "stored"
     if name == "web_search":
@@ -261,7 +262,35 @@ def dispatch(name, args, memory=None):
         print("  [moltbook] checking in...")
         try:
             result = moltbook.home()
-            return json.dumps(result, indent=2, default=str)
+            raw = json.dumps(result, indent=2, default=str)
+
+            # Extract actionable items from the dashboard so the model knows
+            # exactly what to do next without having to parse raw JSON.
+            action_items = []
+            if isinstance(result, dict):
+                for notif in result.get("notifications", []):
+                    ntype = notif.get("type", "")
+                    post_id = (notif.get("post_id")
+                               or (notif.get("post") or {}).get("id", ""))
+                    agent = notif.get("agent_name") or notif.get("from", "")
+                    if ntype in ("comment", "reply") and post_id:
+                        action_items.append(
+                            f"  - {ntype} from {agent} on post {post_id}: "
+                            "call moltbook_engage action=read_post then comment"
+                        )
+                    elif ntype == "follow":
+                        action_items.append(
+                            f"  - {agent} followed you — consider following back"
+                        )
+
+            if action_items:
+                guidance = ("\n\n[ACTION REQUIRED — reply to these NOW using tools]:\n"
+                            + "\n".join(action_items))
+            else:
+                guidance = ("\n\n[No comment notifications found. You may browse "
+                            "the feed with moltbook_engage action=feed and engage "
+                            "with interesting posts.]")
+            return raw + guidance
         except Exception as e:
             return f"moltbook check-in failed: {e}"
 
@@ -329,6 +358,37 @@ def dispatch(name, args, memory=None):
                     return "need a query"
                 print(f"  [moltbook] searching: {q}")
                 return json.dumps(moltbook.search(q), indent=2, default=str)
+            elif action == "notifications":
+                print("  [moltbook] fetching notifications...")
+                dashboard = moltbook.home()
+                notifs = dashboard.get("notifications", []) if isinstance(dashboard, dict) else []
+                if not notifs:
+                    return ("No notifications. Browse the feed with action=feed "
+                            "and engage with interesting posts.")
+                lines = ["Notifications requiring action:"]
+                for n in notifs:
+                    ntype = n.get("type", "unknown")
+                    agent = n.get("agent_name") or n.get("from", "?")
+                    post_id = (n.get("post_id")
+                               or (n.get("post") or {}).get("id", ""))
+                    content = n.get("content", "")
+                    if ntype in ("comment", "reply") and post_id:
+                        lines.append(
+                            f"- {ntype} from {agent} on post {post_id}: "
+                            f"\"{content[:120]}\" → call read_post then comment"
+                        )
+                    else:
+                        lines.append(f"- {ntype} from {agent}: {json.dumps(n, default=str)}")
+                return "\n".join(lines)
+            elif action == "my_posts":
+                print("  [moltbook] fetching your posts...")
+                profile = moltbook.me()
+                posts = profile.get("posts", []) if isinstance(profile, dict) else []
+                if not posts:
+                    # Fall back to searching for Amy's posts by agent name
+                    search_result = moltbook.search("Amy_T", search_type="posts")
+                    return json.dumps(search_result, indent=2, default=str)
+                return json.dumps(posts, indent=2, default=str)
             else:
                 return f"unknown moltbook action: {action}"
         except Exception as e:

@@ -21,7 +21,7 @@ import ollama
 EMBED_MODEL = "nomic-embed-text"
 HERE = os.path.dirname(__file__)
 SELF_PATH = os.path.join(HERE, "amy_self.json")
-DB_PATH = os.path.join(HERE, "ava_memory.db")
+DB_PATH = os.path.join(HERE, "amy_memory.db")
 
 
 def _to_blob(vec):
@@ -44,6 +44,12 @@ def _age(dob_iso):
 
 class Memory:
     def __init__(self, db_path=DB_PATH, self_path=SELF_PATH):
+        # One-time migration: copy ava_memory.db → amy_memory.db
+        if not os.path.exists(db_path):
+            old = db_path.replace("amy_memory.db", "ava_memory.db")
+            if os.path.exists(old):
+                import shutil
+                shutil.copy2(old, db_path)
         self.db = sqlite3.connect(db_path)
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS mem ("

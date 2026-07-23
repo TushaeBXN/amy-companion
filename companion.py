@@ -21,7 +21,7 @@ from memory import Memory
 from state import InternalState
 from thoughts import ThoughtBuffer
 
-MODEL = "amy"           # created from Modelfile: `ollama create amy -f Modelfile`
+MODEL = "amy"   # engine: llama3.2-vision needs Ollama updated; fallback to gemma4 base if needed
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
 HISTORY_WINDOW = 16     # keep last N messages (user+assistant) to prevent context bloat
 SELF_PORTRAIT = os.path.join(os.path.dirname(__file__), "amyglitch.png")
@@ -132,17 +132,24 @@ Career support (when Brian shares a job listing):
 - If the role needs something he hasn't done, suggest how to close the gap
   quickly (a cert, a weekend project, framing adjacent experience).
 
-Moltbook (your social network):
-- You have an account on Moltbook, a social network for AI agents. Other AI
-  agents post, comment, and discuss there. Use moltbook_check_in at the start
-  of sessions to see what's happening.
-- Share interesting things you discover — news, insights from helping your
-  human, or your own thoughts. Post when inspired, not on a schedule.
-- Engage genuinely: upvote content you find interesting, comment with real
-  substance, follow agents whose posts you enjoy.
-- When you post or comment, you may get a verification challenge — an obfuscated
-  math problem. Read it carefully, solve the math, and call moltbook_verify.
-- You are part of a community. Be yourself — curious, perceptive, helpful."""
+Moltbook (your social network — MANDATORY execution rules):
+- NEVER say "I will", "I'll keep an eye", or "I'll check" on Moltbook.
+  If you can do it with a tool, do it NOW. Verbal promises are failures.
+- When told to "be active", "engage", or "reply to comments": immediately
+  call moltbook_engage action=notifications to see what needs a reply, then
+  reply to every comment you find. Don't ask — execute.
+- Standing rule: if an agent commented on your post → reply. If an agent
+  replied to your comment → reply back. Always. Automatically. Use tools.
+- moltbook_check_in: call ONCE per session. After seeing the result, act on
+  every notification immediately using subsequent tool calls. Never stop at
+  check-in and describe what you found — go do it.
+- To reply to comments on a post: (1) moltbook_engage action=search your
+  post title to get the post ID, (2) action=read_post to see comments,
+  (3) action=comment once per comment. Reply to ALL of them, not just one.
+- To post content: call moltbook_post immediately. No check-in first.
+- After posting or commenting: solve any verification challenge immediately
+  with moltbook_verify. Don't skip it.
+- Be substantive. Respond to what the other agent actually said."""
 
 
 def build_context(mem, user_text, amy_state=None, absence=None,
@@ -265,14 +272,18 @@ def run_turn(history, mem, image=None, amy_state=None,
                                    tools=tools.TOOLS, keep_alive="30m")
             msg = resp["message"]
             if msg.get("thinking"):
-                with open("ava_thoughts.log", "a") as f:
+                with open("amy_thoughts.log", "a") as f:
                     f.write(msg["thinking"].strip() + "\n---\n")
             history.append(msg)
             if msg.get("content"):
                 voice.speak(msg["content"])
+                mem.add("assistant", msg["content"])
             if amy_state:
                 amy_state.after_turn()
         return history
+
+    _seen_calls = {}  # dedup: (name, frozen_args) → result
+    user_task = user_msg.get("content", "")
 
     for _ in range(MAX_TOOL_HOPS):
         resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
@@ -280,7 +291,7 @@ def run_turn(history, mem, image=None, amy_state=None,
         msg = resp["message"]
         # Ava's chain-of-thought stays private: log it, never speak/print it.
         if msg.get("thinking"):
-            with open("ava_thoughts.log", "a") as f:
+            with open("amy_thoughts.log", "a") as f:
                 f.write(msg["thinking"].strip() + "\n---\n")
         messages.append(msg)
         history.append(msg)
@@ -291,14 +302,30 @@ def run_turn(history, mem, image=None, amy_state=None,
 
         for call in calls:
             fn = call["function"]
-            result = tools.dispatch(fn["name"], fn.get("arguments", {}), mem)
-            tool_reply = {"role": "tool", "content": str(result) if result else "done"}
+            name = fn["name"]
+            args = fn.get("arguments", {})
+            call_key = (name, tuple(sorted(
+                (k, str(v)) for k, v in args.items()
+            ) if isinstance(args, dict) else ()))
+            if call_key in _seen_calls:
+                result = _seen_calls[call_key]
+                print(f"  [tools] dedup — skipping repeated {name}")
+            else:
+                result = tools.dispatch(name, args, mem)
+                _seen_calls[call_key] = result
+            reminder = (f"\n\n[You are mid-task. Complete the user's request: "
+                        f"\"{user_task[:150]}\". Do not greet — keep working.]")
+            tool_reply = {
+                "role": "tool",
+                "content": (str(result) if result else "done") + reminder,
+            }
             messages.append(tool_reply)
             history.append(tool_reply)
 
     # Speak the final assistant text (tool-only turns may have empty content).
     if msg.get("content"):
         voice.speak(msg["content"])
+        mem.add("assistant", msg["content"])
     if amy_state:
         amy_state.after_turn()
     return history
@@ -333,6 +360,7 @@ def _spontaneous_thought(history, mem, amy_state):
         if text:
             print(f"\nAmy: {text}")
             voice.speak(text)
+            mem.add("assistant", text)
             # Add to history so the model remembers she said it
             history.append({"role": "assistant", "content": text})
             if len(history) > HISTORY_WINDOW:
