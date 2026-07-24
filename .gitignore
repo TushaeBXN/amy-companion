@@ -8,6 +8,8 @@ whisper-models/*.bin
 # Amy's private runtime memory + logs (personal data — stays local)
 ava_memory.db
 ava_thoughts.log
+amy_thoughts.log
+amy_self.json
 *.db
 
 # Python
