@@ -409,6 +409,8 @@ def main():
     print("Amy is online.  '/look [q]' = webcam,  '/self [q]' = her own face.\n"
           "  '/show /path/img.jpg [q]' = show her any image file.\n"
           "  '/listen' = hear you speak,  '/converse' = voice conversation mode.\n"
+          "  '/paste [q]' = multiline input (type END on its own line to finish).\n"
+          "  '/file /path/file.txt [q]' = send a file's contents to Amy.\n"
           "  Ctrl-C to end.\n")
     try:
         while True:
@@ -451,6 +453,44 @@ def main():
                 except KeyboardInterrupt:
                     print("\n  (exited voice mode — back to typing)")
                 continue
+
+            if user.startswith("/file"):
+                parts = user[len("/file"):].strip().split(None, 1)
+                if not parts:
+                    print("  Usage: /file /path/to/file.txt [optional question]")
+                    continue
+                fpath = os.path.expanduser(parts[0])
+                if not os.path.exists(fpath):
+                    print(f"  (file not found: {fpath})")
+                    continue
+                try:
+                    with open(fpath, "r", errors="replace") as f:
+                        content = f.read()
+                    q = parts[1] if len(parts) > 1 else "Here is the content:"
+                    user = f"{q}\n\n{content}"
+                    print(f"  [file] loaded {len(content)} chars from {fpath}")
+                except Exception as e:
+                    print(f"  (could not read file: {e})")
+                    continue
+
+            if user.startswith("/paste"):
+                q = user[len("/paste"):].strip() or "Here is what I'm pasting:"
+                print("  Paste your content below. Type END on its own line when done.")
+                lines = []
+                while True:
+                    try:
+                        line = input()
+                    except EOFError:
+                        break
+                    if line.strip() == "END":
+                        break
+                    lines.append(line)
+                if not lines:
+                    print("  (nothing pasted)")
+                    continue
+                content = "\n".join(lines)
+                user = f"{q}\n\n{content}"
+                print(f"  [paste] received {len(content)} chars")
 
             if user.startswith("/listen"):
                 dur = 5
