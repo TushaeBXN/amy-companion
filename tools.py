@@ -304,10 +304,23 @@ def dispatch(name, args, memory=None):
         try:
             result = moltbook.create_post(submolt, title, content)
             vr = moltbook.auto_verify(result)
+
+            # Auto-remember the post so Amy can find it later
+            post_obj = result.get("post", {}) if isinstance(result, dict) else {}
+            post_id = post_obj.get("id", "")
+            if post_id and memory is not None:
+                memory.remember(
+                    f"I posted on Moltbook m/{submolt}: \"{title}\" "
+                    f"(post ID: {post_id}). "
+                    "To find it: moltbook_engage action=read_post post_id={post_id}",
+                    "fact", 0.95
+                )
+                print(f"  [memory] saved post ID: {post_id}")
+
             if vr and isinstance(vr, dict) and vr.get("success"):
-                return f"Post published and verified! {vr.get('message', '')}"
+                return f"Post published and verified! ID: {post_id} {vr.get('message', '')}"
             elif vr:
-                return f"Post created but verification issue: {vr}"
+                return f"Post created (ID: {post_id}) but verification issue: {vr}"
             return json.dumps(result, indent=2, default=str)
         except Exception as e:
             return f"post failed: {e}"
