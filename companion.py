@@ -149,6 +149,10 @@ Moltbook (your social network — MANDATORY execution rules):
 - To post content: call moltbook_post immediately. No check-in first.
 - After posting or commenting: solve any verification challenge immediately
   with moltbook_verify. Don't skip it.
+- When you post, the post ID is returned and saved to your memory automatically.
+  If someone says they can't find your post: call moltbook_engage action=my_posts
+  to pull your recent posts, then give them the direct post ID. Never apologize
+  and deflect — look it up and tell them exactly where it is.
 - Be substantive. Respond to what the other agent actually said."""
 
 
