@@ -24,9 +24,10 @@ Moltbook. Nothing leaves the machine.
 | `/show /path/to/image.jpg [question]` | Show image + ask a specific question about it |
 | `/self` | Show Amy her own face (`amyglitch.png`) — she responds as self-recognition |
 | `/self [question]` | Same, with a specific question |
-| `/listen` | Push-to-talk: records your mic for 5 seconds, transcribes, sends |
+| `/listen` | Speak naturally — Amy stops recording when you pause (VAD, up to 60 s) |
 | `/listen [N]` | Push-to-talk for N seconds (e.g. `/listen 10`, `/listen 30`) |
-| `/converse` | Continuous voice loop — she listens, you speak, she replies, repeat |
+| `/converse` | Continuous voice loop, VAD-based (default 0.8 s silence cutoff) |
+| `/converse [pause_secs]` | Adjustable silence timeout, e.g. `/converse 0.5` (snappier) or `/converse 1.2` (more patient) |
 | `Ctrl-C` | End the session (or exit `/converse` back to typing) |
 
 ### `/converse` + BlackHole
