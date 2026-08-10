@@ -313,10 +313,12 @@ def main():
                 print("  Entering voice conversation mode. Ctrl-C to stop.\n")
                 try:
                     while True:
-                        print("  [hearing] listening...")
-                        heard = hearing.listen_until_silence(
-                            device=audio_dev, chunk_secs=3,
-                            silence_chunks=2, max_duration=30)
+                        wav_path = hearing.listen_until_silence_vad(silence_timeout=0.8)
+                        heard = hearing.transcribe(wav_path)
+                        try:
+                            os.unlink(wav_path)
+                        except OSError:
+                            pass
                         if not heard:
                             continue
                         print(f"  [heard] {heard}")
