@@ -21,6 +21,8 @@ from memory import Memory
 from state import InternalState
 from thoughts import ThoughtBuffer
 from amy_persona import SYSTEM_PROMPT
+import learnings as _learnings
+_session_learnings: str = ""
 
 MODEL = "amy"   # engine: llama3.2-vision needs Ollama updated; fallback to gemma4 base if needed
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
@@ -34,6 +36,8 @@ def build_context(mem, user_text, amy_state=None, absence=None,
                   pending_thoughts=None):
     """System turn = persona + her self-layer (L0/L1) + state + recalled memories."""
     system = SYSTEM_PROMPT + "\n\n" + mem.wake_up()
+    if _session_learnings:
+        system += "\n\n" + _session_learnings
     if amy_state:
         system += "\n\n[Internal state]\n" + amy_state.state_summary()
 
@@ -275,6 +279,8 @@ def main():
     args = ap.parse_args()
 
     mem = Memory()
+    global _session_learnings
+    _session_learnings = _learnings.load_recent_learnings()
     amy_state = InternalState()
     thought_buffer = ThoughtBuffer()
     history = []
@@ -440,6 +446,7 @@ def main():
                 history = history[-HISTORY_WINDOW:]
     except (KeyboardInterrupt, EOFError):
         print("\nAmy: Goodbye.")
+        _learnings.run_session_end(history, mem, amy_state)
 
 
 if __name__ == "__main__":
