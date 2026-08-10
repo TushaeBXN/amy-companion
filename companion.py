@@ -24,7 +24,8 @@ from amy_persona import SYSTEM_PROMPT
 import learnings as _learnings
 _session_learnings: str = ""
 
-MODEL = "amy"   # engine: llama3.2-vision needs Ollama updated; fallback to gemma4 base if needed
+MODEL = os.environ.get("AMY_MODEL", "amy-hermes")        # tool-calling engine (Hermes 3)
+VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "amy")  # vision engine (gemma4:e2b multimodal)
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
 HISTORY_WINDOW = 16     # keep last N messages (user+assistant) to prevent context bloat
 SELF_PORTRAIT = os.path.join(os.path.dirname(__file__), "amyglitch.png")
@@ -99,7 +100,7 @@ def run_turn(history, mem, image=None, amy_state=None,
              "content": user_msg["content"],
              "images": [b64]}
         ]
-        vision_resp = ollama.chat(model=MODEL, messages=vision_messages,
+        vision_resp = ollama.chat(model=VISION_MODEL, messages=vision_messages,
                                   keep_alive="30m")
         description = vision_resp["message"].get("content", "").strip()
         print(f"  [vision] description: {description[:120]}...")
@@ -120,7 +121,7 @@ def run_turn(history, mem, image=None, amy_state=None,
                      "content": "Describe this person's appearance in detail.",
                      "images": [_b64_image(SELF_PORTRAIT)]}
                 ]
-                self_resp = ollama.chat(model=MODEL, messages=self_vision,
+                self_resp = ollama.chat(model=VISION_MODEL, messages=self_vision,
                                        keep_alive="30m")
                 amy_desc = self_resp["message"].get("content", "").strip()
 

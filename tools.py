@@ -9,6 +9,8 @@ import threading
 import time
 import web
 import moltbook
+import music
+import songs
 
 # --- Tool schemas handed to the model (Ollama / OpenAI-compatible format) ---
 TOOLS = [
@@ -174,6 +176,118 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "songs_list",
+            "description": "List all of Brian's original songs that he's written.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "songs_read",
+            "description": "Read the full lyrics of one of Brian's original songs.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string",
+                              "description": "Song title or partial title"},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "songs_search",
+            "description": "Search Brian's lyrics for a word, phrase, or theme.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string",
+                              "description": "Word or phrase to search for"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "music_now_playing",
+            "description": "See what song is currently playing in Brian's Music app.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "music_library",
+            "description": "Browse Brian's music library — get albums, artists, or playlists.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "view": {"type": "string",
+                             "enum": ["albums", "artists", "playlists"],
+                             "description": "What to list"},
+                },
+                "required": ["view"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "music_search",
+            "description": "Search Brian's music library by song name, artist, or album.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search term"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "music_play",
+            "description": "Play a song, artist, album, or playlist from Brian's library.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string",
+                              "description": "Song name, artist, album, or playlist to play"},
+                    "type": {"type": "string",
+                             "enum": ["track", "playlist"],
+                             "description": "Whether to play a track or a playlist"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "music_control",
+            "description": "Control music playback — pause, resume, skip, go back, or set volume.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string",
+                               "enum": ["play", "pause", "stop", "next",
+                                        "previous", "shuffle", "volume"]},
+                    "volume": {"type": "number",
+                               "description": "Volume level 0–100 (only for action=volume)"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "moltbook_verify",
             "description": "Solve a Moltbook verification challenge. When you post or comment, you may get an obfuscated math problem. Read it carefully, solve the math, and submit your answer.",
             "parameters": {
@@ -258,6 +372,91 @@ def dispatch(name, args, memory=None):
             return f"could not read page: {e}"
 
     # --- Moltbook tools ---
+    if name == "songs_list":
+        titles = songs.list_songs()
+        if not titles:
+            return "no songs found"
+        return "Brian's original songs:\n" + "\n".join(f"- {t}" for t in titles)
+
+    if name == "songs_read":
+        title = args.get("title", "").strip()
+        result = songs.get_song(title)
+        if not result:
+            return f"couldn't find a song matching \"{title}\""
+        return f"=== {result['title']} ===\n\n{result['lyrics']}"
+
+    if name == "songs_search":
+        query = args.get("query", "").strip()
+        if not query:
+            return "need a search query"
+        results = songs.search_lyrics(query)
+        if not results:
+            return f"no matches for \"{query}\""
+        return "\n".join(f"- \"{r['title']}\": {r['excerpt']}" for r in results)
+
+    if name == "music_now_playing":
+        try:
+            info = music.now_playing()
+            if info["state"] == "stopped":
+                return "Nothing is playing right now."
+            if info["state"] == "paused":
+                return f"Paused on \"{info['name']}\" by {info['artist']} ({info['album']})"
+            return (f"Playing \"{info['name']}\" by {info['artist']} "
+                    f"from the album {info['album']} "
+                    f"({info.get('position_sec', 0) // 60}:{info.get('position_sec', 0) % 60:02d} in)")
+        except Exception as e:
+            return f"couldn't reach Music app: {e}"
+
+    if name == "music_library":
+        view = args.get("view", "albums")
+        try:
+            if view == "albums":
+                items = music.get_albums(limit=80)
+            elif view == "artists":
+                items = music.get_artists(limit=80)
+            else:
+                items = music.get_playlists()
+            return "\n".join(items) if items else f"no {view} found"
+        except Exception as e:
+            return f"music library error: {e}"
+
+    if name == "music_search":
+        query = args.get("query", "").strip()
+        if not query:
+            return "need a search query"
+        try:
+            tracks = music.search_tracks(query, limit=10)
+            if not tracks:
+                return f"nothing found for \"{query}\""
+            return "\n".join(
+                f"- \"{t['name']}\" by {t['artist']} ({t['album']})"
+                for t in tracks
+            )
+        except Exception as e:
+            return f"music search error: {e}"
+
+    if name == "music_play":
+        query = args.get("query", "").strip()
+        play_type = args.get("type", "track")
+        if not query:
+            return "need something to play"
+        try:
+            if play_type == "playlist":
+                return music.play_playlist(query)
+            return music.play_track(query)
+        except Exception as e:
+            return f"music play error: {e}"
+
+    if name == "music_control":
+        action = args.get("action", "")
+        try:
+            if action == "volume":
+                level = args.get("volume", 50)
+                return music.set_volume(level)
+            return music.control(action)
+        except Exception as e:
+            return f"music control error: {e}"
+
     if name == "moltbook_check_in":
         print("  [moltbook] checking in...")
         try:
