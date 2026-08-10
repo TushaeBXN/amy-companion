@@ -288,7 +288,8 @@ def main():
     thought_buffer.start(amy_state, history)
     print("Amy is online.  '/look [q]' = webcam,  '/self [q]' = her own face.\n"
           "  '/show /path/img.jpg [q]' = show her any image file.\n"
-          "  '/listen' = hear you speak,  '/converse' = voice conversation mode.\n"
+          "  '/listen [max_secs]' = speak; stops when you pause (default max 60s).\n"
+          "  '/converse [pause_secs]' = continuous voice; e.g. /converse 0.5 for snappier.\n"
           "  '/paste [q]' = multiline input (type END on its own line to finish).\n"
           "  '/file /path/file.txt [q]' = send a file's contents to Amy.\n"
           "  Ctrl-C to end.\n")
@@ -302,6 +303,13 @@ def main():
             args.image = None
 
             if user.startswith("/converse"):
+                parts = user.split()
+                silence_timeout = 0.8
+                if len(parts) > 1:
+                    try:
+                        silence_timeout = float(parts[1])
+                    except ValueError:
+                        pass
                 audio_dev = ":0"
                 bh = hearing.find_blackhole()
                 if bh:
@@ -310,10 +318,10 @@ def main():
                           "listening to system audio")
                 else:
                     print("  [hearing] using mic (no BlackHole found)")
-                print("  Entering voice conversation mode. Ctrl-C to stop.\n")
+                print(f"  Entering voice conversation mode (pause={silence_timeout}s). Ctrl-C to stop.\n")
                 try:
                     while True:
-                        wav_path = hearing.listen_until_silence_vad(silence_timeout=0.8)
+                        wav_path = hearing.listen_until_silence_vad(silence_timeout=silence_timeout)
                         heard = hearing.transcribe(wav_path)
                         try:
                             os.unlink(wav_path)
@@ -375,12 +383,19 @@ def main():
                 print(f"  [paste] received {len(content)} chars")
 
             if user.startswith("/listen"):
-                dur = 5
                 parts = user.split()
-                if len(parts) > 1 and parts[1].isdigit():
-                    dur = int(parts[1])
-                print(f"  [hearing] listening for {dur}s...")
-                heard = hearing.listen(duration=dur)
+                max_dur = 60.0
+                if len(parts) > 1:
+                    try:
+                        max_dur = float(parts[1])
+                    except ValueError:
+                        pass
+                wav_path = hearing.listen_until_silence_vad(max_duration=max_dur)
+                heard = hearing.transcribe(wav_path)
+                try:
+                    os.unlink(wav_path)
+                except OSError:
+                    pass
                 if not heard:
                     print("  (didn't catch anything)")
                     continue
