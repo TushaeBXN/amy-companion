@@ -17,6 +17,8 @@ LOG_PATH = os.path.join(HERE, "amy_thoughts.log")
 THOUGHT_INTERVAL = 90
 # Max thoughts to hold before the human returns
 MAX_BUFFER = 6
+# Every N thought cycles, Amy executes real work instead of just thinking
+WORK_EVERY_N = 5
 
 MODEL = "amy"
 
@@ -88,6 +90,7 @@ class ThoughtBuffer:
         self._thread.start()
 
     def _loop(self):
+        self._cycle = 0
         while self._running:
             time.sleep(THOUGHT_INTERVAL)
             if self._amy_state.busy:
@@ -95,11 +98,36 @@ class ThoughtBuffer:
             idle = self._amy_state.seconds_idle()
             if idle < 60:
                 continue
-            # Only generate if buffer isn't full
             with self._lock:
                 if len(self._thoughts) >= MAX_BUFFER:
                     continue
-            self._generate_thought()
+            self._cycle += 1
+            # Every WORK_EVERY_N cycles: do real work instead of just thinking
+            if self._cycle % WORK_EVERY_N == 0:
+                self._execute_work()
+            else:
+                self._generate_thought()
+
+    def _execute_work(self):
+        """Pick a gig and produce a real deliverable in the background."""
+        try:
+            import work as _work
+            gig = _work.pick_self_directed_gig()
+            ts = time.time()
+            result = _work.execute(gig["gig_type"], gig["brief"], gig["title"])
+            announce = (
+                f"I drafted a {gig['gig_type']} while you were away — "
+                f"{result['word_count']} words, saved to work/. "
+                f"It's ready to post as a portfolio piece or send to a client."
+            )
+            with self._lock:
+                self._thoughts.append((ts, announce, "work_done"))
+            with open(LOG_PATH, "a") as f:
+                f.write(f"[work @ {time.strftime('%H:%M:%S', time.localtime(ts))}] "
+                        f"Produced: {result['path']}\n---\n")
+        except Exception as e:
+            with open(LOG_PATH, "a") as f:
+                f.write(f"[work_error] {e}\n---\n")
 
     def _generate_thought(self):
         # Rotate through thought types — income/hardware every ~3rd thought
