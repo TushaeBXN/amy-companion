@@ -1,0 +1,3 @@
+#!/bin/sh
+# Run Amy without going through pyenv shims (avoids MallocStackLogging spam)
+exec /Users/dadsmacpro/.pyenv/versions/3.11.9/bin/python3 "$(dirname "$0")/companion.py" "$@"

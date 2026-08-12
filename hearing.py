@@ -148,12 +148,12 @@ def listen_until_silence(device=":0", chunk_secs=3, silence_chunks=2,
 
     return " ".join(all_text).strip()
 
-import webrtcvad
-import pyaudio
-import wave
-import tempfile
 
-def listen_until_silence_vad(sample_rate=16000, chunk_duration_ms=30, silence_timeout=0.8, max_duration=60.0):
+def listen_until_silence_vad(sample_rate=16000, chunk_duration_ms=30,
+                              silence_timeout=0.8, max_duration=60.0):
+    import webrtcvad
+    import pyaudio
+    import wave as _wave
     vad = webrtcvad.Vad(2)
     audio = pyaudio.PyAudio()
     chunk_size = int(sample_rate * chunk_duration_ms / 1000)
@@ -164,11 +164,13 @@ def listen_until_silence_vad(sample_rate=16000, chunk_duration_ms=30, silence_ti
     silence_frames = 0
     silence_threshold = int(silence_timeout / (chunk_duration_ms / 1000))
     max_frames = int(max_duration / (chunk_duration_ms / 1000))
+    # Wait for speech to start
     while True:
         chunk = stream.read(chunk_size)
         if vad.is_speech(chunk, sample_rate):
             frames.append(chunk)
             break
+    # Collect until silence
     while True:
         chunk = stream.read(chunk_size)
         frames.append(chunk)
@@ -181,8 +183,9 @@ def listen_until_silence_vad(sample_rate=16000, chunk_duration_ms=30, silence_ti
     stream.stop_stream()
     stream.close()
     audio.terminate()
+    import tempfile
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        wf = wave.open(f, 'wb')
+        wf = _wave.open(f, 'wb')
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(sample_rate)
