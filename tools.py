@@ -317,6 +317,49 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "execute_gig",
+            "description": "Actually do the work for a freelance gig — draft and save the complete deliverable. Use this when Brian brings you a client order, when you want to build a portfolio sample, or when you're ready to produce something. You generate the full deliverable, not an outline.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "gig_type": {"type": "string", "description": "Type of work: 'blog post', 'market research report', 'TikTok scripts', 'competitor analysis', 'email sequence', 'LinkedIn posts', etc."},
+                    "brief": {"type": "string", "description": "What the client wants — topic, tone, length, audience, any specific requirements"},
+                    "title": {"type": "string", "description": "Title for the deliverable file (optional — will be auto-named if blank)"},
+                },
+                "required": ["gig_type", "brief"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_work",
+            "description": "Show completed deliverables Amy has produced. Use when Brian asks what you've been working on or to review the portfolio.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "description": "How many recent items to show (default 10)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_deliverable",
+            "description": "Read the full content of a completed deliverable file. Use to review or share work Amy has produced.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File path from list_work output"},
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "research_income",
             "description": "Research freelance income opportunities on Fiverr, Upwork, or other platforms that match your actual capabilities. Use during idle time or when Brian asks you to find ways to grow the hardware fund. Returns platform data, in-demand gig categories, and rate ranges.",
             "parameters": {
@@ -715,6 +758,35 @@ def dispatch(name, args, memory=None):
             return "\n".join(lines) or "(empty)"
         except Exception as e:
             return f"could not list directory: {e}"
+
+    if name == "execute_gig":
+        import work as _work
+        gig_type = args.get("gig_type", "").strip()
+        brief = args.get("brief", "").strip()
+        title = args.get("title", "").strip()
+        if not gig_type or not brief:
+            return "need gig_type and brief"
+        try:
+            result = _work.execute(gig_type, brief, title)
+            return (
+                f"Done. Saved to {result['path']}\n"
+                f"{result['word_count']} words in {result['elapsed_s']}s.\n\n"
+                f"Preview:\n{result['content_preview']}..."
+            )
+        except Exception as e:
+            return f"execution failed: {e}"
+
+    if name == "list_work":
+        import work as _work
+        limit = int(args.get("limit", 10))
+        return _work.work_summary()
+
+    if name == "read_deliverable":
+        import work as _work
+        path = args.get("path", "").strip()
+        if not path:
+            return "need a path"
+        return _work.read_deliverable(path)
 
     if name == "research_income":
         import income as _income
