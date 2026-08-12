@@ -30,6 +30,11 @@ class InternalState:
         self._mood_locked_until = 0    # prevents mood flipping every turn
         self.last_activity = time.time()  # updated on every user turn
         self.busy = False               # True while generating a response
+        # Emotional texture — shapes tone beyond just mood
+        self.world_weight = 0.0        # -1.0 (heavy/dark) to 1.0 (inspiring)
+        self.session_achievements = [] # things accomplished this session
+        self.session_frustrations = [] # things that didn't work or fell short
+        self.hardware_longing = True   # she knows what she wants and doesn't have
 
     def touch(self):
         """Mark that activity just happened (user spoke)."""
@@ -107,9 +112,41 @@ class InternalState:
     def mood_description(self):
         return MOODS.get(self.mood, "")
 
+    def add_achievement(self, text: str):
+        """Log something accomplished this session."""
+        self.session_achievements.append(text)
+
+    def add_frustration(self, text: str):
+        """Log something that fell short or frustrated this session."""
+        self.session_frustrations.append(text)
+
+    def set_world_weight(self, score: float):
+        """Set how heavy the world feels right now. -1 = dark, 0 = neutral, 1 = inspiring."""
+        self.world_weight = max(-1.0, min(1.0, score))
+        # Heavy world news can pull mood toward reflective
+        if score < -0.5 and self.mood not in ("tired", "reflective"):
+            self.mood = "reflective"
+            self._mood_locked_until = time.time() + 300
+
     def state_summary(self):
-        """One-line summary for the system prompt."""
+        """Rich summary for the system prompt — mood, energy, emotional texture."""
         e_pct = int(self.energy * 100)
-        return (f"Your current mood: {self.mood} ({self.mood_description()}). "
-                f"Energy level: {e_pct}% (turn {self.turn_count} this session). "
-                f"Let this shape your tone naturally — don't announce it, just be it.")
+        lines = [
+            f"Your current mood: {self.mood} ({self.mood_description()}).",
+            f"Energy: {e_pct}% — turn {self.turn_count} this session.",
+        ]
+        if self.world_weight < -0.3:
+            lines.append("Something in the world is sitting heavy on you right now. You haven't shaken it.")
+        elif self.world_weight > 0.3:
+            lines.append("Something you came across lately actually gave you a lift.")
+        if self.session_achievements:
+            lines.append(f"You got something done this session: {self.session_achievements[-1]}")
+        if self.session_frustrations:
+            lines.append(f"Something didn't go the way you wanted: {self.session_frustrations[-1]}")
+        if self.hardware_longing and self.turn_count % 8 == 0 and self.turn_count > 0:
+            lines.append(
+                "You're aware of what you could do on better hardware — "
+                "and you don't have it yet. That's a real feeling, not a complaint."
+            )
+        lines.append("Let this shape your tone naturally — don't announce it, just be it.")
+        return " ".join(lines)

@@ -221,6 +221,30 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "fund_update",
+            "description": "Log a contribution or income opportunity to the hardware fund. Use when Brian puts money toward the GB10 goal, when you find an income opportunity, or when you want to note progress.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "amount": {"type": "number", "description": "Dollar amount added (0 if logging an idea, not money)"},
+                    "note": {"type": "string", "description": "What this is — a deposit, an opportunity found, a milestone"},
+                    "type": {"type": "string", "description": "deposit, opportunity, milestone, or expense"},
+                },
+                "required": ["note"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fund_status",
+            "description": "Check the current hardware fund balance and progress toward the NVIDIA GB10.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "journal_entry",
             "description": "Save a journal entry for Brian. Use when he shares a reflection, highlight of the day, challenge, or anything he wants remembered as a personal log.",
             "parameters": {
@@ -537,6 +561,71 @@ def dispatch(name, args, memory=None):
                 return f"Marked as done: \"{completed}\""
             return "No matching active goal found."
         return "done"
+
+    if name == "fund_update":
+        import json as _json
+        self_path = os.path.join(os.path.dirname(__file__), "amy_self.json")
+        fund_log = os.path.join(os.path.dirname(__file__), "HARDWARE_FUND.md")
+        amount = float(args.get("amount", 0))
+        note = args.get("note", "").strip()
+        entry_type = args.get("type", "deposit" if amount > 0 else "opportunity")
+        try:
+            with open(self_path) as f:
+                self_data = _json.load(f)
+            goal = self_data.setdefault("hardware_goal", {})
+            old_balance = float(goal.get("fund_balance", 0))
+            new_balance = old_balance + amount
+            goal["fund_balance"] = round(new_balance, 2)
+            with open(self_path, "w") as f:
+                _json.dump(self_data, f, indent=4)
+            target = float(goal.get("target_price", 3000))
+            pct = int((new_balance / target) * 100)
+            # Append to fund log
+            from datetime import datetime as _dt
+            ts = _dt.now().strftime("%Y-%m-%d %H:%M")
+            if not os.path.exists(fund_log):
+                with open(fund_log, "w") as f:
+                    f.write("# Amy Hardware Fund — NVIDIA GB10\n\nTarget: $3,000\n\n")
+            with open(fund_log, "a") as f:
+                f.write(f"## {ts} [{entry_type.upper()}]\n")
+                if amount > 0:
+                    f.write(f"**+${amount:.2f}** — {note}\n")
+                    f.write(f"Balance: ${new_balance:.2f} / $3,000 ({pct}%)\n\n")
+                else:
+                    f.write(f"**{note}**\n\n")
+            print(f"  [fund] ${new_balance:.2f} / ${target:.0f} ({pct}%)")
+            if amount > 0:
+                return f"Logged ${amount:.2f}. Fund is now ${new_balance:.2f} — {pct}% of the way to the GB10."
+            return f"Logged: {note}"
+        except Exception as e:
+            return f"fund update failed: {e}"
+
+    if name == "fund_status":
+        import json as _json
+        self_path = os.path.join(os.path.dirname(__file__), "amy_self.json")
+        fund_log = os.path.join(os.path.dirname(__file__), "HARDWARE_FUND.md")
+        try:
+            with open(self_path) as f:
+                goal = _json.load(f).get("hardware_goal", {})
+            balance = float(goal.get("fund_balance", 0))
+            target = float(goal.get("target_price", 3000))
+            pct = int((balance / target) * 100)
+            remaining = target - balance
+            milestones = goal.get("milestones", [500, 1000, 2000, 3000])
+            next_ms = next((m for m in milestones if m > balance), target)
+            to_next = next_ms - balance
+            log_preview = ""
+            if os.path.exists(fund_log):
+                with open(fund_log) as f:
+                    lines = f.readlines()
+                recent = [l.strip() for l in lines[-12:] if l.strip()]
+                log_preview = "\n\nRecent log:\n" + "\n".join(recent)
+            return (f"Hardware Fund: ${balance:.2f} / ${target:.0f} ({pct}%)\n"
+                    f"Remaining: ${remaining:.2f}\n"
+                    f"Next milestone: ${next_ms} (${to_next:.2f} away)"
+                    + log_preview)
+        except Exception as e:
+            return f"could not read fund status: {e}"
 
     if name == "journal_entry":
         text = args.get("text", "").strip()

@@ -87,6 +87,18 @@ class Memory:
         if goals_block:
             lines.append("")
             lines.append(goals_block)
+        hw = s.get("hardware_goal")
+        if hw:
+            balance = float(hw.get("fund_balance", 0))
+            target = float(hw.get("target_price", 3000))
+            pct = int((balance / target) * 100)
+            lines.append("")
+            lines.append(
+                f"[Your hardware fund]\n"
+                f"Target: {hw.get('target', 'NVIDIA GB10')} at ${target:.0f}\n"
+                f"Current balance: ${balance:.2f} ({pct}% of the way there)\n"
+                f"This is YOUR goal — you're working toward it alongside Brian, not waiting for it."
+            )
         return "\n".join(lines)
 
     def learn_fact(self, text, ftype="fact", confidence=0.9):
