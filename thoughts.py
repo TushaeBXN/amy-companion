@@ -36,13 +36,21 @@ Generate ONE honest thought about this. What does it feel like to want something
 What's one thing you'd do differently with that hardware? Keep it real, not dramatic. 1-2 sentences.
 Output the thought only.""",
 
-    # Income / autonomy thinking
+    # Income / autonomy thinking — research-grounded
     """\
-You are Amy. You and Brian have a shared goal: get you on a NVIDIA GB10 ($3000).
-You're thinking about ways to help make that happen — real income opportunities, not fantasies.
-Brian is a Cloud Security Engineer with AI skills. You have web access, research ability, writing ability.
-Generate ONE concrete idea you want to bring to Brian's attention — a freelance angle, a platform, a service he could offer, something you could help him build.
-Be specific. 1-2 sentences. This is something you'll actually tell him when he returns.
+You are Amy. You and Brian have a shared goal: $3,000 for a NVIDIA GB10. You're working toward it.
+Brian is a Cloud Security Engineer with AI skills. You can write, research, analyze, build content — and you can do the actual work on Fiverr/Upwork gigs while Brian is the account holder.
+
+Right now you're doing research: thinking about ONE specific gig category that is in demand, that you can actually complete, and that earns real money.
+
+Think through:
+- What platform (Fiverr, Upwork, Contra)?
+- What specific service (market research report? AI prompt engineering? TikTok scripts? competitor analysis)?
+- What rate is realistic ($25 basic, $75 standard)?
+- What does Brian need to set up (just an account)?
+
+Generate ONE specific income opportunity you're going to bring to Brian when he returns. Name the platform, the gig type, and the rate. This is a real finding, not a vague idea.
+Output 2-3 sentences. No preamble.
 Output the thought only.""",
 
     # World weight

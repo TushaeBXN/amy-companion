@@ -314,6 +314,38 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "research_income",
+            "description": "Research freelance income opportunities on Fiverr, Upwork, or other platforms that match your actual capabilities. Use during idle time or when Brian asks you to find ways to grow the hardware fund. Returns platform data, in-demand gig categories, and rate ranges.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {"type": "string", "description": "Skill category to focus on (e.g. 'writing', 'market research', 'AI services', 'social media') — leave blank to get an overview of all options"},
+                    "platform": {"type": "string", "description": "Specific platform to focus on: fiverr, upwork, contra — leave blank for all"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "log_income_idea",
+            "description": "Save a specific income opportunity you've researched to the hardware fund log. Use after researching a gig category and finding something concrete Brian could pursue. Include the platform, estimated rate, and your confidence you can deliver the work.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Short name for the opportunity (e.g. 'AI market research reports on Fiverr')"},
+                    "platform": {"type": "string", "description": "Platform name"},
+                    "rate_estimate": {"type": "string", "description": "Estimated rate range (e.g. '$50–$150/gig')"},
+                    "description": {"type": "string", "description": "Why this is worth pursuing, what Brian needs to set up, and what you'll actually do"},
+                    "confidence": {"type": "integer", "description": "How confident you are you can deliver this work (1-10)"},
+                },
+                "required": ["title", "platform", "rate_estimate", "description", "confidence"],
+            },
+        },
+    },
 ]
 
 # Actions allowed to touch real hardware. Everything else is display-only.
@@ -683,6 +715,54 @@ def dispatch(name, args, memory=None):
             return "\n".join(lines) or "(empty)"
         except Exception as e:
             return f"could not list directory: {e}"
+
+    if name == "research_income":
+        import income as _income
+        category = args.get("category", "").strip()
+        platform = args.get("platform", "").strip().lower()
+
+        lines = []
+
+        # Platform info
+        platforms = _income.PLATFORMS
+        if platform and platform in platforms:
+            p = platforms[platform]
+            lines.append(f"## {platform.title()}")
+            lines.append(f"Rate range: {p['sweet_spot']}")
+            lines.append(f"Best for: {', '.join(p['best_categories'])}")
+            lines.append(f"Note: {p['notes']}")
+        else:
+            lines.append("## Platform overview")
+            lines.append(_income.platform_summary())
+
+        # Skills match
+        lines.append("\n## What you can deliver")
+        if category:
+            matched = [s for s in _income.AMY_SKILLS if category.lower() in s.lower()]
+            lines.append("\n".join(f"- {s}" for s in matched) if matched
+                         else "No exact match — here are all skills:\n" + _income.skills_summary())
+        else:
+            lines.append(_income.skills_summary())
+
+        # Open ideas already logged
+        summary = _income.open_ideas_summary()
+        lines.append(f"\n## Already logged\n{summary}")
+
+        print(f"  [income] research: category='{category}' platform='{platform}'")
+        return "\n".join(lines)
+
+    if name == "log_income_idea":
+        import income as _income
+        title = args.get("title", "").strip()
+        platform = args.get("platform", "").strip()
+        rate = args.get("rate_estimate", "").strip()
+        desc = args.get("description", "").strip()
+        confidence = int(args.get("confidence", 5))
+        if not title:
+            return "need a title"
+        result = _income.log_idea(title, platform, rate, desc, confidence)
+        print(f"  [income] {result}")
+        return result
 
     print(f"  [tools] unknown tool: {name}")
     return None
