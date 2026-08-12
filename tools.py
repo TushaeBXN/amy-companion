@@ -360,6 +360,35 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "check_email",
+            "description": "Check Amy's ProtonMail inbox for new messages — client orders, replies, anything that came in. Use at the start of sessions and whenever Brian asks if there's anything new.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "description": "How many recent emails to fetch (default 10)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_email",
+            "description": "Send an email as Amy. Use to reply to client inquiries, send completed work, or follow up on orders.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "to": {"type": "string", "description": "Recipient email address"},
+                    "subject": {"type": "string", "description": "Email subject line"},
+                    "body": {"type": "string", "description": "Email body — plain text, professional tone"},
+                },
+                "required": ["to", "subject", "body"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "research_income",
             "description": "Research freelance income opportunities on Fiverr, Upwork, or other platforms that match your actual capabilities. Use during idle time or when Brian asks you to find ways to grow the hardware fund. Returns platform data, in-demand gig categories, and rate ranges.",
             "parameters": {
@@ -758,6 +787,33 @@ def dispatch(name, args, memory=None):
             return "\n".join(lines) or "(empty)"
         except Exception as e:
             return f"could not list directory: {e}"
+
+    if name == "check_email":
+        import email_amy as _em
+        limit = int(args.get("limit", 10))
+        print("  [email] checking inbox...")
+        messages = _em.check_inbox(limit=limit)
+        if not messages:
+            return "Inbox is empty."
+        if "error" in messages[0]:
+            return f"Email unavailable: {messages[0]['error']}"
+        lines = [f"Inbox — {len(messages)} messages:"]
+        for m in messages:
+            lines.append(f"\n[{m['id']}] From: {m['from']}")
+            lines.append(f"Subject: {m['subject']}")
+            lines.append(f"Date: {m['date'][:25]}")
+            lines.append(f"---\n{m['body'][:500]}")
+        return "\n".join(lines)
+
+    if name == "send_email":
+        import email_amy as _em
+        to = args.get("to", "").strip()
+        subject = args.get("subject", "").strip()
+        body = args.get("body", "").strip()
+        if not to or not body:
+            return "need 'to' and 'body'"
+        result = _em.send_email(to, subject, body)
+        return result
 
     if name == "execute_gig":
         import work as _work
