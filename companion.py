@@ -9,6 +9,7 @@ Run:  python3 companion.py
 import argparse
 import base64
 import os
+import re
 import threading
 import time
 import ollama
@@ -240,9 +241,8 @@ def _spontaneous_thought(history, mem, amy_state):
         resp = ollama.chat(model=MODEL, messages=messages, keep_alive="30m",
                            options={"num_predict": 80})
         text = resp["message"].get("content", "").strip()
-        if text:
-            print(f"\nAmy: {text}")
-            voice.speak(text)
+        if text and re.sub(r'[^\w]', '', text):
+            voice.speak(text, emotion=mood)
             mem.add("assistant", text)
             # Add to history so the model remembers she said it
             history.append({"role": "assistant", "content": text})
@@ -287,12 +287,13 @@ def main():
     history = []
     start_spontaneous_thread(history, mem, amy_state)
     thought_buffer.start(amy_state, history)
-    print("Amy is online.  '/look [q]' = webcam,  '/self [q]' = her own face.\n"
-          "  '/show /path/img.jpg [q]' = show her any image file.\n"
-          "  '/listen [max_secs]' = speak; stops when you pause (default max 60s).\n"
-          "  '/converse [pause_secs]' = continuous voice; e.g. /converse 0.5 for snappier.\n"
-          "  '/paste [q]' = multiline input (type END on its own line to finish).\n"
-          "  '/file /path/file.txt [q]' = send a file's contents to Amy.\n"
+    print("Amy is online.\n"
+          "  /look [q]      = webcam    /self [q]   = her own face\n"
+          "  /show path [q] = show image   /listen = speak (VAD)   /converse = voice mode\n"
+          "  /paste [q]     = multiline input (END to finish)\n"
+          "  /file path [q] = send file contents\n"
+          "  /brief         = morning briefing   /evening = end-of-day recap\n"
+          "  /journal [q]   = journal session\n"
           "  Ctrl-C to end.\n")
     try:
         while True:
@@ -363,6 +364,27 @@ def main():
                 except Exception as e:
                     print(f"  (could not read file: {e})")
                     continue
+
+            if user.lower() in ("/brief", "/briefing", "/morning", "/startday"):
+                from datetime import datetime as _dt
+                day = _dt.now().strftime("%A, %B %d, %Y")
+                user = (f"Give me my morning briefing for {day}. "
+                        "Use web_search to find relevant news for me. "
+                        "Pull my active goals from memory. "
+                        "Follow the Daily Briefing format from your skills.")
+            elif user.lower() in ("/evening", "/eod", "/recap"):
+                user = ("Give me an end-of-day recap. "
+                        "Reflect on what we worked on today, what's carried over, "
+                        "and preview tomorrow. Use the Evening Recap format.")
+            elif user.startswith("/journal"):
+                q = user[len("/journal"):].strip()
+                if not q:
+                    user = ("Start a journal session with me. Ask me one journaling "
+                            "question — vary the category (highlight, challenge, "
+                            "learning, gratitude, creative). After I answer, save it "
+                            "with journal_entry and reflect back one observation.")
+                else:
+                    user = f"Save this journal entry and reflect on it: {q}"
 
             if user.startswith("/paste"):
                 q = user[len("/paste"):].strip() or "Here is what I'm pasting:"
@@ -455,6 +477,7 @@ def main():
             pending_thoughts = thought_buffer.drain() if thought_buffer.has_thoughts() else []
             amy_state.touch()
             amy_state.busy = True
+            print("  [Amy is thinking...]", flush=True)
             try:
                 history = run_turn(history, mem, image=image, amy_state=amy_state,
                                    absence=absence, pending_thoughts=pending_thoughts)

@@ -50,7 +50,7 @@ class Memory:
             if os.path.exists(old):
                 import shutil
                 shutil.copy2(old, db_path)
-        self.db = sqlite3.connect(db_path)
+        self.db = sqlite3.connect(db_path, check_same_thread=False)
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS mem ("
             "id INTEGER PRIMARY KEY, role TEXT, text TEXT, emb BLOB, "
@@ -61,6 +61,13 @@ class Memory:
         if "ts" not in cols:
             self.db.execute("ALTER TABLE mem ADD COLUMN ts TEXT")
             self.db.execute("UPDATE mem SET ts = datetime('now') WHERE ts IS NULL")
+        self.db.commit()
+        self.db.execute(
+            "CREATE TABLE IF NOT EXISTS goals ("
+            "id INTEGER PRIMARY KEY, text TEXT, status TEXT DEFAULT 'active', "
+            "created_ts TEXT DEFAULT CURRENT_TIMESTAMP, "
+            "updated_ts TEXT DEFAULT CURRENT_TIMESTAMP)"
+        )
         self.db.commit()
         with open(self_path) as f:
             self.self = json.load(f)
@@ -76,6 +83,10 @@ class Memory:
         age = _age(s.get("creator_dob", ""))
         if age is not None:
             lines.append(f"- Brian is currently {age} years old.")
+        goals_block = self.goals_summary()
+        if goals_block:
+            lines.append("")
+            lines.append(goals_block)
         return "\n".join(lines)
 
     def learn_fact(self, text, ftype="fact", confidence=0.9):
@@ -132,6 +143,44 @@ class Memory:
     def remember(self, text, ftype="fact", confidence=0.9):
         self.learn_fact(text, ftype, confidence)
         self.add("fact", text)
+
+    # --- Goal memory -------------------------------------------------------
+    def add_goal(self, text):
+        text = text.strip()
+        if not text:
+            return None
+        cur = self.db.execute("INSERT INTO goals (text) VALUES (?)", (text,))
+        self.db.commit()
+        return cur.lastrowid
+
+    def complete_goal(self, text_fragment):
+        frag = text_fragment.strip().lower()
+        rows = self.db.execute(
+            "SELECT id, text FROM goals WHERE status='active'"
+        ).fetchall()
+        for gid, gtext in rows:
+            if frag in gtext.lower() or gtext.lower() in frag:
+                self.db.execute(
+                    "UPDATE goals SET status='completed', "
+                    "updated_ts=datetime('now') WHERE id=?", (gid,)
+                )
+                self.db.commit()
+                return gtext
+        return None
+
+    def get_active_goals(self):
+        return self.db.execute(
+            "SELECT id, text FROM goals WHERE status='active' ORDER BY created_ts ASC"
+        ).fetchall()
+
+    def goals_summary(self):
+        goals = self.get_active_goals()
+        if not goals:
+            return ""
+        lines = ["[Brian's active goals — follow up on these naturally]"]
+        for gid, text in goals:
+            lines.append(f"- [{gid}] {text}")
+        return "\n".join(lines)
 
     # --- Contradiction detection -------------------------------------------
     def check_contradiction(self, new_text, similarity_threshold=0.82):

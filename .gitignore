@@ -26,3 +26,4 @@ venv/
 
 # Moltbook credentials (stored at ~/.config/moltbook/, not here — but just in case)
 credentials.json
+.env

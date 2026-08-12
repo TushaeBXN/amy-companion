@@ -46,6 +46,9 @@ def speak(text, emotion="neutral"):
     print(f"\nAmy ({emotion}): {text}")
     if not os.path.exists(VOICE):
         return  # no voice model -> text-only
+    # Piper crashes on punctuation-only input (no phoneme content → empty WAV)
+    if not re.sub(r'[^\w]', '', text):
+        return
 
     wav = None
     try:
