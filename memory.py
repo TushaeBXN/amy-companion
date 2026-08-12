@@ -87,6 +87,14 @@ class Memory:
         if goals_block:
             lines.append("")
             lines.append(goals_block)
+        try:
+            import email_amy as _em
+            addr = _em.amy_address()
+            if addr:
+                lines.append("")
+                lines.append(f"[Your email]\n{addr} (ProtonMail) — check it with check_email.")
+        except Exception:
+            pass
         hw = s.get("hardware_goal")
         if hw:
             balance = float(hw.get("fund_balance", 0))
