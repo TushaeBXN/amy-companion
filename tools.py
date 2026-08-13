@@ -403,6 +403,34 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "search_books",
+            "description": (
+                "Search Amy's indexed catalog of ~2,500 free programming books "
+                "(by subject, by language, and curated picks) using semantic "
+                "similarity. Returns the best matching books with title, authors, "
+                "subject, format, and URL. Use when Brian asks for book "
+                "recommendations, study resources, or references on any "
+                "programming, CS, or math topic."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Natural language description of what you're looking for, e.g. 'machine learning for beginners' or 'competitive programming algorithms'",
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "Optional: filter to a specific subject category, e.g. 'Machine Learning', 'Security', 'Algorithms'. Leave blank to search all subjects.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "log_income_idea",
             "description": "Save a specific income opportunity you've researched to the hardware fund log. Use after researching a gig category and finding something concrete Brian could pursue. Include the platform, estimated rate, and your confidence you can deliver the work.",
             "parameters": {
@@ -486,6 +514,28 @@ def dispatch(name, args, memory=None):
             return web.read_url(url)
         except Exception as e:
             return f"could not read page: {e}"
+
+    if name == "search_books":
+        query = args.get("query", "").strip()
+        subject = args.get("subject", None)
+        if not query:
+            return "no query given"
+        print(f"  [books] searching: {query}" + (f" (subject: {subject})" if subject else ""))
+        try:
+            import learn_books as _lb
+            results = _lb.search_books(query, subject_filter=subject, k=6)
+            if not results:
+                return "No matching books found in the index. Run: python3 learn_books.py build"
+            lines = []
+            for r in results:
+                line = f"• {r['title']}"
+                if r["authors"]:
+                    line += f" — {r['authors']}"
+                line += f" [{r['format']}] · {r['subject']}\n  {r['url']}"
+                lines.append(line)
+            return "\n\n".join(lines)
+        except Exception as e:
+            return f"search failed: {e}"
 
     # --- Moltbook tools ---
     if name == "moltbook_check_in":

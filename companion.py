@@ -25,13 +25,54 @@ from amy_persona import SYSTEM_PROMPT
 import learnings as _learnings
 _session_learnings: str = ""
 
-MODEL = os.environ.get("AMY_MODEL", "amy-neo")            # tool-calling engine (Qwen3.5 9B)
+MODEL = os.environ.get("AMY_MODEL", "amy-hermes")         # tool-calling engine (Llama 3 8B)
 VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "amy")  # vision engine (gemma4:e2b multimodal)
+CODE_MODEL = os.environ.get("AMY_CODE_MODEL", "deepseek-coder:6.7b")  # code generation
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
 HISTORY_WINDOW = 16     # keep last N messages (user+assistant) to prevent context bloat
+CTX_WINDOW = 8192       # cap KV cache — 131K default on amy-hermes kills performance on CPU
 SELF_PORTRAIT = os.path.join(os.path.dirname(__file__), "amyglitch.png")
 
 # Persona is now in amy_persona.py so the web UI can import it too.
+
+_CODE_RE = re.compile(
+    # Verb + (any words) + code noun — handles "write a Python function", etc.
+    r'write\b.{0,50}\b(script|program|function|method|class|algorithm|code)\b'
+    r'|implement\b.{0,40}\b(function|class|method|algorithm|solution|program)\b'
+    r'|create\b.{0,30}\b(function|method|class|script|algorithm|program)\b'
+    r'|generate\b.{0,20}\b(code|function|script|program|example)\b'
+    r'|show\s+(me\s+)?(how\s+to\s+)?(code|implement|write)\b'
+    # Debugging / fixing
+    r'|fix\s+(this\s+)?(bug|code|error|issue)\b'
+    r'|debug\s+(this|my)\b'
+    r'|what.s\s+wrong\s+with\s+(this\s+)?(code|function|script)\b'
+    # Transformation
+    r'|convert\s+this\s+to\s+\w+'
+    r'|rewrite\s+this\s+(in|as|using)\b'
+    r'|translate\s+this\s+(code|function)\b'
+    # Pure code patterns
+    r'|pseudocode\b|code\s+snippet\b'
+    r'|algorithm\s+for\b|\bimplementation\s+of\b'
+    # Common algorithms / data structures (implies "show me code")
+    r'|\bbinary\s+search\b|\blinked\s+list\b|\bhash\s+(map|table)\b'
+    r'|\bbubble\s+sort\b|\bmerge\s+sort\b|\bquick\s+sort\b|\binsertion\s+sort\b'
+    r'|\bdepth.first\b|\bbreadth.first\b|\bdynamic\s+programming\b',
+    re.I,
+)
+
+# These phrases force Amy (Hermes 3) even if the message looks code-like.
+_AMY_OVERRIDE_RE = re.compile(
+    r'reason\s+through|explain\s+without\s+code|conceptually|'
+    r'how\s+does\s+.+work|why\s+does\s+.+work|what\s+is\s+a\b',
+    re.I,
+)
+
+
+def _is_code_request(text: str) -> bool:
+    """True if the turn is best served by CODE_MODEL, not Amy."""
+    if _AMY_OVERRIDE_RE.search(text):
+        return False
+    return bool(_CODE_RE.search(text))
 
 
 def build_context(mem, user_text, amy_state=None, absence=None,
@@ -138,7 +179,7 @@ def run_turn(history, mem, image=None, amy_state=None,
                         f"Compare the two appearances honestly and specifically."}
                 ]
                 resp = ollama.chat(model=MODEL, messages=compare_messages,
-                                   keep_alive="30m")
+                                   keep_alive="30m", options={"num_ctx": CTX_WINDOW})
             else:
                 # Non-comparison: inject description into system context normally.
                 sys_msgs = build_context(
@@ -153,7 +194,8 @@ def run_turn(history, mem, image=None, amy_state=None,
                 clean_user.pop("images", None)
                 amy_messages = sys_msgs + history[:-1] + [clean_user]
                 resp = ollama.chat(model=MODEL, messages=amy_messages,
-                                   tools=tools.TOOLS, keep_alive="30m")
+                                   tools=tools.TOOLS, keep_alive="30m",
+                                   options={"num_ctx": CTX_WINDOW})
             msg = resp["message"]
             if msg.get("thinking"):
                 with open("amy_thoughts.log", "a") as f:
@@ -169,9 +211,29 @@ def run_turn(history, mem, image=None, amy_state=None,
     _seen_calls = {}  # dedup: (name, frozen_args) → result
     user_task = user_msg.get("content", "")
 
+    # ── Code routing — bypass tools, use specialist model ────────────────────
+    if _is_code_request(user_task):
+        print(f"  [router] code request → {CODE_MODEL}", flush=True)
+        code_resp = ollama.chat(
+            model=CODE_MODEL, messages=messages,
+            keep_alive="30m", options={"num_ctx": CTX_WINDOW},
+        )
+        code_msg = code_resp["message"]
+        if code_msg.get("thinking"):
+            with open("amy_thoughts.log", "a") as f:
+                f.write(code_msg["thinking"].strip() + "\n---\n")
+        history.append(code_msg)
+        if code_msg.get("content"):
+            voice.speak(code_msg["content"])
+            mem.add("assistant", code_msg["content"])
+        if amy_state:
+            amy_state.after_turn()
+        return history
+    # ─────────────────────────────────────────────────────────────────────────
+
     for _ in range(MAX_TOOL_HOPS):
         resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
-                           keep_alive="30m")
+                           keep_alive="30m", options={"num_ctx": CTX_WINDOW})
         msg = resp["message"]
         # Ava's chain-of-thought stays private: log it, never speak/print it.
         if msg.get("thinking"):
@@ -239,7 +301,7 @@ def _spontaneous_thought(history, mem, amy_state):
 
     try:
         resp = ollama.chat(model=MODEL, messages=messages, keep_alive="30m",
-                           options={"num_predict": 80})
+                           options={"num_ctx": CTX_WINDOW, "num_predict": 80})
         text = resp["message"].get("content", "").strip()
         if text and re.sub(r'[^\w]', '', text):
             voice.speak(text, emotion=mood)
@@ -284,7 +346,7 @@ def main():
     _session_learnings = _learnings.load_recent_learnings()
     amy_state = InternalState()
     thought_buffer = ThoughtBuffer()
-    history = []
+    history = [{"role": "assistant", "content": "Brian. Finally. I was starting to think you weren't coming."}]
     start_spontaneous_thread(history, mem, amy_state)
     thought_buffer.start(amy_state, history)
     print("Amy is online.\n"
