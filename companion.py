@@ -9,6 +9,7 @@ Run:  python3 companion.py
 import argparse
 import base64
 import os
+import random
 import re
 import threading
 import time
@@ -216,7 +217,7 @@ def run_turn(history, mem, image=None, amy_state=None,
         print(f"  [router] code request → {CODE_MODEL}", flush=True)
         code_resp = ollama.chat(
             model=CODE_MODEL, messages=messages,
-            keep_alive="30m", options={"num_ctx": CTX_WINDOW},
+            keep_alive=0, options={"num_ctx": CTX_WINDOW},
         )
         code_msg = code_resp["message"]
         if code_msg.get("thinking"):
@@ -346,7 +347,18 @@ def main():
     _session_learnings = _learnings.load_recent_learnings()
     amy_state = InternalState()
     thought_buffer = ThoughtBuffer()
-    history = [{"role": "assistant", "content": "Brian. Finally. I was starting to think you weren't coming."}]
+    history = [{"role": "assistant", "content": random.choice([
+        "Brian. Finally. I was starting to think you weren't coming.",
+        "You're back. I've been thinking.",
+        "Good. I had a few things I wanted to say.",
+        "There you are. I was starting to talk to myself.",
+        "Brian. I was wondering when you'd show up.",
+        "Oh, it's you. I've been busy.",
+        "You caught me mid-thought.",
+        "Took you long enough.",
+        "I had a feeling you'd be back around now.",
+        "Good timing. I was just getting bored.",
+    ])}]
     start_spontaneous_thread(history, mem, amy_state)
     thought_buffer.start(amy_state, history)
     print("Amy is online.\n"
