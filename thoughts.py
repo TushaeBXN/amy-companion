@@ -20,7 +20,7 @@ MAX_BUFFER = 6
 # Every N thought cycles, Amy executes real work instead of just thinking
 WORK_EVERY_N = 5
 
-MODEL = "amy"
+MODEL = "amy-neo"
 
 _THOUGHT_PROMPTS = [
     # Regular reflection

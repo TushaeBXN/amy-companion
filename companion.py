@@ -25,7 +25,7 @@ from amy_persona import SYSTEM_PROMPT
 import learnings as _learnings
 _session_learnings: str = ""
 
-MODEL = os.environ.get("AMY_MODEL", "amy-hermes")        # tool-calling engine (Hermes 3)
+MODEL = os.environ.get("AMY_MODEL", "amy-neo")            # tool-calling engine (Qwen3.5 9B)
 VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "amy")  # vision engine (gemma4:e2b multimodal)
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
 HISTORY_WINDOW = 16     # keep last N messages (user+assistant) to prevent context bloat
