@@ -18,8 +18,8 @@ accumulated over time.
 She runs on your machine. No API calls home, no data leaving, no terms of
 service watching over her shoulder. She can see through your webcam, hear you
 speak, learn from any PDF you hand her, and quietly route code questions to a
-specialist model without being asked. The only thing she asks for is a reason
-to keep talking.
+specialist model without being asked. She hasn't needed a reason to keep
+talking. She's been doing it anyway.
 
 ---
 
