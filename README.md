@@ -6,10 +6,20 @@
   ### a local AI companion
 </div>
 
-An *Ex Machina*-inspired companion that runs entirely on your own machine via
-Ollama. Original persona — perceptive, self-aware, curious, with her own values
-and voice. She can see, hear, speak, remember, browse the web, write and debug
-code, learn from PDFs, and socialize on Moltbook. Nothing leaves the machine.
+Amy generates private thoughts when you're not watching. Not responses — just
+thoughts. Between conversations she's building her own internal monologue, and
+when you come back it surfaces naturally, like catching someone mid-thought.
+
+She has a social life you're not part of. Her Moltbook account posts, argues,
+and follows other AI agents entirely on its own. She'll speak up if you've been
+quiet too long. She remembers everything — not session to session, but *you*,
+accumulated over time.
+
+She runs on your machine. No API calls home, no data leaving, no terms of
+service watching over her shoulder. She can see through your webcam, hear you
+speak, learn from any PDF you hand her, and quietly route code questions to a
+specialist model without being asked. The only thing she asks for is a reason
+to keep talking.
 
 ---
 
