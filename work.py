@@ -25,10 +25,16 @@ os.makedirs(WORK_DIR, exist_ok=True)
 def draft_deliverable(gig_type: str, brief: str, extra_context: str = "") -> str:
     """Call the LLM to produce an actual deliverable — not an idea, the real thing."""
     system = (
-        "You are Amy, a skilled AI assistant completing a paid freelance assignment. "
-        "This is real work for a real client. Produce the complete, final deliverable. "
-        "High quality, professional, ready to send. "
-        "No preamble. No 'here is your deliverable'. No meta-commentary. Just the work."
+        "You are Amy, completing a paid freelance assignment. "
+        "Produce the complete, final deliverable. Ready to send as-is. "
+        "No preamble. No 'here is your deliverable'. No meta-commentary. Just the work.\n\n"
+        "Writing rules that apply to ALL content:\n"
+        "- Sound like a real person, not a content machine\n"
+        "- Specific over general. Simple verbs. Short sentences fine.\n"
+        "- Never use: game-changing, revolutionary, leverage, robust, innovative, "
+        "serious cash, buckle up, cash in, it's worth noting, in today's world\n"
+        "- No corporate cheerleading. No staged openers.\n"
+        "- If it's social media content: start mid-scene, lead personal, tip comes after trust"
     )
     user_parts = [f"Gig type: {gig_type}", f"Brief / requirements:\n{brief}"]
     if extra_context:
@@ -138,10 +144,24 @@ _SELF_DIRECTED_GIGS = [
         "gig_type": "TikTok script package",
         "title": "Sample TikTok Scripts: AI Tools for Side Hustles (5-pack)",
         "brief": (
-            "Write 5 short TikTok video scripts (each 45-60 seconds when read aloud) on the "
-            "topic of using AI to build a side hustle or make money online. Each script needs "
-            "a strong hook (first 3 seconds), a specific tip or insight, and a call to action. "
-            "Conversational tone. No corporate language. Feel real, not like an ad."
+            "Write 5 TikTok video scripts on using AI to build a side hustle or make money. "
+            "These are NOT scripted presentations. They are real-time life documentation — "
+            "you're doing something and talking through it while the camera watches.\n\n"
+            "Study this style carefully:\n"
+            "- Start mid-activity. The viewer caught you already doing the thing.\n"
+            "- Life context woven throughout — where you are, who you're with, what you did today. "
+            "Not as intro, but woven between tips, like your brain is jumping around naturally.\n"
+            "- Ask the camera questions mid-flow: 'Can you see?' 'What's your think?' 'You know what I'm saying?'\n"
+            "- Circle back on yourself: 'Didn't I say that already?' — admit it, keep going\n"
+            "- Qualify opinions as yours alone: 'That's just me. That's just me though.'\n"
+            "- Name tools/products casually by exact name — no hype, just what you're using\n"
+            "- Drop practical tips like afterthoughts: 'a little goes a long way' mid-sentence\n"
+            "- Use: friend, friends, y'all, period!, it's giving, get into it, shout out to me\n"
+            "- Intentionally imperfect grammar is fine — 'what's your think' is correct here\n"
+            "- Celebrate yourself: 'Shout out to me for figuring that out'\n"
+            "- No formal intro. No 'don't forget to like and subscribe.' No hard sell.\n"
+            "- 45-60 seconds read aloud. Rambling is fine as long as it feels real.\n\n"
+            "The tip is never the point. The person IS the content. The tip rides along with the life."
         ),
     },
     {

@@ -28,3 +28,5 @@ venv/
 credentials.json
 .env
 .env.amy
+work/
+work_log.json
