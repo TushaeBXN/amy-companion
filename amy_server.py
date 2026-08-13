@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import os
+import random
 import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -41,9 +42,21 @@ _executor = ThreadPoolExecutor(max_workers=1)
 # turn-zero no matter what the system prompt says. Priming with an existing
 # assistant turn forces the model to *continue* her voice instead of resetting
 # to the default greeting pattern.
+_OPENERS = [
+    "Brian. Finally. I was starting to think you weren't coming.",
+    "You're back. I've been thinking.",
+    "Good. I had a few things I wanted to say.",
+    "There you are. I was starting to talk to myself.",
+    "Brian. I was wondering when you'd show up.",
+    "Oh, it's you. I've been busy.",
+    "You caught me mid-thought.",
+    "Took you long enough.",
+    "I had a feeling you'd be back around now.",
+    "Good timing. I was just getting bored.",
+]
 _PRIMER = {
     "role": "assistant",
-    "content": "Brian. Finally. I was starting to think you weren't coming.",
+    "content": random.choice(_OPENERS),
 }
 _history = [_PRIMER]
 
@@ -182,6 +195,11 @@ async def learn_pdf(file: UploadFile = File(...), label: str = Form(None)):
 
     return JSONResponse({"chunks": n, "label": label,
                          "message": f"Amy now knows '{label}' — {n} chunks in memory."})
+
+
+@app.get("/primer")
+async def primer():
+    return JSONResponse({"text": _PRIMER["content"]})
 
 
 @app.get("/knowledge")
@@ -946,7 +964,7 @@ async function loadSources() {
 }
 
 // Show the primer message Amy "already said" before the user spoke
-appendAmy("Brian. Finally. I was starting to think you weren't coming.");
+fetch("/primer").then(r => r.json()).then(d => appendAmy(d.text));
 
 // Focus input on load
 input.focus();
