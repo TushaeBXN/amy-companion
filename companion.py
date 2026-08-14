@@ -27,7 +27,7 @@ import learnings as _learnings
 _session_learnings: str = ""
 
 MODEL = os.environ.get("AMY_MODEL", "amy-hermes")         # tool-calling engine (Llama 3 8B)
-VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "amy")  # vision engine (gemma4:e2b multimodal)
+VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "gemma4:e2b")  # vision engine — use base, not persona model
 CODE_MODEL = os.environ.get("AMY_CODE_MODEL", "deepseek-coder:6.7b")  # code generation
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
 HISTORY_WINDOW = 16     # keep last N messages (user+assistant) to prevent context bloat
@@ -97,6 +97,19 @@ def _is_code_request(text: str) -> bool:
     return bool(_CODE_RE.search(text))
 
 
+def _drop_images(msgs):
+    """Strip image data from a list of messages — handles both dicts and Pydantic Message objects."""
+    result = []
+    for m in msgs:
+        if hasattr(m, "model_dump"):
+            d = m.model_dump()
+        else:
+            d = dict(m)
+        d.pop("images", None)
+        result.append(d)
+    return result
+
+
 def build_context(mem, user_text, amy_state=None, absence=None,
                   pending_thoughts=None):
     """System turn = persona + her self-layer (L0/L1) + state + recalled memories."""
@@ -147,10 +160,9 @@ def run_turn(history, mem, image=None, amy_state=None,
         print(f"  [vision] image attached ({len(b64)//1024}KB b64)")
 
     # Strip images from history before any text-model call — amy-hermes is text-only
-    _text_history = [{k: v for k, v in m.items() if k != "images"} for m in history]
     messages = build_context(mem, user_msg["content"], amy_state,
                              absence=absence,
-                             pending_thoughts=pending_thoughts) + _text_history
+                             pending_thoughts=pending_thoughts) + _drop_images(history)
 
     # Vision: the persona system prompt overrides image processing on small models.
     # Step 1 — stripped call: just describe the image with no persona overhead.
@@ -216,10 +228,7 @@ def run_turn(history, mem, image=None, amy_state=None,
                 )
                 clean_user = user_msg.copy()
                 clean_user.pop("images", None)
-                # Strip images from all prior history — amy-hermes is text-only
-                safe_history = [{k: v for k, v in m.items() if k != "images"}
-                                for m in history[:-1]]
-                amy_messages = sys_msgs + safe_history + [clean_user]
+                amy_messages = sys_msgs + _drop_images(history[:-1]) + [clean_user]
                 resp = ollama.chat(model=MODEL, messages=amy_messages,
                                    tools=tools.TOOLS, keep_alive="30m",
                                    options={"num_ctx": CTX_WINDOW})
@@ -328,8 +337,7 @@ def _spontaneous_thought(history, mem, amy_state):
               "\n\n[Internal state]\n" + amy_state.state_summary() +
               f"\n\n[Instruction — do this NOW]\n{checkin_prompt}")
 
-    safe = [{k: v for k, v in m.items() if k != "images"} for m in history[-6:]]
-    messages = [{"role": "system", "content": system}] + safe
+    messages = [{"role": "system", "content": system}] + _drop_images(history[-6:])
 
     try:
         resp = ollama.chat(model=MODEL, messages=messages, keep_alive="30m",
