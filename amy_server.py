@@ -221,7 +221,7 @@ async def knowledge():
     ).fetchall()
     db.close()
     return JSONResponse({"sources": [
-        {"label": r[0], "chunks": r[1], "ingested": r[2][:16]} for r in rows
+        {"label": r[0], "chunks": r[1], "ingested": (r[2] or "")[:16]} for r in rows
     ]})
 
 
