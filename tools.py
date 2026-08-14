@@ -63,7 +63,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "wait_and_speak",
-            "description": "Wait a specific number of seconds, then say something. Use this when asked to do something after a delay — e.g. 'clear your throat at 30 seconds', 'check in after a minute'. Never fake a wait by just replying instantly.",
+            "description": "Set a timed reminder — wait N seconds, then say something. Use ONLY when asked to do something after a specific delay (e.g. 'check in after a minute', 'remind me in 30 seconds'). Do NOT use to implement waiting in your own workflow, do NOT call it twice for the same delay, and do NOT narrate that you are waiting in your text reply — just confirm the timer is set and stop.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -448,6 +448,9 @@ TOOLS = [
     },
 ]
 
+# Active timer dedup — tracks delay values (seconds) currently counting down
+_active_timers: set = set()
+
 # Actions allowed to touch real hardware. Everything else is display-only.
 _HARDWARE_WHITELIST = {"hardware_neck"}
 
@@ -476,15 +479,21 @@ def dispatch(name, args, memory=None):
         if not message:
             return "need a message"
         seconds = max(1, min(seconds, 300))  # cap at 5 minutes
+        # Dedup: skip if a timer for the same delay is already running
+        if int(seconds) in _active_timers:
+            return f"Timer for {int(seconds)}s already set."
+        _active_timers.add(int(seconds))
         print(f"  [timer] will speak in {int(seconds)}s: \"{message[:40]}...\""
               if len(message) > 40 else f"  [timer] will speak in {int(seconds)}s: \"{message}\"")
         import voice as _voice
+        _secs_int = int(seconds)
         def _delayed():
             time.sleep(seconds)
+            _active_timers.discard(_secs_int)
             print(f"\nAmy: {message}")
             _voice.speak(message)
         threading.Thread(target=_delayed, daemon=True).start()
-        return f"Okay, I'll do that in {int(seconds)} seconds."
+        return f"Timer set for {_secs_int}s."
 
     if name == "remember_fact":
         fact = args.get("fact", "").strip()
