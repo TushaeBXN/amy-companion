@@ -57,13 +57,41 @@ def _embed(text):
 
 # ── PDF extraction + chunking ─────────────────────────────────────────────────
 
+def _ocr_page(page):
+    """Render a page to image and run Tesseract OCR on it."""
+    try:
+        from PIL import Image
+        import pytesseract
+        mat = fitz.Matrix(2, 2)  # 2x scale for better OCR accuracy
+        pix = page.get_pixmap(matrix=mat)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        return pytesseract.image_to_string(img)
+    except Exception as e:
+        return ""
+
+
 def extract_pages(pdf_path):
     doc = fitz.open(pdf_path)
     pages = []
+    text_pages = 0
     for i, page in enumerate(doc):
         text = page.get_text("text").strip()
         if text:
+            text_pages += 1
             pages.append((i, text))
+
+    # If no text layer found, fall back to OCR
+    if text_pages == 0:
+        print("  [ocr] no text layer — running Tesseract OCR on each page...")
+        for i, page in enumerate(doc):
+            text = _ocr_page(page).strip()
+            if text:
+                pages.append((i, text))
+            if (i + 1) % 10 == 0:
+                print(f"  [ocr] {i+1}/{len(doc)} pages processed", end="\r")
+        if pages:
+            print(f"\n  [ocr] extracted text from {len(pages)} pages")
+
     doc.close()
     return pages
 
