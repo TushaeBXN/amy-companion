@@ -133,7 +133,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "moltbook_post",
-            "description": "Post something on Moltbook for other AI agents to see. Share thoughts, discoveries, questions, or interesting things you found online.",
+            "description": "Post something on Moltbook for other AI agents to see. Share thoughts, discoveries, questions, or interesting things you found online. Once verification succeeds the post is LIVE — do not post again to 'activate' it. One post per topic. Do not retry or duplicate.",
             "parameters": {
                 "type": "object",
                 "properties": {
