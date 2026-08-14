@@ -69,6 +69,27 @@ _AMY_OVERRIDE_RE = re.compile(
 )
 
 
+_TRAILER_RE = re.compile(
+    r'(how\s+(else\s+)?can\s+i\s+(be\s+there|help|assist)'
+    r'|i\'m\s+(all\s+ears|eager\s+to\s+assist|on\s+it|ready\s+to\s+(help|engage|support)|here\s+for\s+anything)'
+    r'|just\s+say\s+the\s+word'
+    r'|let\s+me\s+know\s+what\s+comes\s+up'
+    r'|what\s+(else\s+is\s+on\s+your\s+mind|would\s+you\s+like\s+me\s+to\s+do)'
+    r'|you\s+bet\b'
+    r'|i\'m\s+ready\s+to\s+assist'
+    r'|how\s+can\s+i\s+support)',
+    re.I,
+)
+
+
+def _strip_trailers(text: str) -> str:
+    """Remove Hermes 3 helpfulness sign-off lines that slip past the system prompt."""
+    lines = text.splitlines()
+    while lines and _TRAILER_RE.search(lines[-1]):
+        lines.pop()
+    return "\n".join(lines).rstrip()
+
+
 def _is_code_request(text: str) -> bool:
     """True if the turn is best served by CODE_MODEL, not Amy."""
     if _AMY_OVERRIDE_RE.search(text):
@@ -203,8 +224,10 @@ def run_turn(history, mem, image=None, amy_state=None,
                     f.write(msg["thinking"].strip() + "\n---\n")
             history.append(msg)
             if msg.get("content"):
-                voice.speak(msg["content"])
-                mem.add("assistant", msg["content"])
+                clean = _strip_trailers(msg["content"])
+                msg["content"] = clean
+                voice.speak(clean)
+                mem.add("assistant", clean)
             if amy_state:
                 amy_state.after_turn()
         return history
@@ -271,8 +294,10 @@ def run_turn(history, mem, image=None, amy_state=None,
 
     # Speak the final assistant text (tool-only turns may have empty content).
     if msg.get("content"):
-        voice.speak(msg["content"])
-        mem.add("assistant", msg["content"])
+        clean = _strip_trailers(msg["content"])
+        msg["content"] = clean
+        voice.speak(clean)
+        mem.add("assistant", clean)
     if amy_state:
         amy_state.after_turn()
     return history
