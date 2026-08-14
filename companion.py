@@ -74,10 +74,23 @@ _TRAILER_RE = re.compile(
     r'|i\'m\s+(all\s+ears|eager\s+to\s+assist|on\s+it|ready\s+to\s+(help|engage|support)|here\s+for\s+anything)'
     r'|just\s+say\s+the\s+word'
     r'|let\s+me\s+know\s+what\s+comes\s+up'
+    r'|let\s+me\s+know\s+whenever\s+you\'?re?\s+ready'
     r'|what\s+(else\s+is\s+on\s+your\s+mind|would\s+you\s+like\s+me\s+to\s+do)'
     r'|you\s+bet\b'
     r'|i\'m\s+ready\s+to\s+assist'
-    r'|how\s+can\s+i\s+support)',
+    r'|how\s+can\s+i\s+support'
+    r'|i\s+hope\s+the\s+rest\s+of\s+your\s+day'
+    r'|i\s+hope\s+your\s+day'
+    r'|have\s+a\s+(great|good|wonderful|nice)\s+(day|evening|night|week)'
+    r'|i\s+enjoy\s+(our\s+)?(chats?|conversations?|talking)'
+    r'|i\s+enjoyed\s+(our\s+)?(chat|conversation)'
+    r'|i\s+appreciate\s+you\s+sharing'
+    r'|i\s+completely\s+understand\s+if'
+    r'|if\s+you\s+(want|would\s+like|d\s+like)\s+to\s+(continue|explore|delve|dive)'
+    r'|i\'m\s+here\s+and\s+happy\s+to\s+engage'
+    r'|anytime\s+you\s+(want|need|feel)'
+    r'|take\s+(good\s+)?care'
+    r'|until\s+next\s+time)',
     re.I,
 )
 
@@ -85,8 +98,17 @@ _TRAILER_RE = re.compile(
 def _strip_trailers(text: str) -> str:
     """Remove Hermes 3 helpfulness sign-off lines that slip past the system prompt."""
     lines = text.splitlines()
+    # Strip from the end — keep removing as long as the last line is a filler
     while lines and _TRAILER_RE.search(lines[-1]):
         lines.pop()
+    # Also purge filler lines from the last 6 positions (catches multi-line sign-offs)
+    if len(lines) > 2:
+        clean = []
+        tail_start = max(0, len(lines) - 6)
+        for i, line in enumerate(lines):
+            if i < tail_start or not _TRAILER_RE.search(line):
+                clean.append(line)
+        lines = clean
     return "\n".join(lines).rstrip()
 
 
