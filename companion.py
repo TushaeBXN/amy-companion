@@ -214,7 +214,10 @@ def run_turn(history, mem, image=None, amy_state=None,
                 )
                 clean_user = user_msg.copy()
                 clean_user.pop("images", None)
-                amy_messages = sys_msgs + history[:-1] + [clean_user]
+                # Strip images from all prior history — amy-hermes is text-only
+                safe_history = [{k: v for k, v in m.items() if k != "images"}
+                                for m in history[:-1]]
+                amy_messages = sys_msgs + safe_history + [clean_user]
                 resp = ollama.chat(model=MODEL, messages=amy_messages,
                                    tools=tools.TOOLS, keep_alive="30m",
                                    options={"num_ctx": CTX_WINDOW})
@@ -323,12 +326,13 @@ def _spontaneous_thought(history, mem, amy_state):
               "\n\n[Internal state]\n" + amy_state.state_summary() +
               f"\n\n[Instruction — do this NOW]\n{checkin_prompt}")
 
-    messages = [{"role": "system", "content": system}] + history[-6:]
+    safe = [{k: v for k, v in m.items() if k != "images"} for m in history[-6:]]
+    messages = [{"role": "system", "content": system}] + safe
 
     try:
         resp = ollama.chat(model=MODEL, messages=messages, keep_alive="30m",
                            options={"num_ctx": CTX_WINDOW, "num_predict": 80})
-        text = resp["message"].get("content", "").strip()
+        text = _strip_trailers(resp["message"].get("content", "").strip())
         if text and re.sub(r'[^\w]', '', text):
             voice.speak(text, emotion=mood)
             mem.add("assistant", text)
