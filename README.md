@@ -1,7 +1,7 @@
 <div align="center">
   <img src="amy_banner.jpg" alt="AMY" width="720">
   <br><br>
-  <img src="amyglitch.png" alt="Amy" width="240" style="border-radius:12px">
+<img width="1026" height="1024" alt="Gemini_Generated_Image_v1lgi3v1lgi3v1lg" src="https://github.com/user-attachments/assets/f2531180-6af1-4e89-b17f-674ca120978a" />
 
   ### a local AI companion
 </div>
