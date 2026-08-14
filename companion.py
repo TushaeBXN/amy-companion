@@ -146,9 +146,11 @@ def run_turn(history, mem, image=None, amy_state=None,
         user_msg["images"] = [b64]
         print(f"  [vision] image attached ({len(b64)//1024}KB b64)")
 
+    # Strip images from history before any text-model call — amy-hermes is text-only
+    _text_history = [{k: v for k, v in m.items() if k != "images"} for m in history]
     messages = build_context(mem, user_msg["content"], amy_state,
                              absence=absence,
-                             pending_thoughts=pending_thoughts) + history
+                             pending_thoughts=pending_thoughts) + _text_history
 
     # Vision: the persona system prompt overrides image processing on small models.
     # Step 1 — stripped call: just describe the image with no persona overhead.
