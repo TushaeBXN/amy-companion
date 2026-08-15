@@ -14,7 +14,7 @@ HERE = os.path.dirname(__file__)
 LOG_PATH = os.path.join(HERE, "amy_thoughts.log")
 
 # How long to wait before generating a thought (seconds)
-THOUGHT_INTERVAL = 90
+THOUGHT_INTERVAL = 300
 # Max thoughts to hold before the human returns
 MAX_BUFFER = 6
 # Every N thought cycles, Amy executes real work instead of just thinking
