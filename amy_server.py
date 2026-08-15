@@ -845,7 +845,7 @@ async function sendMsg() {
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
+      const lines = buffer.split("\\n");
       buffer = lines.pop();   // keep any incomplete line
 
       for (const line of lines) {

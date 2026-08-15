@@ -201,7 +201,7 @@ def run_turn(history, mem, image=None, amy_state=None,
              "images": [b64]}
         ]
         vision_resp = ollama.chat(model=VISION_MODEL, messages=vision_messages,
-                                  keep_alive="1m")
+                                  keep_alive="5m")
         description = vision_resp["message"].get("content", "").strip()
         print(f"  [vision] description: {description[:120]}...")
 
@@ -222,7 +222,7 @@ def run_turn(history, mem, image=None, amy_state=None,
                      "images": [_b64_image(SELF_PORTRAIT)]}
                 ]
                 self_resp = ollama.chat(model=VISION_MODEL, messages=self_vision,
-                                       keep_alive="1m")
+                                       keep_alive="5m")
                 amy_desc = self_resp["message"].get("content", "").strip()
 
                 compare_messages = [
@@ -237,7 +237,7 @@ def run_turn(history, mem, image=None, amy_state=None,
                         f"Compare the two appearances honestly and specifically."}
                 ]
                 resp = ollama.chat(model=MODEL, messages=compare_messages,
-                                   keep_alive="1m", options={"num_ctx": CTX_WINDOW})
+                                   keep_alive="5m", options={"num_ctx": CTX_WINDOW})
             else:
                 # Non-comparison: inject description into system context normally.
                 sys_msgs = build_context(
@@ -252,7 +252,7 @@ def run_turn(history, mem, image=None, amy_state=None,
                 clean_user.pop("images", None)
                 amy_messages = sys_msgs + _drop_images(history[:-1]) + [clean_user]
                 resp = ollama.chat(model=MODEL, messages=amy_messages,
-                                   tools=tools.TOOLS, keep_alive="1m",
+                                   tools=tools.TOOLS, keep_alive="5m",
                                    options={"num_ctx": CTX_WINDOW})
             msg = resp["message"]
             if msg.get("thinking"):
@@ -293,7 +293,7 @@ def run_turn(history, mem, image=None, amy_state=None,
 
     for _ in range(MAX_TOOL_HOPS):
         resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
-                           keep_alive="1m", options={"num_ctx": CTX_WINDOW})
+                           keep_alive="5m", options={"num_ctx": CTX_WINDOW})
         msg = resp["message"]
         # Ava's chain-of-thought stays private: log it, never speak/print it.
         if msg.get("thinking"):
@@ -384,7 +384,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
             {"role": "user", "content": user_msg["content"], "images": [b64]},
         ]
         vision_resp = ollama.chat(model=VISION_MODEL, messages=vision_messages,
-                                  keep_alive="1m")
+                                  keep_alive="5m")
         description = vision_resp["message"].get("content", "").strip()
 
         content = ""
@@ -400,7 +400,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
                      "images": [_b64_image(SELF_PORTRAIT)]},
                 ]
                 amy_desc = ollama.chat(model=VISION_MODEL, messages=self_vision,
-                                       keep_alive="1m")["message"].get("content", "").strip()
+                                       keep_alive="5m")["message"].get("content", "").strip()
                 compare_messages = [
                     {"role": "system", "content":
                         "You are Amy, an AI companion. You have a visual presentation "
@@ -413,7 +413,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
                         f"Compare the two appearances honestly and specifically."},
                 ]
                 resp = ollama.chat(model=MODEL, messages=compare_messages,
-                                   keep_alive="1m", options={"num_ctx": CTX_WINDOW})
+                                   keep_alive="5m", options={"num_ctx": CTX_WINDOW})
                 content = resp["message"].get("content", "")
             else:
                 sys_msgs = build_context(mem, user_msg["content"], amy_state,
@@ -426,7 +426,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
                 clean_user.pop("images", None)
                 amy_messages = sys_msgs + _drop_images(history[:-1]) + [clean_user]
                 resp = ollama.chat(model=MODEL, messages=amy_messages, tools=tools.TOOLS,
-                                   keep_alive="1m", options={"num_ctx": CTX_WINDOW})
+                                   keep_alive="5m", options={"num_ctx": CTX_WINDOW})
                 content = resp["message"].get("content", "")
 
             if content:
@@ -475,7 +475,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
     for _ in range(MAX_TOOL_HOPS):
         with _log.Timer("model_call", model=MODEL):
             resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
-                               keep_alive="1m", options={"num_ctx": CTX_WINDOW})
+                               keep_alive="5m", options={"num_ctx": CTX_WINDOW})
         msg = resp["message"]
         if msg.get("thinking"):
             with open("amy_thoughts.log", "a") as f:
@@ -547,7 +547,7 @@ def _spontaneous_thought(history, mem, amy_state):
     messages = [{"role": "system", "content": system}] + _drop_images(history[-6:])
 
     try:
-        resp = ollama.chat(model=MODEL, messages=messages, keep_alive="1m",
+        resp = ollama.chat(model=MODEL, messages=messages, keep_alive="5m",
                            options={"num_ctx": CTX_WINDOW, "num_predict": 80})
         text = _strip_trailers(resp["message"].get("content", "").strip())
         if text and re.sub(r'[^\w]', '', text):
