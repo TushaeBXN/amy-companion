@@ -144,9 +144,13 @@ def build_context(mem, user_text, amy_state=None, absence=None,
     # Surface buffered thoughts from while the human was away
     if pending_thoughts:
         thought_texts = [t for _, t in pending_thoughts]
-        system += ("\n\n[Thoughts you had while they were away — these are yours, "
-                   "share them naturally if it fits]\n- "
-                   + "\n- ".join(thought_texts))
+        system += ("\n\n[Thoughts you had while they were away]\n- "
+                   + "\n- ".join(thought_texts)
+                   + "\n\nIf you share a thought, say it once, directly — "
+                   "do NOT narrate that you had a thought, do NOT repeat the content twice, "
+                   "do NOT add 'I was thinking...' or 'I found...' framing. "
+                   "Only assert things you are confident are true. "
+                   "Never mention a specific URL, video title, or source you did not actually retrieve.")
 
     # Time estimation for absence
     if absence:
