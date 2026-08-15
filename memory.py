@@ -120,7 +120,10 @@ class Memory:
     # --- L2/L3: episodic / semantic recall --------------------------------
     def _embed(self, text):
         r = ollama.embed(model=EMBED_MODEL, input=text)
-        return np.array(r["embeddings"][0], dtype=np.float32)
+        embeddings = r.get("embeddings") or []
+        if not embeddings:
+            raise RuntimeError(f"embed model returned no embeddings (model={EMBED_MODEL})")
+        return np.array(embeddings[0], dtype=np.float32)
 
     def add(self, role, text):
         emb = self._embed(text)
