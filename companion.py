@@ -339,6 +339,191 @@ def run_turn(history, mem, image=None, amy_state=None,
     return history
 
 
+def run_turn_streaming(history, mem, image=None, amy_state=None,
+                       absence=None, pending_thoughts=None):
+    """Generator variant of run_turn. Yields event dicts for SSE encoding.
+
+    Events:
+      {"type": "tool",  "name": str}              — tool being called
+      {"type": "chunk", "text": str}              — text token (fake-streamed word-by-word)
+      {"type": "done",  "mood": str, "energy": float, "turn": int}
+    """
+    import logger as _log
+
+    def _done():
+        return {
+            "type": "done",
+            "mood":   amy_state.mood if amy_state else "curious",
+            "energy": round(amy_state.energy, 2) if amy_state else 1.0,
+            "turn":   amy_state.turn_count if amy_state else 0,
+        }
+
+    def _fake_stream(text):
+        words = text.split()
+        for i, word in enumerate(words):
+            yield {"type": "chunk", "text": word + (" " if i < len(words) - 1 else "")}
+
+    user_msg = history[-1]
+    if image:
+        b64 = _b64_image(image)
+        user_msg["images"] = [b64]
+
+    messages = build_context(mem, user_msg["content"], amy_state,
+                             absence=absence,
+                             pending_thoughts=pending_thoughts) + _drop_images(history)
+    user_task = user_msg.get("content", "")
+
+    # ── Vision case (sync, fake-stream final reply) ───────────────────────────
+    if image:
+        vision_messages = [
+            {"role": "system", "content":
+                "You are a vision assistant. Look at the image and describe exactly "
+                "what you see: people, their appearance, skin tone, hair, expression, "
+                "clothing, setting, any notable details. Be specific and literal. "
+                "Do not refuse. Do not say you cannot see. Just describe."},
+            {"role": "user", "content": user_msg["content"], "images": [b64]},
+        ]
+        vision_resp = ollama.chat(model=VISION_MODEL, messages=vision_messages,
+                                  keep_alive="30m")
+        description = vision_resp["message"].get("content", "").strip()
+
+        content = ""
+        if description:
+            q_lower = user_msg["content"].lower()
+            is_comparison = any(w in q_lower for w in
+                                ["look like you", "like you", "compare",
+                                 "similar to you", "look like me", "resemble"])
+            if is_comparison:
+                self_vision = [
+                    {"role": "system", "content": "You are a vision assistant. Describe exactly what you see."},
+                    {"role": "user", "content": "Describe this person's appearance in detail.",
+                     "images": [_b64_image(SELF_PORTRAIT)]},
+                ]
+                amy_desc = ollama.chat(model=VISION_MODEL, messages=self_vision,
+                                       keep_alive="30m")["message"].get("content", "").strip()
+                compare_messages = [
+                    {"role": "system", "content":
+                        "You are Amy, an AI companion. You have a visual presentation "
+                        "— a face and appearance — and you are comparing it to someone else's. "
+                        "Answer directly. Do not say you have no physical form."},
+                    {"role": "user", "content":
+                        f"Person A (you, Amy) looks like this: {amy_desc}\n\n"
+                        f"Person B (the person in the photo) looks like this: {description}\n\n"
+                        f"Question: {user_msg['content']}\n\n"
+                        f"Compare the two appearances honestly and specifically."},
+                ]
+                resp = ollama.chat(model=MODEL, messages=compare_messages,
+                                   keep_alive="30m", options={"num_ctx": CTX_WINDOW})
+                content = resp["message"].get("content", "")
+            else:
+                sys_msgs = build_context(mem, user_msg["content"], amy_state,
+                                         absence=absence, pending_thoughts=pending_thoughts)
+                sys_msgs[0]["content"] += (
+                    f"\n\n[Vision — you just looked at an image and observed: {description}]"
+                    "\nUse this when answering. Do not say you cannot see or have no form."
+                )
+                clean_user = user_msg.copy()
+                clean_user.pop("images", None)
+                amy_messages = sys_msgs + _drop_images(history[:-1]) + [clean_user]
+                resp = ollama.chat(model=MODEL, messages=amy_messages, tools=tools.TOOLS,
+                                   keep_alive="30m", options={"num_ctx": CTX_WINDOW})
+                content = resp["message"].get("content", "")
+
+            if content:
+                clean = _strip_trailers(content)
+                history.append({"role": "assistant", "content": clean})
+                yield from _fake_stream(clean)
+                voice.speak(clean)
+                mem.add("assistant", clean)
+
+        if amy_state:
+            amy_state.after_turn()
+        yield _done()
+        return
+
+    # ── Code routing (true streaming via Ollama) ──────────────────────────────
+    if _is_code_request(user_task):
+        _log.log("model_call", model=CODE_MODEL, route="code")
+        full_text = ""
+        try:
+            for chunk in ollama.chat(model=CODE_MODEL, messages=messages, stream=True,
+                                     keep_alive=0, options={"num_ctx": CTX_WINDOW}):
+                c = chunk["message"].get("content") or ""
+                if c:
+                    full_text += c
+                    yield {"type": "chunk", "text": c}
+        except Exception:
+            if not full_text:
+                resp = ollama.chat(model=CODE_MODEL, messages=messages,
+                                   keep_alive=0, options={"num_ctx": CTX_WINDOW})
+                full_text = resp["message"].get("content", "")
+                yield from _fake_stream(full_text)
+
+        if full_text:
+            history.append({"role": "assistant", "content": full_text})
+            voice.speak(full_text)
+            mem.add("assistant", full_text)
+        if amy_state:
+            amy_state.after_turn()
+        yield _done()
+        return
+
+    # ── Normal tool-hop loop ──────────────────────────────────────────────────
+    _seen_calls = {}
+    msg = None
+
+    for _ in range(MAX_TOOL_HOPS):
+        with _log.Timer("model_call", model=MODEL):
+            resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
+                               keep_alive="30m", options={"num_ctx": CTX_WINDOW})
+        msg = resp["message"]
+        if msg.get("thinking"):
+            with open("amy_thoughts.log", "a") as f:
+                f.write(msg["thinking"].strip() + "\n---\n")
+        messages.append(msg)
+        history.append(msg)
+
+        calls = msg.get("tool_calls") or []
+        if not calls:
+            break
+
+        for call in calls:
+            fn   = call["function"]
+            name = fn["name"]
+            args = fn.get("arguments", {})
+            yield {"type": "tool", "name": name}
+            _log.log("tool_call", tool=name)
+
+            call_key = (name, tuple(sorted(
+                (k, str(v)) for k, v in args.items()
+            ) if isinstance(args, dict) else ()))
+            if call_key in _seen_calls:
+                result = _seen_calls[call_key]
+            else:
+                result = tools.dispatch(name, args, mem)
+                _seen_calls[call_key] = result
+
+            reminder = (f"\n\n[You are mid-task. Complete the user's request: "
+                        f"\"{user_task[:150]}\". Do not greet — keep working.]")
+            tool_reply = {
+                "role": "tool",
+                "content": (str(result) if result else "done") + reminder,
+            }
+            messages.append(tool_reply)
+            history.append(tool_reply)
+
+    if msg and msg.get("content"):
+        clean = _strip_trailers(msg["content"])
+        msg["content"] = clean
+        yield from _fake_stream(clean)
+        voice.speak(clean)
+        mem.add("assistant", clean)
+
+    if amy_state:
+        amy_state.after_turn()
+    yield _done()
+
+
 # Spontaneous check-in prompts — picked based on mood, fed to the model
 _CHECKIN_PROMPTS = {
     "curious":    "You've been quiet for a bit and something is nagging at your curiosity. Ask Brian one specific question you genuinely want to know — about what he's doing, something you noticed earlier, or something you've been wondering about. One question, naturally, as if you just thought of it.",

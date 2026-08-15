@@ -6,13 +6,15 @@ import asyncio
 import base64
 import json
 import os
+import queue
 import random
 import sys
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, Request, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
@@ -23,7 +25,7 @@ sys.path.insert(0, HERE)
 
 # ── companion imports ─────────────────────────────────────────────────────────
 import companion
-from companion import run_turn, start_spontaneous_thread, HISTORY_WINDOW
+from companion import run_turn, run_turn_streaming, start_spontaneous_thread, HISTORY_WINDOW
 from memory import Memory
 from state import InternalState
 from thoughts import ThoughtBuffer
@@ -32,7 +34,7 @@ import vision
 
 # ── global state (mirrors terminal companion) ─────────────────────────────────
 _mem = Memory()
-_amy_state = InternalState()
+_amy_state = InternalState.restore()
 _thought_buffer = ThoughtBuffer()
 _lock = asyncio.Lock()          # serialise concurrent requests
 _executor = ThreadPoolExecutor(max_workers=1)
@@ -143,6 +145,79 @@ async def chat(req: ChatRequest):
         "energy": round(_amy_state.energy, 2),
         "turn": _amy_state.turn_count,
     })
+
+
+@app.post("/chat/stream")
+async def chat_stream(req: ChatRequest):
+    """SSE streaming variant of /chat. Events: tool / chunk / done."""
+    image_path = None
+    if req.image_b64:
+        tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+        tmp.write(base64.b64decode(req.image_b64))
+        tmp.close()
+        image_path = tmp.name
+
+    absence = _amy_state.estimate_absence()
+    pending_thoughts = (
+        _thought_buffer.drain() if _thought_buffer.has_thoughts() else []
+    )
+    _amy_state.touch()
+    _mem.add("user", req.message)
+    _history.append({"role": "user", "content": req.message})
+    _amy_state.busy = True
+
+    event_q: queue.SimpleQueue = queue.SimpleQueue()
+
+    def _worker():
+        try:
+            for event in run_turn_streaming(
+                _history, _mem,
+                image=image_path,
+                amy_state=_amy_state,
+                absence=absence,
+                pending_thoughts=pending_thoughts,
+            ):
+                event_q.put(event)
+        except Exception as exc:
+            event_q.put({"type": "error", "msg": str(exc)})
+        finally:
+            event_q.put(None)  # sentinel
+
+    threading.Thread(target=_worker, daemon=True, name="amy-stream").start()
+
+    async def _generate():
+        loop = asyncio.get_event_loop()
+        try:
+            while True:
+                event = await loop.run_in_executor(None, event_q.get)
+                if event is None:
+                    break
+                yield f"data: {json.dumps(event)}\n\n"
+        finally:
+            _amy_state.busy = False
+            if len(_history) > HISTORY_WINDOW:
+                _history[:] = _history[-HISTORY_WINDOW:]
+            if image_path:
+                try:
+                    os.unlink(image_path)
+                except OSError:
+                    pass
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/thoughts/poll")
+async def thoughts_poll():
+    """Return the oldest pending thought and remove it, or null if none."""
+    item = _thought_buffer.drain_one()
+    if not item:
+        return JSONResponse({"thought": None})
+    ts, text, tag = item
+    return JSONResponse({"thought": text, "tag": tag, "ts": ts})
 
 
 @app.post("/capture")
@@ -726,14 +801,14 @@ function setImage(dataUrl, mime, b64override) {
   document.getElementById("imgPreviewBar").classList.add("visible");
 }
 
-// ── send message ──────────────────────────────────────────────────────────────
+// ── send message (streaming) ──────────────────────────────────────────────────
 async function sendMsg() {
   const text = input.value.trim();
   if (!text && !pendingImage) return;
   if (waiting) return;
 
-  const msg  = text || "(image)";
-  const img  = pendingImage;
+  const msg = text || "(image)";
+  const img = pendingImage;
   pendingImage = null;
   document.getElementById("imgPreviewBar").classList.remove("visible");
   input.value = "";
@@ -743,33 +818,81 @@ async function sendMsg() {
   const thinkingEl = appendThinking();
   setWaiting(true);
 
+  let amyBubble = null;
+  let buffer = "";
+
   try {
     const body = { message: msg };
     if (img) body.image_b64 = img.b64;
 
-    const r = await fetch("/chat", {
+    const r = await fetch("/chat/stream", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify(body),
     });
 
     if (!r.ok) {
-      const err = await r.text();
       thinkingEl.remove();
-      appendAmy("(error: " + err + ")");
+      appendAmy("(error " + r.status + ")");
       return;
     }
 
-    const d = await r.json();
-    thinkingEl.remove();
-    appendAmy(d.reply || "(no reply)");
-    updateState(d.mood, d.energy);
+    const reader  = r.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();   // keep any incomplete line
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        let event;
+        try { event = JSON.parse(line.slice(6)); } catch { continue; }
+
+        if (event.type === "tool") {
+          if (!amyBubble) thinkingEl.remove();
+          appendToolNote(friendlyToolName(event.name));
+        } else if (event.type === "chunk") {
+          if (!amyBubble) {
+            thinkingEl.remove();
+            amyBubble = appendAmyStreaming();
+          }
+          appendChunk(amyBubble, event.text);
+        } else if (event.type === "done") {
+          updateState(event.mood, event.energy);
+        } else if (event.type === "error") {
+          if (!amyBubble) thinkingEl.remove();
+          appendAmy("(error: " + event.msg + ")");
+        }
+      }
+    }
   } catch (err) {
     thinkingEl.remove();
     appendAmy("(connection error — is the server running?)");
   } finally {
     setWaiting(false);
+    if (!amyBubble) thinkingEl.remove();
   }
+}
+
+function friendlyToolName(name) {
+  const map = {
+    web_search:        "searching the web",
+    read_article:      "reading an article",
+    moltbook_post:     "posting to Moltbook",
+    moltbook_check_in: "checking Moltbook",
+    moltbook_engage:   "engaging on Moltbook",
+    moltbook_verify:   "verifying on Moltbook",
+    remember_fact:     "saving to memory",
+    avatar_expression: "updating expression",
+    avatar_gaze:       "adjusting gaze",
+    hardware_neck:     "moving",
+  };
+  return map[name] || name.replace(/_/g, " ");
 }
 
 // ── DOM helpers ───────────────────────────────────────────────────────────────
@@ -818,6 +941,39 @@ function appendAmy(text) {
 
   row.append(av, bub);
   msgs.appendChild(row);
+  scrollDown();
+}
+
+function appendAmyStreaming() {
+  const row = document.createElement("div");
+  row.className = "msg-row amy";
+
+  const av = document.createElement("img");
+  av.className = "msg-avatar";
+  av.src = AVATAR;
+  av.onerror = () => { av.style.display = "none"; };
+
+  const bub = document.createElement("div");
+  bub.className = "bubble";
+  bub._fullText = "";
+
+  row.append(av, bub);
+  msgs.appendChild(row);
+  scrollDown();
+  return bub;
+}
+
+function appendChunk(bubble, text) {
+  bubble._fullText += text;
+  bubble.textContent = bubble._fullText;
+  scrollDown();
+}
+
+function appendToolNote(label) {
+  const el = document.createElement("div");
+  el.className = "tool-note";
+  el.textContent = "↳ " + label + "…";
+  msgs.appendChild(el);
   scrollDown();
 }
 
@@ -875,6 +1031,16 @@ setInterval(async () => {
     if (!waiting) updateState(d.mood, d.energy);
   } catch {}
 }, 30_000);
+
+// ── poll for proactive thoughts every 2 min ───────────────────────────────────
+setInterval(async () => {
+  if (waiting) return;
+  try {
+    const r = await fetch("/thoughts/poll");
+    const d = await r.json();
+    if (d.thought) appendAmy(d.thought);
+  } catch {}
+}, 120_000);
 
 // ── knowledge panel ──────────────────────────────────────────────────────────
 const kpanel   = document.getElementById("knowledgePanel");

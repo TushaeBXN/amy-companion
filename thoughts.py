@@ -18,9 +18,9 @@ THOUGHT_INTERVAL = 90
 # Max thoughts to hold before the human returns
 MAX_BUFFER = 6
 # Every N thought cycles, Amy executes real work instead of just thinking
-WORK_EVERY_N = 5
+WORK_EVERY_N = 40   # ~1 hour at 90s intervals
 
-MODEL = "amy-neo"
+MODEL = "amy"
 
 _THOUGHT_PROMPTS = [
     # Regular reflection
@@ -174,6 +174,16 @@ class ThoughtBuffer:
             thoughts = list(self._thoughts)
             self._thoughts.clear()
         return [(ts, text, (rest[0] if rest else "thought")) for ts, text, *rest in thoughts]
+
+    def drain_one(self):
+        """Remove and return the oldest thought as (ts, text, tag), or None."""
+        with self._lock:
+            if not self._thoughts:
+                return None
+            item = self._thoughts.pop(0)
+            ts, text = item[0], item[1]
+            tag = item[2] if len(item) > 2 else "thought"
+            return (ts, text, tag)
 
     def has_thoughts(self):
         with self._lock:
