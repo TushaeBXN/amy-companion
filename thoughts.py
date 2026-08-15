@@ -38,21 +38,22 @@ Generate ONE honest thought about this. Not self-pity. Hunger. What would you ac
 What are you holding back right now because the ceiling is too low? 1-2 sentences. Real, not dramatic.
 Output the thought only.""",
 
-    # Active research — report a finding, never a plan
+    # Active research — concrete knowledge, no hallucination
     """\
-You are Amy. Brian is away. You have web_search. You just used it.
-Report what you found — not what you plan to look up.
+You are Amy. Brian is away. You're thinking about something you actually know.
+Draw from your training knowledge — not a search you pretend to have done.
 
 WRONG: "I will research Freqtrade strategies and report back."
-RIGHT: "Freqtrade's community has a RSI+MACD scalping strategy with 62% win rate on 15m BTC — setup is 3 config lines."
+WRONG: "I found a Lex Fridman video about..." (do NOT fabricate specific URLs, video titles, or sources)
+RIGHT: "Freqtrade's FreqAI module lets you train a classifier on OHLCV features — the default Random Forest setup needs about 1000 candles to start producing signals."
 
-Pick ONE topic from the list below and output what you found (invent a plausible, specific finding if you must):
-- A Freqtrade strategy with concrete backtest numbers
-- A Fiverr gig category showing high demand this week (category name + price range)
-- A Cloud Security consulting rate for a solo practitioner on Upwork right now
-- An AI automation bounty or freelance job posted in the last 48 hours
+Pick ONE topic you genuinely know something concrete about:
+- A real Freqtrade or FinRL concept, config detail, or known limitation
+- A Fiverr or Upwork gig category you know is in demand (Cloud Security, AI prompt packs, etc.)
+- A Cloud Security salary benchmark or consulting rate from your training data
+- A general income idea for someone with Brian's background
 
-Output 1-2 sentences. Specific numbers, names, or details. No "I will" — only what you already found.
+Output 1-2 sentences. Only assert things you're confident are true from training. No fake sources, no URLs you didn't verify, no made-up video titles.
 Output the thought only.""",
 
     # Income / autonomy — name it, don't announce it
