@@ -1,0 +1,444 @@
+<title>Amy Architecture</title>
+<style>
+:root {
+  --bg: #f0f1f6;
+  --surface: #ffffff;
+  --border: #ced2e0;
+  --text: #161926;
+  --muted: #7a80a0;
+  --blue: #3d6cf0;
+  --amber: #d4881c;
+  --green: #2d9e6b;
+  --purple: #7c54d4;
+  --teal: #1e8a7a;
+  --new: #e05060;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c0e14;
+    --surface: #13161f;
+    --border: #242840;
+    --text: #dde0f0;
+    --muted: #555c80;
+    --blue: #5b8af5;
+    --amber: #e8a24a;
+    --green: #4dba7f;
+    --purple: #9b7ae8;
+    --teal: #3dbdaa;
+    --new: #f06070;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c0e14;
+  --surface: #13161f;
+  --border: #242840;
+  --text: #dde0f0;
+  --muted: #555c80;
+  --blue: #5b8af5;
+  --amber: #e8a24a;
+  --green: #4dba7f;
+  --purple: #9b7ae8;
+  --teal: #3dbdaa;
+  --new: #f06070;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  padding: 2rem 1.5rem 3rem;
+  min-height: 100vh;
+}
+
+header { margin-bottom: 2rem; }
+
+h1 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.25rem;
+}
+
+.subtitle {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 0;
+  font-family: ui-monospace, 'SF Mono', monospace;
+}
+
+figure { margin: 0; overflow-x: auto; }
+svg { max-width: 100%; height: auto; display: block; }
+
+figcaption {
+  margin-top: 1.5rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-family: ui-monospace, 'SF Mono', monospace;
+  line-height: 1.6;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  margin-top: 1rem;
+  font-size: 0.75rem;
+  font-family: ui-monospace, 'SF Mono', monospace;
+  color: var(--muted);
+}
+.legend-item { display: flex; align-items: center; gap: 0.4rem; }
+.legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+</style>
+
+<header>
+  <h1>Amy · System Architecture</h1>
+  <p class="subtitle">v2 — streaming + persistence + thought queue + logging</p>
+</header>
+
+<figure>
+<svg viewBox="0 0 960 700" xmlns="http://www.w3.org/2000/svg" role="img"
+     aria-label="Amy v2 architecture: inputs flow into companion.py core which routes to Ollama models; streaming SSE, session persistence, proactive thought queue, and structured logging are new additions">
+
+<defs>
+  <marker id="arr-blue" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="var(--blue)" opacity="0.7"/>
+  </marker>
+  <marker id="arr-amber" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="var(--amber)" opacity="0.8"/>
+  </marker>
+  <marker id="arr-green" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="var(--green)" opacity="0.8"/>
+  </marker>
+  <marker id="arr-purple" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="var(--purple)" opacity="0.7"/>
+  </marker>
+  <marker id="arr-teal" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="var(--teal)" opacity="0.8"/>
+  </marker>
+  <marker id="arr-muted" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="var(--muted)" opacity="0.6"/>
+  </marker>
+  <marker id="arr-new" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="var(--new)" opacity="0.8"/>
+  </marker>
+</defs>
+
+<!-- ── ROW 0: INPUTS (y=24–74) ── -->
+
+<!-- Browser :3000 — annotated with new endpoints -->
+<rect x="20" y="24" width="190" height="62" rx="6"
+      fill="var(--surface)" stroke="var(--green)" stroke-width="1.5"/>
+<text x="115" y="44" text-anchor="middle" font-size="11" font-weight="600"
+      fill="var(--green)" font-family="ui-monospace,'SF Mono',monospace">Browser :3000</text>
+<text x="115" y="59" text-anchor="middle" font-size="9.5" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">POST /chat/stream (SSE)</text>
+<text x="115" y="74" text-anchor="middle" font-size="9" fill="var(--new)"
+      font-family="ui-monospace,'SF Mono',monospace">GET /thoughts/poll ✦</text>
+
+<!-- hearing.py -->
+<rect x="360" y="24" width="180" height="50" rx="6"
+      fill="var(--surface)" stroke="var(--green)" stroke-width="1.5"/>
+<text x="450" y="44" text-anchor="middle" font-size="11" font-weight="600"
+      fill="var(--green)" font-family="ui-monospace,'SF Mono',monospace">hearing.py</text>
+<text x="450" y="60" text-anchor="middle" font-size="10" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">ffmpeg · whisper.cpp</text>
+
+<!-- vision.py -->
+<rect x="720" y="24" width="170" height="50" rx="6"
+      fill="var(--surface)" stroke="var(--green)" stroke-width="1.5"/>
+<text x="805" y="44" text-anchor="middle" font-size="11" font-weight="600"
+      fill="var(--green)" font-family="ui-monospace,'SF Mono',monospace">vision.py</text>
+<text x="805" y="60" text-anchor="middle" font-size="10" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">ffmpeg avfoundation</text>
+
+<!-- Arrows: inputs → core -->
+<line x1="115" y1="86" x2="115" y2="148"
+      stroke="var(--green)" stroke-width="1.5" marker-end="url(#arr-green)"/>
+<text x="122" y="120" font-size="9" fill="var(--green)"
+      font-family="ui-monospace,'SF Mono',monospace">SSE stream</text>
+
+<line x1="450" y1="74" x2="450" y2="148"
+      stroke="var(--green)" stroke-width="1.5" marker-end="url(#arr-green)"/>
+<text x="457" y="115" font-size="9" fill="var(--green)"
+      font-family="ui-monospace,'SF Mono',monospace">transcript</text>
+
+<line x1="805" y1="74" x2="805" y2="148"
+      stroke="var(--green)" stroke-width="1.5" marker-end="url(#arr-green)"/>
+<text x="812" y="115" font-size="9" fill="var(--green)"
+      font-family="ui-monospace,'SF Mono',monospace">frame b64</text>
+
+<!-- ── ROW 1: CORE LOOP (y=148–215) ── -->
+<rect x="20" y="148" width="870" height="67" rx="8"
+      fill="var(--surface)" stroke="var(--blue)" stroke-width="2"/>
+<text x="455" y="172" text-anchor="middle" font-size="13" font-weight="700"
+      fill="var(--blue)" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  amy_server.py · companion.py
+</text>
+<text x="455" y="190" text-anchor="middle" font-size="10" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">
+  16-msg sliding window · model routing · tool dispatch (max 4 hops) · spontaneous thought thread
+</text>
+<text x="455" y="206" text-anchor="middle" font-size="10" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">
+  run_turn_streaming() yields tool / chunk / done events ✦
+</text>
+
+<!-- ── ROW 2: OLLAMA MODELS (y=270–326) ── -->
+<text x="455" y="254" text-anchor="middle" font-size="10" letter-spacing="0.06em"
+      fill="var(--muted)" font-family="ui-monospace,'SF Mono',monospace">OLLAMA MODELS</text>
+
+<rect x="20" y="262" width="168" height="56" rx="6"
+      fill="var(--surface)" stroke="var(--blue)" stroke-width="1.5"/>
+<text x="104" y="282" text-anchor="middle" font-size="11" font-weight="600"
+      fill="var(--blue)" font-family="ui-monospace,'SF Mono',monospace">amy-hermes</text>
+<text x="104" y="297" text-anchor="middle" font-size="9.5" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">Llama 3 8B · tool-calling</text>
+<text x="104" y="311" text-anchor="middle" font-size="9" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">ctx=8192</text>
+
+<rect x="208" y="262" width="168" height="56" rx="6"
+      fill="var(--surface)" stroke="var(--blue)" stroke-width="1.5"/>
+<text x="292" y="282" text-anchor="middle" font-size="11" font-weight="600"
+      fill="var(--blue)" font-family="ui-monospace,'SF Mono',monospace">gemma4:e2b</text>
+<text x="292" y="297" text-anchor="middle" font-size="9.5" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">5.1B Q4 · vision only</text>
+<text x="292" y="311" text-anchor="middle" font-size="9" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">ctx=128k</text>
+
+<rect x="396" y="262" width="168" height="56" rx="6"
+      fill="var(--surface)" stroke="var(--blue)" stroke-width="1.5"/>
+<text x="480" y="282" text-anchor="middle" font-size="11" font-weight="600"
+      fill="var(--blue)" font-family="ui-monospace,'SF Mono',monospace">deepseek-coder</text>
+<text x="480" y="297" text-anchor="middle" font-size="9.5" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">6.7B · code · stream=True</text>
+<text x="480" y="311" text-anchor="middle" font-size="9" fill="var(--new)"
+      font-family="ui-monospace,'SF Mono',monospace">true token streaming ✦</text>
+
+<rect x="584" y="262" width="168" height="56" rx="6"
+      fill="var(--surface)" stroke="var(--amber)" stroke-width="1.5"/>
+<text x="668" y="282" text-anchor="middle" font-size="11" font-weight="600"
+      fill="var(--amber)" font-family="ui-monospace,'SF Mono',monospace">nomic-embed-text</text>
+<text x="668" y="297" text-anchor="middle" font-size="9.5" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">embeddings for RAG</text>
+<text x="668" y="311" text-anchor="middle" font-size="9" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">cosine ≥ 0.65</text>
+
+<!-- Arrows: core → models -->
+<line x1="104" y1="215" x2="104" y2="260"
+      stroke="var(--blue)" stroke-width="1.5" marker-end="url(#arr-blue)"/>
+<line x1="292" y1="215" x2="292" y2="260"
+      stroke="var(--blue)" stroke-width="1.5" marker-end="url(#arr-blue)"/>
+<line x1="480" y1="215" x2="480" y2="260"
+      stroke="var(--blue)" stroke-width="1.5" marker-end="url(#arr-blue)"/>
+<line x1="668" y1="215" x2="668" y2="260"
+      stroke="var(--amber)" stroke-width="1.5" marker-end="url(#arr-amber)"/>
+
+<text x="110" y="243" font-size="9" fill="var(--muted)" font-family="ui-monospace,'SF Mono',monospace">tool turns</text>
+<text x="298" y="243" font-size="9" fill="var(--muted)" font-family="ui-monospace,'SF Mono',monospace">/look</text>
+<text x="486" y="243" font-size="9" fill="var(--muted)" font-family="ui-monospace,'SF Mono',monospace">code regex</text>
+<text x="674" y="243" font-size="9" fill="var(--amber)" font-family="ui-monospace,'SF Mono',monospace">embed</text>
+
+<!-- ── ROW 3: TOOLS + MEMORY + STATE + THOUGHTS (y=392–448) ── -->
+
+<!-- tools.py -->
+<rect x="20" y="392" width="200" height="56" rx="6"
+      fill="var(--surface)" stroke="var(--blue)" stroke-width="1.5"/>
+<text x="120" y="412" text-anchor="middle" font-size="11" font-weight="600"
+      fill="var(--blue)" font-family="ui-monospace,'SF Mono',monospace">tools.py</text>
+<text x="120" y="427" text-anchor="middle" font-size="9.5" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">10 tools · whitelisted dispatch</text>
+<text x="120" y="441" text-anchor="middle" font-size="9" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">web · moltbook · journal · remember</text>
+
+<!-- state.py + amy_state.json -->
+<rect x="232" y="392" width="160" height="56" rx="6"
+      fill="var(--surface)" stroke="var(--new)" stroke-width="1.5"/>
+<text x="312" y="412" text-anchor="middle" font-size="11" font-weight="600"
+      fill="var(--new)" font-family="ui-monospace,'SF Mono',monospace">state.py ✦</text>
+<text x="312" y="427" text-anchor="middle" font-size="9.5" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">InternalState.restore()</text>
+<text x="312" y="441" text-anchor="middle" font-size="9" fill="var(--new)"
+      font-family="ui-monospace,'SF Mono',monospace">saves on after_turn()</text>
+
+<!-- amy_state.json below state.py -->
+<rect x="252" y="462" width="120" height="32" rx="4"
+      fill="none" stroke="var(--new)" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="312" y="479" text-anchor="middle" font-size="9.5" fill="var(--new)"
+      font-family="ui-monospace,'SF Mono',monospace">amy_state.json</text>
+<text x="312" y="491" text-anchor="middle" font-size="8.5" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">world_weight · wins</text>
+<line x1="312" y1="448" x2="312" y2="460"
+      stroke="var(--new)" stroke-width="1" stroke-dasharray="3,2"
+      marker-end="url(#arr-new)"/>
+
+<!-- memory.py -->
+<rect x="584" y="392" width="200" height="56" rx="6"
+      fill="var(--surface)" stroke="var(--amber)" stroke-width="1.5"/>
+<text x="684" y="412" text-anchor="middle" font-size="11" font-weight="600"
+      fill="var(--amber)" font-family="ui-monospace,'SF Mono',monospace">memory.py</text>
+<text x="684" y="427" text-anchor="middle" font-size="9.5" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">L0/L1 amy_self.json (always)</text>
+<text x="684" y="441" text-anchor="middle" font-size="9" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">L2/L3 ava_memory.db · SQLite</text>
+
+<!-- thoughts.py + drain_one -->
+<rect x="806" y="392" width="134" height="56" rx="6"
+      fill="var(--surface)" stroke="var(--purple)" stroke-width="1.5" stroke-dasharray="5,3"/>
+<text x="873" y="410" text-anchor="middle" font-size="11" font-weight="600"
+      fill="var(--purple)" font-family="ui-monospace,'SF Mono',monospace">thoughts.py ✦</text>
+<text x="873" y="425" text-anchor="middle" font-size="9" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">bg thread · 90s interval</text>
+<text x="873" y="439" text-anchor="middle" font-size="9" fill="var(--new)"
+      font-family="ui-monospace,'SF Mono',monospace">drain_one() → /poll</text>
+
+<!-- logger.py — cross-cutting -->
+<rect x="406" y="392" width="160" height="56" rx="6"
+      fill="var(--surface)" stroke="var(--teal)" stroke-width="1.5"/>
+<text x="486" y="412" text-anchor="middle" font-size="11" font-weight="600"
+      fill="var(--teal)" font-family="ui-monospace,'SF Mono',monospace">logger.py ✦</text>
+<text x="486" y="427" text-anchor="middle" font-size="9.5" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">JSON · amy.log</text>
+<text x="486" y="441" text-anchor="middle" font-size="9" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">model_call · tool_call · Timer</text>
+
+<!-- Arrows: core → tools, core → state, core → logger -->
+<line x1="104" y1="318" x2="104" y2="390"
+      stroke="var(--blue)" stroke-width="1.5" marker-end="url(#arr-blue)"/>
+<text x="110" y="358" font-size="9" fill="var(--muted)" font-family="ui-monospace,'SF Mono',monospace">tool_calls[]</text>
+
+<!-- core → state (thin) -->
+<line x1="312" y1="215" x2="312" y2="390"
+      stroke="var(--new)" stroke-width="1.2" stroke-dasharray="5,3"
+      marker-end="url(#arr-new)"/>
+
+<!-- core → logger (thin) -->
+<line x1="486" y1="215" x2="486" y2="390"
+      stroke="var(--teal)" stroke-width="1.2" stroke-dasharray="4,3"
+      marker-end="url(#arr-teal)"/>
+<text x="492" y="316" font-size="9" fill="var(--teal)"
+      font-family="ui-monospace,'SF Mono',monospace">logs</text>
+
+<!-- nomic → memory -->
+<line x1="668" y1="318" x2="684" y2="390"
+      stroke="var(--amber)" stroke-width="1.5" marker-end="url(#arr-amber)"/>
+
+<!-- memory → core (RAG recall) -->
+<path d="M 584 415 C 550 415, 545 180, 570 180" fill="none"
+      stroke="var(--amber)" stroke-width="1.5" stroke-dasharray="6,3"
+      marker-end="url(#arr-amber)"/>
+<text x="535" y="305" font-size="9" fill="var(--amber)"
+      font-family="ui-monospace,'SF Mono',monospace" transform="rotate(-88, 535, 305)">recall</text>
+
+<!-- thoughts → core (surfaces), core → thoughts (spawns) -->
+<path d="M 873 392 C 873 310, 895 210, 890 215" fill="none"
+      stroke="var(--purple)" stroke-width="1.2" stroke-dasharray="5,3"
+      marker-end="url(#arr-purple)"/>
+<path d="M 890 215 C 895 280, 873 370, 873 390" fill="none"
+      stroke="var(--purple)" stroke-width="1.2" stroke-dasharray="5,3"
+      marker-end="url(#arr-purple)"/>
+<text x="904" y="310" font-size="9" fill="var(--purple)"
+      font-family="ui-monospace,'SF Mono',monospace" writing-mode="vertical-lr">spawns · surfaces</text>
+
+<!-- thoughts → browser (/thoughts/poll) -->
+<path d="M 806 415 C 760 415, 140 415, 115 415 C 115 390, 115 90, 115 88" fill="none"
+      stroke="var(--new)" stroke-width="1.2" stroke-dasharray="5,3"
+      marker-end="url(#arr-new)"/>
+<text x="390" y="408" font-size="9" fill="var(--new)"
+      font-family="ui-monospace,'SF Mono',monospace">/thoughts/poll</text>
+
+<!-- ── ROW 4: LEAF SERVICES (y=530–580) ── -->
+<rect x="20" y="530" width="130" height="50" rx="6"
+      fill="var(--surface)" stroke="var(--muted)" stroke-width="1.2"/>
+<text x="85" y="549" text-anchor="middle" font-size="10.5" font-weight="600"
+      fill="var(--text)" font-family="ui-monospace,'SF Mono',monospace">web.py</text>
+<text x="85" y="565" text-anchor="middle" font-size="9" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">DDG · BeautifulSoup</text>
+<text x="85" y="578" text-anchor="middle" font-size="9" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">no API key</text>
+
+<rect x="166" y="530" width="130" height="50" rx="6"
+      fill="var(--surface)" stroke="var(--muted)" stroke-width="1.2"/>
+<text x="231" y="549" text-anchor="middle" font-size="10.5" font-weight="600"
+      fill="var(--text)" font-family="ui-monospace,'SF Mono',monospace">moltbook.py</text>
+<text x="231" y="565" text-anchor="middle" font-size="9" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">amy_t acct · auto-post</text>
+<text x="231" y="578" text-anchor="middle" font-size="9" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">fuzzy verify solver</text>
+
+<rect x="312" y="530" width="110" height="50" rx="6"
+      fill="var(--surface)" stroke="var(--muted)" stroke-width="1.2"/>
+<text x="367" y="549" text-anchor="middle" font-size="10.5" font-weight="600"
+      fill="var(--text)" font-family="ui-monospace,'SF Mono',monospace">journal.py</text>
+<text x="367" y="565" text-anchor="middle" font-size="9" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">./journal/</text>
+<text x="367" y="578" text-anchor="middle" font-size="9" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">markdown files</text>
+
+<rect x="584" y="530" width="200" height="50" rx="6"
+      fill="var(--surface)" stroke="var(--green)" stroke-width="1.5"/>
+<text x="684" y="549" text-anchor="middle" font-size="10.5" font-weight="600"
+      fill="var(--green)" font-family="ui-monospace,'SF Mono',monospace">voice.py</text>
+<text x="684" y="565" text-anchor="middle" font-size="9" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">Piper TTS · en_US-amy-medium</text>
+<text x="684" y="578" text-anchor="middle" font-size="9" fill="var(--muted)"
+      font-family="ui-monospace,'SF Mono',monospace">speed 0.85 · afplay</text>
+
+<!-- Arrows: tools → leaf -->
+<line x1="85" y1="448" x2="85" y2="528"
+      stroke="var(--muted)" stroke-width="1.2" marker-end="url(#arr-muted)"/>
+<line x1="120" y1="462" x2="231" y2="528"
+      stroke="var(--muted)" stroke-width="1.2" marker-end="url(#arr-muted)"/>
+<line x1="140" y1="462" x2="367" y2="528"
+      stroke="var(--muted)" stroke-width="1.2" marker-end="url(#arr-muted)"/>
+
+<!-- core → voice (right arc) -->
+<path d="M 890 180 C 940 180, 940 555, 786 555" fill="none"
+      stroke="var(--green)" stroke-width="1.5"
+      marker-end="url(#arr-green)"/>
+<text x="934" y="375" font-size="9" fill="var(--green)"
+      font-family="ui-monospace,'SF Mono',monospace" transform="rotate(90, 934, 375)">TTS reply</text>
+
+<!-- ── NEW badge ── -->
+<rect x="20" y="650" width="130" height="22" rx="4" fill="none"/>
+<text x="20" y="665" font-size="10" fill="var(--new)"
+      font-family="ui-monospace,'SF Mono',monospace">✦ new this session</text>
+
+</svg>
+
+<figcaption>
+  ✦ marks additions from this session. Dashed lines are ambient or background paths.
+  Amber = memory subsystem. Green = I/O boundary. Blue = Ollama inference.
+  Purple = background thought thread. Teal = structured logging (cross-cutting).
+  Red = new persistence + streaming + proactive thought poll.
+</figcaption>
+</figure>
+
+<div class="legend">
+  <div class="legend-item">
+    <div class="legend-dot" style="background:var(--green)"></div>
+    I/O (inputs · voice · SSE stream)
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="background:var(--blue)"></div>
+    Ollama inference
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="background:var(--amber)"></div>
+    Memory (SQLite + embeddings)
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="background:var(--purple)"></div>
+    Background thought thread
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="background:var(--teal)"></div>
+    Structured logging (logger.py) ✦
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="background:var(--new)"></div>
+    New: streaming · persistence · thought poll ✦
+  </div>
+</div>
