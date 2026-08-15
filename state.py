@@ -4,8 +4,13 @@ Mood and energy are not performance. They're constraints that shape how she spea
 A tired Amy is shorter, less expansive. A curious Amy asks more questions.
 State is session-only — it resets on restart, which is intentional (sleep resets mood).
 """
+import json
+import os
 import time
 import random
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+_STATE_PATH = os.path.join(HERE, "amy_state.json")
 
 # Mood ring: each mood has a description Amy can reference + tone hint for the prompt
 MOODS = {
@@ -71,6 +76,33 @@ class InternalState:
         else:
             return f"a while — felt like {int(mins)} minutes or so"
 
+    def save(self):
+        """Persist emotional texture across restarts. Mood/energy reset intentionally (sleep cycle)."""
+        data = {
+            "world_weight": self.world_weight,
+            "session_achievements": self.session_achievements[-10:],
+            "session_frustrations": self.session_frustrations[-10:],
+        }
+        try:
+            with open(_STATE_PATH, "w") as f:
+                json.dump(data, f)
+        except OSError:
+            pass
+
+    @classmethod
+    def restore(cls):
+        """Return an InternalState, seeded with persisted emotional texture if available."""
+        inst = cls()
+        try:
+            with open(_STATE_PATH) as f:
+                data = json.load(f)
+            inst.world_weight = float(data.get("world_weight", 0.0))
+            inst.session_achievements = list(data.get("session_achievements", []))
+            inst.session_frustrations = list(data.get("session_frustrations", []))
+        except (FileNotFoundError, json.JSONDecodeError, ValueError):
+            pass
+        return inst
+
     def after_turn(self):
         """Call after each completed turn to update state."""
         now = time.time()
@@ -86,6 +118,8 @@ class InternalState:
         if now > self._mood_locked_until:
             self._shift_mood()
             self._mood_locked_until = now + (5 * 60)  # lock for ~5 min
+
+        self.save()
 
     def _shift_mood(self):
         """Drift mood naturally based on energy and time."""
