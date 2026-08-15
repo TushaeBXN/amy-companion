@@ -825,6 +825,12 @@ def dispatch(name, args, memory=None):
         mode = args.get("mode", "write")
         if not path:
             return "no path given"
+        # Guardrail: block writes to system paths
+        _BLOCKED_PREFIXES = ("/System", "/usr", "/bin", "/sbin", "/etc",
+                             "/Library/LaunchDaemons", "/private/etc")
+        for prefix in _BLOCKED_PREFIXES:
+            if path.startswith(prefix):
+                return f"blocked: cannot write to system path {path}"
         try:
             os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
             with open(path, "a" if mode == "append" else "w") as f:
