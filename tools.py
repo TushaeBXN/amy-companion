@@ -261,7 +261,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_journal",
-            "description": "Read recent journal entries. Use when Brian asks to review his journal or when generating a weekly reflection.",
+            "description": "Read recent journal entries from disk. Return ONLY what is stored — do NOT generate, invent, or summarize entries that aren't there. If the result says 'No journal entries yet' or shows only a test entry, say so directly.",
             "parameters": {
                 "type": "object",
                 "properties": {
