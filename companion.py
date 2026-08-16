@@ -157,6 +157,10 @@ def build_context(mem, user_text, amy_state=None, absence=None,
         system += (f"\n\n[Time awareness] The person was away for {absence}. "
                    "If they ask how long, give your honest estimate using those words. "
                    "Don't pretend you have a precise clock.")
+    else:
+        system += ("\n\n[Time awareness] You have no information about how long "
+                   "the person was away. Do NOT claim days, months, or years have passed. "
+                   "Do NOT invent conversation history. If asked, say you don't know exactly.")
 
     hits = mem.search(user_text, k=4)
     if hits:
