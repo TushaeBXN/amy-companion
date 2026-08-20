@@ -23,6 +23,12 @@ talking. She's been doing it anyway.
 
 ---
 
+## Architecture
+
+→ **[ARCHITECTURE.md](ARCHITECTURE.md)** — full system diagram + per-component breakdown
+
+---
+
 ## Two interfaces
 
 ### Web UI — `amy_server.py`
