@@ -35,6 +35,7 @@ import vision
 # ── global state (mirrors terminal companion) ─────────────────────────────────
 _mem = Memory()
 _amy_state = InternalState.restore()
+_amy_state.busy = False   # reset any stuck busy flag from a previous crashed session
 _thought_buffer = ThoughtBuffer()
 _lock = asyncio.Lock()          # serialise concurrent requests
 _executor = ThreadPoolExecutor(max_workers=1)
@@ -65,9 +66,12 @@ _history = [_PRIMER]
 # Inject learnings into companion's module-level var so build_context picks it up
 companion._session_learnings = _learnings.load_recent_learnings()
 
+# Pre-load models into Ollama memory so first reply has no cold-start lag
+companion._warmup_models()
+
 # Start background threads
 start_spontaneous_thread(_history, _mem, _amy_state)
-_thought_buffer.start(_amy_state, _history)
+_thought_buffer.start(_amy_state, _history, memory=_mem)
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 app = FastAPI(title="Amy")
@@ -118,6 +122,7 @@ async def chat(req: ChatRequest):
                     amy_state=_amy_state,
                     absence=absence,
                     pending_thoughts=pending_thoughts,
+                    channel="browser",
                 ),
             )
             _history[:] = result
@@ -150,6 +155,10 @@ async def chat(req: ChatRequest):
 @app.post("/chat/stream")
 async def chat_stream(req: ChatRequest):
     """SSE streaming variant of /chat. Events: tool / chunk / done."""
+    # Acquire the shared lock before touching history/state; release it once the
+    # streaming generator starts so the response can flow while the lock is free.
+    await _lock.acquire()
+
     image_path = None
     if req.image_b64:
         tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
@@ -176,6 +185,7 @@ async def chat_stream(req: ChatRequest):
                 amy_state=_amy_state,
                 absence=absence,
                 pending_thoughts=pending_thoughts,
+                channel="browser",
             ):
                 event_q.put(event)
         except Exception as exc:
@@ -184,6 +194,7 @@ async def chat_stream(req: ChatRequest):
             event_q.put(None)  # sentinel
 
     threading.Thread(target=_worker, daemon=True, name="amy-stream").start()
+    _lock.release()  # release before streaming so other endpoints aren't blocked
 
     async def _generate():
         loop = asyncio.get_event_loop()
@@ -309,17 +320,17 @@ _UI_HTML = """<!DOCTYPE html>
 <title>Amy</title>
 <style>
   :root {
-    --bg:       #0a0a0f;
-    --surface:  #12121a;
-    --border:   #1e1e2e;
-    --amy-bg:   #141420;
-    --user-bg:  #1a1a2e;
-    --accent:   #7c6af7;
-    --accent2:  #a78bfa;
-    --text:     #e2e2ef;
-    --muted:    #6b6b8a;
-    --mood-bg:  #1a1a2e;
-    --thinking: #2a2a3e;
+    --bg:       #080A0F;
+    --surface:  #111520;
+    --border:   #1C2235;
+    --amy-bg:   #151B2E;
+    --user-bg:  #131828;
+    --accent:   #C9A84C;
+    --accent2:  #E8C56A;
+    --text:     #F0F4FF;
+    --muted:    #8B9BB4;
+    --mood-bg:  #151B2E;
+    --thinking: #1A2235;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -438,9 +449,9 @@ _UI_HTML = """<!DOCTYPE html>
 
   .user .bubble {
     background: var(--user-bg);
-    border: 1px solid #252540;
+    border: 1px solid #1C2A3A;
     border-top-right-radius: 4px;
-    color: #c8c8e8;
+    color: #A0B0CC;
   }
 
   /* ── thinking indicator ── */
@@ -540,7 +551,7 @@ _UI_HTML = """<!DOCTYPE html>
   #sendBtn {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: #0A0800;
     font-size: 17px;
   }
   #sendBtn:hover { background: var(--accent2); border-color: var(--accent2); }
@@ -611,7 +622,7 @@ _UI_HTML = """<!DOCTYPE html>
   }
   .drop-zone:hover, .drop-zone.drag-over {
     border-color: var(--accent);
-    background: #1a1a2e;
+    background: #151B2E;
     color: var(--accent2);
   }
   .drop-zone .dz-icon { font-size: 28px; display: block; margin-bottom: 8px; }
