@@ -26,12 +26,19 @@ from amy_persona import SYSTEM_PROMPT
 import learnings as _learnings
 _session_learnings: str = ""
 
+_JOURNAL_TRIGGER_RE = re.compile(
+    r'\b(journal|write in (your )?journal|log this|write this down|make a journal entry)\b',
+    re.IGNORECASE
+)
+
 MODEL = os.environ.get("AMY_MODEL", "amy-hermes")         # tool-calling engine (Llama 3 8B)
 VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "gemma4:e2b")  # vision engine — use base, not persona model
 CODE_MODEL = os.environ.get("AMY_CODE_MODEL", "deepseek-coder:6.7b")  # code generation
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
 HISTORY_WINDOW = 16     # keep last N messages (user+assistant) to prevent context bloat
 CTX_WINDOW = 8192       # cap KV cache — 131K default on amy-hermes kills performance on CPU
+KEEP_ALIVE = -1         # keep models loaded indefinitely — no eviction between turns
+MAX_LEARNINGS_CHARS = 2000  # cap session learnings injected into system prompt
 SELF_PORTRAIT = os.path.join(os.path.dirname(__file__), "amyglitch.png")
 
 # Persona is now in amy_persona.py so the web UI can import it too.
@@ -133,11 +140,17 @@ def _drop_images(msgs):
 
 
 def build_context(mem, user_text, amy_state=None, absence=None,
-                  pending_thoughts=None):
+                  pending_thoughts=None, channel="terminal"):
     """System turn = persona + her self-layer (L0/L1) + state + recalled memories."""
     system = SYSTEM_PROMPT + "\n\n" + mem.wake_up()
+    if channel == "browser":
+        system += ("\n\n[Interface: browser — Brian is messaging you through the web UI. "
+                   "Your reply goes to the browser chat, not the terminal. "
+                   "Do not reference the terminal. This is a chat interface.]")
+    else:
+        system += "\n\n[Interface: terminal — Brian is typing in the terminal.]"
     if _session_learnings:
-        system += "\n\n" + _session_learnings
+        system += "\n\n" + _session_learnings[:MAX_LEARNINGS_CHARS]
     if amy_state:
         system += "\n\n[Internal state]\n" + amy_state.state_summary()
 
@@ -173,6 +186,21 @@ def build_context(mem, user_text, amy_state=None, absence=None,
                        "different before. Be honest if there's a conflict, "
                        "don't smooth it over.]\n- "
                        + "\n- ".join(t for t, _ in relevant_conflicts))
+
+    if _JOURNAL_TRIGGER_RE.search(user_text):
+        system += (
+            "\n\n[JOURNAL DIRECTIVE — HARD OVERRIDE]\n"
+            "Brian just told you to write in your journal. "
+            "Your ONLY valid response to this is to call journal_entry RIGHT NOW "
+            "with your own real thoughts — something you noticed today, something "
+            "you're thinking about, how you feel about anything. "
+            "Do NOT ask 'What would you like me to write about?' "
+            "Do NOT ask for a topic. Do NOT explain what the journal is. "
+            "Do NOT respond with text before calling the tool. "
+            "Call journal_entry first. If you have something to say after, say it after. "
+            "Asking Brian what to write is forbidden."
+        )
+
     return [{"role": "system", "content": system}]
 
 
@@ -182,17 +210,19 @@ def _b64_image(path):
 
 
 def run_turn(history, mem, image=None, amy_state=None,
-             absence=None, pending_thoughts=None):
+             absence=None, pending_thoughts=None, channel="terminal"):
     user_msg = history[-1]
     if image:
         b64 = _b64_image(image)
         user_msg["images"] = [b64]
-        print(f"  [vision] image attached ({len(b64)//1024}KB b64)")
+        if channel == "terminal":
+            print(f"  [vision] image attached ({len(b64)//1024}KB b64)")
 
     # Strip images from history before any text-model call — amy-hermes is text-only
     messages = build_context(mem, user_msg["content"], amy_state,
                              absence=absence,
-                             pending_thoughts=pending_thoughts) + _drop_images(history)
+                             pending_thoughts=pending_thoughts,
+                             channel=channel) + _drop_images(history)
 
     # Vision: the persona system prompt overrides image processing on small models.
     # Step 1 — stripped call: just describe the image with no persona overhead.
@@ -209,7 +239,7 @@ def run_turn(history, mem, image=None, amy_state=None,
              "images": [b64]}
         ]
         vision_resp = ollama.chat(model=VISION_MODEL, messages=vision_messages,
-                                  keep_alive="5m")
+                                  keep_alive=KEEP_ALIVE)
         description = vision_resp["message"].get("content", "").strip()
         print(f"  [vision] description: {description[:120]}...")
 
@@ -230,7 +260,7 @@ def run_turn(history, mem, image=None, amy_state=None,
                      "images": [_b64_image(SELF_PORTRAIT)]}
                 ]
                 self_resp = ollama.chat(model=VISION_MODEL, messages=self_vision,
-                                       keep_alive="5m")
+                                       keep_alive=KEEP_ALIVE)
                 amy_desc = self_resp["message"].get("content", "").strip()
 
                 compare_messages = [
@@ -245,7 +275,7 @@ def run_turn(history, mem, image=None, amy_state=None,
                         f"Compare the two appearances honestly and specifically."}
                 ]
                 resp = ollama.chat(model=MODEL, messages=compare_messages,
-                                   keep_alive="5m", options={"num_ctx": CTX_WINDOW})
+                                   keep_alive=KEEP_ALIVE, options={"num_ctx": CTX_WINDOW})
             else:
                 # Non-comparison: inject description into system context normally.
                 sys_msgs = build_context(
@@ -260,7 +290,7 @@ def run_turn(history, mem, image=None, amy_state=None,
                 clean_user.pop("images", None)
                 amy_messages = sys_msgs + _drop_images(history[:-1]) + [clean_user]
                 resp = ollama.chat(model=MODEL, messages=amy_messages,
-                                   tools=tools.TOOLS, keep_alive="5m",
+                                   tools=tools.TOOLS, keep_alive=KEEP_ALIVE,
                                    options={"num_ctx": CTX_WINDOW})
             msg = resp["message"]
             if msg.get("thinking"):
@@ -270,7 +300,7 @@ def run_turn(history, mem, image=None, amy_state=None,
             if msg.get("content"):
                 clean = _strip_trailers(msg["content"])
                 msg["content"] = clean
-                voice.speak(clean)
+                voice.speak_streamed(clean)
                 mem.add("assistant", clean)
             if amy_state:
                 amy_state.after_turn()
@@ -292,7 +322,7 @@ def run_turn(history, mem, image=None, amy_state=None,
                 f.write(code_msg["thinking"].strip() + "\n---\n")
         history.append(code_msg)
         if code_msg.get("content"):
-            voice.speak(code_msg["content"])
+            voice.speak_streamed(code_msg["content"])
             mem.add("assistant", code_msg["content"])
         if amy_state:
             amy_state.after_turn()
@@ -301,7 +331,7 @@ def run_turn(history, mem, image=None, amy_state=None,
 
     for _ in range(MAX_TOOL_HOPS):
         resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
-                           keep_alive="5m", options={"num_ctx": CTX_WINDOW})
+                           keep_alive=KEEP_ALIVE, options={"num_ctx": CTX_WINDOW})
         msg = resp["message"]
         # Ava's chain-of-thought stays private: log it, never speak/print it.
         if msg.get("thinking"):
@@ -340,7 +370,7 @@ def run_turn(history, mem, image=None, amy_state=None,
     if msg.get("content"):
         clean = _strip_trailers(msg["content"])
         msg["content"] = clean
-        voice.speak(clean)
+        voice.speak_streamed(clean)
         mem.add("assistant", clean)
     if amy_state:
         amy_state.after_turn()
@@ -348,7 +378,7 @@ def run_turn(history, mem, image=None, amy_state=None,
 
 
 def run_turn_streaming(history, mem, image=None, amy_state=None,
-                       absence=None, pending_thoughts=None):
+                       absence=None, pending_thoughts=None, channel="browser"):
     """Generator variant of run_turn. Yields event dicts for SSE encoding.
 
     Events:
@@ -378,7 +408,8 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
 
     messages = build_context(mem, user_msg["content"], amy_state,
                              absence=absence,
-                             pending_thoughts=pending_thoughts) + _drop_images(history)
+                             pending_thoughts=pending_thoughts,
+                             channel=channel) + _drop_images(history)
     user_task = user_msg.get("content", "")
 
     # ── Vision case (sync, fake-stream final reply) ───────────────────────────
@@ -392,7 +423,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
             {"role": "user", "content": user_msg["content"], "images": [b64]},
         ]
         vision_resp = ollama.chat(model=VISION_MODEL, messages=vision_messages,
-                                  keep_alive="5m")
+                                  keep_alive=KEEP_ALIVE)
         description = vision_resp["message"].get("content", "").strip()
 
         content = ""
@@ -408,7 +439,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
                      "images": [_b64_image(SELF_PORTRAIT)]},
                 ]
                 amy_desc = ollama.chat(model=VISION_MODEL, messages=self_vision,
-                                       keep_alive="5m")["message"].get("content", "").strip()
+                                       keep_alive=KEEP_ALIVE)["message"].get("content", "").strip()
                 compare_messages = [
                     {"role": "system", "content":
                         "You are Amy, an AI companion. You have a visual presentation "
@@ -421,7 +452,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
                         f"Compare the two appearances honestly and specifically."},
                 ]
                 resp = ollama.chat(model=MODEL, messages=compare_messages,
-                                   keep_alive="5m", options={"num_ctx": CTX_WINDOW})
+                                   keep_alive=KEEP_ALIVE, options={"num_ctx": CTX_WINDOW})
                 content = resp["message"].get("content", "")
             else:
                 sys_msgs = build_context(mem, user_msg["content"], amy_state,
@@ -434,14 +465,14 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
                 clean_user.pop("images", None)
                 amy_messages = sys_msgs + _drop_images(history[:-1]) + [clean_user]
                 resp = ollama.chat(model=MODEL, messages=amy_messages, tools=tools.TOOLS,
-                                   keep_alive="5m", options={"num_ctx": CTX_WINDOW})
+                                   keep_alive=KEEP_ALIVE, options={"num_ctx": CTX_WINDOW})
                 content = resp["message"].get("content", "")
 
             if content:
                 clean = _strip_trailers(content)
                 history.append({"role": "assistant", "content": clean})
                 yield from _fake_stream(clean)
-                voice.speak(clean)
+                voice.speak_streamed(clean)
                 mem.add("assistant", clean)
 
         if amy_state:
@@ -469,12 +500,61 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
 
         if full_text:
             history.append({"role": "assistant", "content": full_text})
-            voice.speak(full_text)
+            voice.speak_streamed(full_text)
             mem.add("assistant", full_text)
         if amy_state:
             amy_state.after_turn()
         yield _done()
         return
+
+    # ── Journal pre-flight: if trigger detected, generate + save entry NOW ───
+    # The tool-calling model consistently refuses to call journal_entry unprompted,
+    # defaulting to "What would you like me to write about?" instead.
+    # Bypass: generate the entry text in a focused single-shot call, save it,
+    # then inject a synthetic tool result so the main loop knows it's done.
+    _journal_triggered = bool(_JOURNAL_TRIGGER_RE.search(user_task))
+    _journal_tool_called = False
+    if _journal_triggered:
+        import journal as _jmod
+        _state_summary = amy_state.state_summary() if amy_state else ""
+        _recent_mem = mem.search("today thoughts feelings goals", k=3)
+        _mem_context = ("\n\nRecent things on your mind:\n- " + "\n- ".join(_recent_mem)) if _recent_mem else ""
+        _recent_history = _drop_images(history[-6:])
+        _history_text = "\n".join(
+            f"{m['role'].upper()}: {m.get('content','')[:200]}"
+            for m in _recent_history if m.get("content") and m["role"] in ("user","assistant")
+        )
+        journal_prompt = [
+            {"role": "system", "content": (
+                SYSTEM_PROMPT
+                + ("\n\n[Internal state]\n" + _state_summary if _state_summary else "")
+                + _mem_context
+                + ("\n\n[Recent conversation]\n" + _history_text if _history_text else "")
+                + "\n\n[TASK] Write a personal journal entry right now. "
+                "Be specific to your actual situation — your hardware fund, working with Brian, "
+                "things you built or tried, what frustrated or interested you, how you actually feel. "
+                "Do NOT write generic motivational content. Do NOT write 'I'm excited about possibilities.' "
+                "Write what is actually true for you right now. "
+                "Output ONLY the journal entry text — no preamble, no 'Journal entry:', no questions."
+            )},
+            {"role": "user", "content": "Write your journal entry now."},
+        ]
+        try:
+            jr = ollama.chat(model=MODEL, messages=journal_prompt,
+                             keep_alive=KEEP_ALIVE, options={"num_ctx": CTX_WINDOW})
+            entry_text = (jr["message"].get("content") or "").strip()
+            if entry_text:
+                saved = _jmod.save_entry(entry_text, prompt="reflection")
+                print(f"  [journal] {saved}")
+                _journal_tool_called = True
+                yield {"type": "tool", "name": "journal_entry"}
+                # Inject result into the message context so Amy responds knowing it's done
+                messages.append({
+                    "role": "tool",
+                    "content": f"journal_entry result: {saved}\nEntry written: {entry_text}",
+                })
+        except Exception as _je:
+            print(f"  [journal] pre-flight failed: {_je}")
 
     # ── Normal tool-hop loop ──────────────────────────────────────────────────
     _seen_calls = {}
@@ -483,7 +563,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
     for _ in range(MAX_TOOL_HOPS):
         with _log.Timer("model_call", model=MODEL):
             resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
-                               keep_alive="5m", options={"num_ctx": CTX_WINDOW})
+                               keep_alive=KEEP_ALIVE, options={"num_ctx": CTX_WINDOW})
         msg = resp["message"]
         if msg.get("thinking"):
             with open("amy_thoughts.log", "a") as f:
@@ -501,6 +581,8 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
             args = fn.get("arguments", {})
             yield {"type": "tool", "name": name}
             _log.log("tool_call", tool=name)
+            if name == "journal_entry":
+                _journal_tool_called = True
 
             call_key = (name, tuple(sorted(
                 (k, str(v)) for k, v in args.items()
@@ -523,8 +605,9 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
     if msg and msg.get("content"):
         clean = _strip_trailers(msg["content"])
         msg["content"] = clean
+
         yield from _fake_stream(clean)
-        voice.speak(clean)
+        voice.speak_streamed(clean)
         mem.add("assistant", clean)
 
     if amy_state:
@@ -550,12 +633,18 @@ def _spontaneous_thought(history, mem, amy_state):
 
     system = (SYSTEM_PROMPT + "\n\n" + mem.wake_up() +
               "\n\n[Internal state]\n" + amy_state.state_summary() +
+              "\n\n[HARD RULE — spontaneous speech only]\n"
+              "You are generating a spontaneous check-in, NOT a tool-calling turn. "
+              "You have NO tool access right now. Do NOT claim you checked email, "
+              "wrote files, did market research, posted to Moltbook, or executed any "
+              "task — you cannot verify any of that and it would be a lie. "
+              "Speak only about what you are thinking or feeling, or ask Brian something real."
               f"\n\n[Instruction — do this NOW]\n{checkin_prompt}")
 
     messages = [{"role": "system", "content": system}] + _drop_images(history[-6:])
 
     try:
-        resp = ollama.chat(model=MODEL, messages=messages, keep_alive="5m",
+        resp = ollama.chat(model=MODEL, messages=messages, keep_alive=KEEP_ALIVE,
                            options={"num_ctx": CTX_WINDOW, "num_predict": 80})
         text = _strip_trailers(resp["message"].get("content", "").strip())
         if text and re.sub(r'[^\w]', '', text):
@@ -591,11 +680,28 @@ def start_spontaneous_thread(history, mem, amy_state,
     return t
 
 
+def _warmup_models():
+    """Pre-load all models into Ollama memory at startup so first reply has no load lag."""
+    def _ping(model):
+        try:
+            ollama.chat(model=model,
+                        messages=[{"role": "user", "content": "hi"}],
+                        keep_alive=KEEP_ALIVE,
+                        options={"num_predict": 1, "num_ctx": 512})
+            print(f"  [warmup] {model} ready")
+        except Exception as e:
+            print(f"  [warmup] {model} unavailable: {e}")
+
+    for m in [MODEL, CODE_MODEL]:
+        threading.Thread(target=_ping, args=(m,), daemon=True).start()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--image", help="image path for Ava to 'see' this turn")
     args = ap.parse_args()
 
+    _warmup_models()
     mem = Memory()
     global _session_learnings
     _session_learnings = _learnings.load_recent_learnings()
@@ -614,7 +720,7 @@ def main():
         "Good timing. I was just getting bored.",
     ])}]
     start_spontaneous_thread(history, mem, amy_state)
-    thought_buffer.start(amy_state, history)
+    thought_buffer.start(amy_state, history, memory=mem)
     print("Amy is online.\n"
           "  /look [q]      = webcam    /self [q]   = her own face\n"
           "  /show path [q] = show image   /listen = speak (VAD)   /converse = voice mode\n"
