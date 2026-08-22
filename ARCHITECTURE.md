@@ -44,7 +44,6 @@ flowchart TD
 - **Purple dashed** — Background thread (spontaneous thoughts)
 
 ---
-OR 
 <img width="656" height="699" alt="Screenshot 2026-08-21 at 8 40 53 PM" src="https://github.com/user-attachments/assets/b71875d4-b2b6-4d91-9079-ed68915d81ce" />
 
 ## How it works
