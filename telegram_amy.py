@@ -7,7 +7,7 @@ _here = os.path.dirname(__file__)
 load_dotenv(os.path.join(_here, ".env"))
 load_dotenv(os.path.join(_here, ".env.amy"), override=False)
 
-import ollama
+import json, ollama
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 
@@ -24,11 +24,43 @@ MODEL        = "amy-hermes"
 VISION_MODEL = "gemma4:e2b"
 MAX_HOPS     = 6
 CTX_WINDOW   = 8192
+HISTORY_FILE = os.path.join(_here, "telegram_history.json")
+HISTORY_KEEP = 60   # messages to persist across restarts
 
 mem        = Memory()
 amy_state  = _state.InternalState()
-history    = []
 _learnings_ctx = _learnings.load_recent_learnings() if _learnings else ""
+
+
+def _load_history() -> list:
+    """Load persisted Telegram history from disk (images already stripped)."""
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE) as f:
+                data = json.load(f)
+            print(f"  [telegram] loaded {len(data)} messages from history")
+            return data
+        except Exception as e:
+            print(f"  [telegram] could not load history: {e}")
+    return []
+
+
+def _save_history(history: list):
+    """Persist recent history to disk, stripping any image bytes first."""
+    trimmed = []
+    for msg in history[-HISTORY_KEEP:]:
+        clean = {k: v for k, v in msg.items() if k != "images"}
+        # Keep only roles the model understands across restarts
+        if clean.get("role") in ("user", "assistant", "tool"):
+            trimmed.append(clean)
+    try:
+        with open(HISTORY_FILE, "w") as f:
+            json.dump(trimmed, f)
+    except Exception as e:
+        print(f"  [telegram] could not save history: {e}")
+
+
+history = _load_history()
 
 
 def _build_system():
@@ -100,6 +132,7 @@ def _chat(user_text: str, image_bytes: bytes | None = None) -> str | None:
     if msg and msg.get("content"):
         mem.add("assistant", msg["content"])
         amy_state.after_turn()
+        _save_history(history)
         return msg["content"]
     return None
 
