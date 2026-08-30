@@ -63,12 +63,28 @@ def _save_history(history: list):
 history = _load_history()
 
 
-def _build_system():
+def _build_system(history_len: int = 0) -> str:
     s = SYSTEM_PROMPT + "\n\n" + mem.wake_up()
     if _learnings_ctx:
         s += "\n\n" + _learnings_ctx
     s += "\n\n[Internal state]\n" + amy_state.state_summary()
-    s += "\n\n[Interface: Telegram — Brian is texting you like a friend. Be warm, natural, conversational. Short replies are fine.]"
+    s += (
+        "\n\n[Interface: Telegram — Brian is texting you like a friend. "
+        "Be warm, natural, conversational. Short replies are fine. "
+        "You remember previous conversations — reference them naturally when relevant.]"
+    )
+    # If history is thin (fresh start / JSON missing), reconstruct from SQLite
+    if history_len < 6:
+        recent = mem.recent_telegram(limit=30)
+        if recent:
+            lines = []
+            for role, text, ts in recent:
+                label = "Brian" if role == "user" else "Amy"
+                lines.append(f"[{ts[:16]}] {label}: {text[:300]}")
+            s += (
+                "\n\n[Recent Telegram conversation history — reconstructed from memory]\n"
+                + "\n".join(lines)
+            )
     return s
 
 
@@ -95,6 +111,10 @@ def _chat(user_text: str, image_bytes: bytes | None = None) -> str | None:
         print("  [vision] describing Telegram photo...")
         description = _describe_image(image_bytes)
         print(f"  [vision] {description[:100]}...")
+        # Durably remember the photo so it survives future restarts
+        from datetime import datetime as _dt
+        _ts = _dt.now().strftime("%b %d %H:%M")
+        mem.remember(f"[Telegram photo — {_ts}] Brian sent a photo. I saw: {description}")
         # Build the message Amy sees — caption + what she actually saw
         caption = f"{user_text}\n\n" if user_text else ""
         user_text = (
@@ -104,9 +124,9 @@ def _chat(user_text: str, image_bytes: bytes | None = None) -> str | None:
         )
 
     user_msg = {"role": "user", "content": user_text}
-    messages = [{"role": "system", "content": _build_system()}] + history[-20:] + [user_msg]
+    messages = [{"role": "system", "content": _build_system(len(history))}] + history[-20:] + [user_msg]
     history.append(user_msg)
-    mem.add("user", user_text[:500])  # cap memory entry length
+    mem.add("user", user_text[:500], source="telegram")
 
     msg = None
     seen = {}
@@ -130,7 +150,7 @@ def _chat(user_text: str, image_bytes: bytes | None = None) -> str | None:
             history.append(messages[-1])
 
     if msg and msg.get("content"):
-        mem.add("assistant", msg["content"])
+        mem.add("assistant", msg["content"], source="telegram")
         amy_state.after_turn()
         _save_history(history)
         return msg["content"]
