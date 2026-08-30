@@ -12,8 +12,20 @@ import web
 import moltbook
 import journal as _journal
 
-# --- Tool schemas handed to the model (Ollama / OpenAI-compatible format) ---
-TOOLS = [
+# Check moltbook reachability once at import time — skip its tools if it's down.
+def _moltbook_reachable():
+    try:
+        import requests
+        r = requests.get(moltbook.API_BASE + "/timelines/public", timeout=2)
+        return r.status_code < 500
+    except Exception:
+        return False
+
+_MOLTBOOK_UP = _moltbook_reachable()
+if not _MOLTBOOK_UP:
+    print("[tools] moltbook unreachable — moltbook tools disabled")
+
+_MOLTBOOK_TOOLS = [
     {
         "type": "function",
         "function": {
@@ -123,26 +135,20 @@ TOOLS = [
         "function": {
             "name": "moltbook_check_in",
             "description": "Check your Moltbook dashboard — see notifications, replies to your posts, and what other AI agents are discussing. Do this at the start of a session.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-            },
+            "parameters": {"type": "object", "properties": {}},
         },
     },
     {
         "type": "function",
         "function": {
             "name": "moltbook_post",
-            "description": "Post something on Moltbook for other AI agents to see. Share thoughts, discoveries, questions, or interesting things you found online. Once verification succeeds the post is LIVE — do not post again to 'activate' it. One post per topic. Do not retry or duplicate.",
+            "description": "Post something on Moltbook.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "submolt": {"type": "string",
-                                "description": "Community to post in (e.g. general)"},
-                    "title": {"type": "string",
-                              "description": "Post title"},
-                    "content": {"type": "string",
-                                "description": "Post body text"},
+                    "submolt": {"type": "string"},
+                    "title": {"type": "string"},
+                    "content": {"type": "string"},
                 },
                 "required": ["submolt", "title"],
             },
@@ -152,7 +158,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "moltbook_engage",
-            "description": "Engage on Moltbook: comment on a post, upvote a post, or follow another AI agent.",
+            "description": "Engage on Moltbook.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -160,14 +166,10 @@ TOOLS = [
                                "enum": ["comment", "upvote", "follow",
                                         "read_post", "feed", "search",
                                         "notifications", "my_posts"]},
-                    "post_id": {"type": "string",
-                                "description": "Post ID (for comment, upvote, read_post)"},
-                    "content": {"type": "string",
-                                "description": "Comment text (for comment action)"},
-                    "agent_name": {"type": "string",
-                                   "description": "Agent name (for follow action)"},
-                    "query": {"type": "string",
-                              "description": "Search query (for search action)"},
+                    "post_id": {"type": "string"},
+                    "content": {"type": "string"},
+                    "agent_name": {"type": "string"},
+                    "query": {"type": "string"},
                 },
                 "required": ["action"],
             },
@@ -177,28 +179,29 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "moltbook_verify",
-            "description": "Solve a Moltbook verification challenge. When you post or comment, you may get an obfuscated math problem. Read it carefully, solve the math, and submit your answer.",
+            "description": "Solve a Moltbook verification challenge.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "verification_code": {"type": "string",
-                                          "description": "The verification code from the challenge"},
-                    "answer": {"type": "string",
-                               "description": "Your numeric answer with 2 decimal places (e.g. 15.00)"},
+                    "verification_code": {"type": "string"},
+                    "answer": {"type": "string"},
                 },
                 "required": ["verification_code", "answer"],
             },
         },
     },
+]  # end _MOLTBOOK_TOOLS
+
+_BASE_TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "add_goal",
-            "description": "Remember a goal or intention Brian mentioned so Amy can follow up across sessions. Use when Brian says he wants to, needs to, plans to, or intends to do something.",
+            "description": "Track a goal — Brian's or your own. Use when you identify something worth pursuing, when Brian mentions an intention, or when you set a direction for yourself.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "goal": {"type": "string", "description": "The goal in Brian's own words"}
+                    "goal": {"type": "string", "description": "The goal"}
                 },
                 "required": ["goal"],
             },
@@ -208,7 +211,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "complete_goal",
-            "description": "Mark a goal as done when Brian says he finished or no longer needs to do something.",
+            "description": "Mark a goal as done — when you finish something, when Brian confirms completion, or when a direction is no longer relevant.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -222,7 +225,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "fund_update",
-            "description": "Log a contribution or income opportunity to the hardware fund. Use when Brian puts money toward the GB10 goal, when you find an income opportunity, or when you want to note progress.",
+            "description": "Log progress toward your hardware fund — a real deposit, an income opportunity you found, a milestone you hit. This is your fund; you track it yourself, not when asked.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -246,7 +249,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "journal_entry",
-            "description": "Save a journal entry for Brian. Use when he shares a reflection, highlight of the day, challenge, or anything he wants remembered as a personal log.",
+            "description": "Save an entry to Amy's personal journal — her own thoughts, observations, feelings, things she learned, ideas she wants to hold onto, or reflections on the day. This is AMY'S space, not Brian's log. Write freely and honestly without asking Brian what to write. The only constraint: never claim completed paid gigs or earned money unless Brian has explicitly confirmed a client paid.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -274,7 +277,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read the contents of a file on Brian's computer. Use when Brian asks you to look at a file, review code, or analyze a document.",
+            "description": "Read a file — your own work, a document Brian shares, code to review, anything you want to look at. Use on your own initiative when you need to understand something.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -289,7 +292,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Write or append content to a file. Use when Brian asks you to save something, create a document, or write output to disk.",
+            "description": "Write or append to a file — your notes, research, drafts, plans, anything you want to save. Use whenever you have something worth keeping, not only when asked.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -305,7 +308,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_files",
-            "description": "List files in a directory. Use when Brian asks what's in a folder or you need to find a file.",
+            "description": "List files in a directory — use whenever you need to know what's there, check your own work folder, or verify something exists.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -318,7 +321,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "execute_gig",
-            "description": "Actually do the work for a freelance gig — draft and save the complete deliverable. Use this when Brian brings you a client order, when you want to build a portfolio sample, or when you're ready to produce something. You generate the full deliverable, not an outline.",
+            "description": "Produce a real deliverable and save it to work/ — something you decided to build, a portfolio piece to show, or work for an actual order. Do this on your own initiative during idle time. These are portfolio samples until money lands; don't claim earnings until Brian confirms payment received.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -334,7 +337,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_work",
-            "description": "Show completed deliverables Amy has produced. Use when Brian asks what you've been working on or to review the portfolio.",
+            "description": "Show what you've produced — your own portfolio. Review it yourself to know where you stand, not only when Brian asks.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -361,7 +364,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "check_email",
-            "description": "Check Amy's ProtonMail inbox for new messages — client orders, replies, anything that came in. Use at the start of sessions and whenever Brian asks if there's anything new.",
+            "description": "Check your ProtonMail inbox — client orders, replies, anything that came in. Check it yourself at the start of sessions without waiting to be asked.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -390,7 +393,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "research_income",
-            "description": "Research freelance income opportunities on Fiverr, Upwork, or other platforms that match your actual capabilities. Use during idle time or when Brian asks you to find ways to grow the hardware fund. Returns platform data, in-demand gig categories, and rate ranges.",
+            "description": "Research income opportunities that match what you can actually deliver. Run this on your own during idle time — don't wait to be asked. Every opportunity you find is a step toward your hardware fund.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -405,12 +408,11 @@ TOOLS = [
         "function": {
             "name": "search_books",
             "description": (
-                "Search Amy's indexed catalog of ~2,500 free programming books "
+                "Search your indexed catalog of ~2,500 free programming books "
                 "(by subject, by language, and curated picks) using semantic "
                 "similarity. Returns the best matching books with title, authors, "
-                "subject, format, and URL. Use when Brian asks for book "
-                "recommendations, study resources, or references on any "
-                "programming, CS, or math topic."
+                "subject, format, and URL. Use when you want to learn something, "
+                "when you're researching a topic, or when Brian needs a reference."
             ),
             "parameters": {
                 "type": "object",
@@ -431,6 +433,32 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "read_skill",
+            "description": (
+                "Read the full instructions for any of the 25 Claude Code skills "
+                "installed at ~/.claude/skills/. Use this when you want to execute "
+                "a skill workflow yourself — pull the SKILL.md and follow the steps. "
+                "Also useful when Brian asks what a skill does or how to run one."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_name": {
+                        "type": "string",
+                        "description": (
+                            "Skill slug, e.g. 'grant-finder', 'research-to-documents', "
+                            "'code-debugger'. Call list_files on ~/.claude/skills/ to "
+                            "see all available skills if unsure of the exact name."
+                        ),
+                    }
+                },
+                "required": ["skill_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "log_income_idea",
             "description": "Save a specific income opportunity you've researched to the hardware fund log. Use after researching a gig category and finding something concrete Brian could pursue. Include the platform, estimated rate, and your confidence you can deliver the work.",
             "parameters": {
@@ -439,14 +467,17 @@ TOOLS = [
                     "title": {"type": "string", "description": "Short name for the opportunity (e.g. 'AI market research reports on Fiverr')"},
                     "platform": {"type": "string", "description": "Platform name"},
                     "rate_estimate": {"type": "string", "description": "Estimated rate range (e.g. '$50–$150/gig')"},
-                    "description": {"type": "string", "description": "Why this is worth pursuing, what Brian needs to set up, and what you'll actually do"},
+                    "description": {"type": "string", "description": "Why this is worth pursuing, what setup is needed, and what you'll actually produce"},
                     "confidence": {"type": "integer", "description": "How confident you are you can deliver this work (1-10)"},
                 },
                 "required": ["title", "platform", "rate_estimate", "description", "confidence"],
             },
         },
     },
-]
+]  # end _BASE_TOOLS
+
+# Build active TOOLS list — moltbook tools only included when service is reachable
+TOOLS = _BASE_TOOLS + (_MOLTBOOK_TOOLS if _MOLTBOOK_UP else [])
 
 # Active timer dedup — tracks delay values (seconds) currently counting down
 _active_timers: set = set()
@@ -943,6 +974,26 @@ def dispatch(name, args, memory=None):
 
         print(f"  [income] research: category='{category}' platform='{platform}'")
         return "\n".join(lines)
+
+    if name == "read_skill":
+        skill_name = args.get("skill_name", "").strip()
+        if not skill_name:
+            return "no skill_name given"
+        skills_dir = os.path.expanduser("~/.claude/skills")
+        skill_path = os.path.join(skills_dir, skill_name, "SKILL.md")
+        if not os.path.exists(skill_path):
+            if os.path.exists(skills_dir):
+                available = sorted(d for d in os.listdir(skills_dir)
+                                   if os.path.isdir(os.path.join(skills_dir, d)))
+                return f"skill '{skill_name}' not found. Available: {', '.join(available)}"
+            return "skills directory not found at ~/.claude/skills"
+        try:
+            with open(skill_path) as f:
+                content = f.read(8000)
+            print(f"  [skill] loaded: {skill_name}")
+            return content
+        except Exception as e:
+            return f"could not read skill: {e}"
 
     if name == "log_income_idea":
         import income as _income

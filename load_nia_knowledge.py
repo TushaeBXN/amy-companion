@@ -18,7 +18,9 @@ import sys
 import textwrap
 
 HERE = os.path.dirname(__file__)
-NIA_DIR = os.path.expanduser("~/nia-ai")
+_NIA_EXTERNAL = "/Volumes/500GBHD/repos/nia-ai"
+_NIA_LOCAL = os.path.expanduser("~/nia-ai")
+NIA_DIR = _NIA_EXTERNAL if os.path.exists(_NIA_EXTERNAL) else _NIA_LOCAL
 
 sys.path.insert(0, HERE)
 from memory import Memory

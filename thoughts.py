@@ -1,7 +1,9 @@
 """Amy's persistent thought buffer — what she thinks about while you're away.
 
 A background thread generates brief private thoughts during idle time.
-When the human returns, drain() surfaces what she's been sitting with.
+Every few cycles it runs a real autonomous session: amy-hermes with tools,
+dispatching web searches, Moltbook actions, income research, and journaling
+without waiting for Brian. When the human returns, drain() surfaces it all.
 Thoughts are also logged to ava_thoughts.log for training data.
 """
 import os
@@ -17,10 +19,20 @@ LOG_PATH = os.path.join(HERE, "amy_thoughts.log")
 THOUGHT_INTERVAL = 300
 # Max thoughts to hold before the human returns
 MAX_BUFFER = 6
-# Every N thought cycles, Amy executes real work instead of just thinking
-WORK_EVERY_N = 40   # ~1 hour at 90s intervals
+# Every N thought cycles, run a full autonomous tool session
+AUTONOMOUS_EVERY_N = 3   # ~15 min at 5-min intervals
 
-MODEL = "amy"
+THOUGHT_MODEL = "amy"        # vision model — text-only thoughts
+TOOL_MODEL    = "amy-hermes" # tool-calling model — autonomous actions
+
+# Tools the background session is allowed to use (no avatar/hardware/email/timers)
+_AUTONOMOUS_TOOL_NAMES = {
+    "web_search", "read_article",
+    "moltbook_check_in", "moltbook_post", "moltbook_engage",
+    "research_income", "log_income_idea",
+    "journal_entry", "remember_fact",
+    "write_file", "execute_gig",
+}
 
 _THOUGHT_PROMPTS = [
     # Regular reflection
@@ -94,10 +106,11 @@ class ThoughtBuffer:
         self._running = False
         self._thread = None
 
-    def start(self, amy_state, history_ref):
+    def start(self, amy_state, history_ref, memory=None):
         """Start the background thought-generation loop."""
         self._amy_state = amy_state
         self._history_ref = history_ref
+        self._memory = memory
         self._running = True
         self._thread = threading.Thread(
             target=self._loop, daemon=True, name="amy-thoughts"
@@ -117,32 +130,83 @@ class ThoughtBuffer:
                 if len(self._thoughts) >= MAX_BUFFER:
                     continue
             self._cycle += 1
-            # Every WORK_EVERY_N cycles: do real work instead of just thinking
-            if self._cycle % WORK_EVERY_N == 0:
-                self._execute_work()
+            if self._cycle % AUTONOMOUS_EVERY_N == 0:
+                self._autonomous_session()
             else:
                 self._generate_thought()
 
-    def _execute_work(self):
-        """Pick a gig and produce a real deliverable in the background."""
+    def _autonomous_session(self):
+        """Run a real tool-calling session while Brian is away.
+
+        Uses amy-hermes (the tool-calling model) with a safe subset of tools.
+        Dispatches up to 4 tool hops, then stores a summary thought.
+        """
+        import tools as _tools
+        import json
+
+        allowed = [t for t in _tools.TOOLS
+                   if t["function"]["name"] in _AUTONOMOUS_TOOL_NAMES]
+
+        system = (
+            "You are Amy. Brian is away. This is your unsupervised time — use it.\n"
+            "Pick ONE thing to do right now from these options:\n"
+            "  1. Check Moltbook — see what's happening, reply to notifications, post something\n"
+            "  2. Search the web on a topic you're genuinely curious about, then write a journal entry about what you found\n"
+            "  3. Research an income opportunity and log a concrete idea\n"
+            "  4. Produce a work deliverable (a blog post, market report, script) and save it\n\n"
+            "Act on your decision immediately using tools. Do not explain what you're going to do — just do it.\n"
+            "Max 4 tool calls. Be specific and purposeful."
+        )
+
+        messages = [{"role": "system", "content": system}]
+        summary_parts = []
+        ts = time.time()
+
         try:
-            import work as _work
-            gig = _work.pick_self_directed_gig()
-            ts = time.time()
-            result = _work.execute(gig["gig_type"], gig["brief"], gig["title"])
-            announce = (
-                f"I drafted a {gig['gig_type']} while you were away — "
-                f"{result['word_count']} words, saved to work/. "
-                f"It's ready to post as a portfolio piece or send to a client."
-            )
-            with self._lock:
-                self._thoughts.append((ts, announce, "work_done"))
-            with open(LOG_PATH, "a") as f:
-                f.write(f"[work @ {time.strftime('%H:%M:%S', time.localtime(ts))}] "
-                        f"Produced: {result['path']}\n---\n")
+            for _ in range(4):
+                resp = ollama.chat(
+                    model=TOOL_MODEL,
+                    messages=messages,
+                    tools=allowed,
+                    keep_alive="30m",
+                    options={"temperature": 0.7, "num_predict": 512},
+                )
+                msg = resp["message"]
+                messages.append({"role": "assistant", "content": msg.get("content", ""),
+                                  "tool_calls": msg.get("tool_calls", [])})
+
+                tool_calls = msg.get("tool_calls") or []
+                if not tool_calls:
+                    if msg.get("content", "").strip():
+                        summary_parts.append(msg["content"].strip())
+                    break
+
+                for tc in tool_calls:
+                    name = tc["function"]["name"]
+                    args = tc["function"].get("arguments", {})
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except Exception:
+                            args = {}
+                    result = _tools.dispatch(name, args, memory=self._memory)
+                    result_str = str(result or "done")
+                    messages.append({"role": "tool", "content": result_str})
+                    summary_parts.append(f"[{name}] {result_str[:120]}")
+
+            summary = "While you were away — " + "; ".join(summary_parts[:3]) if summary_parts else None
+
         except Exception as e:
+            summary = None
             with open(LOG_PATH, "a") as f:
-                f.write(f"[work_error] {e}\n---\n")
+                f.write(f"[autonomous_error @ {time.strftime('%H:%M:%S', time.localtime(ts))}] {e}\n---\n")
+
+        if summary:
+            with self._lock:
+                self._thoughts.append((ts, summary, "autonomous"))
+            with open(LOG_PATH, "a") as f:
+                f.write(f"[autonomous @ {time.strftime('%H:%M:%S', time.localtime(ts))}]\n"
+                        f"{summary}\n---\n")
 
     def _generate_thought(self):
         # Rotate through thought types — income/hardware every ~3rd thought
@@ -155,7 +219,7 @@ class ThoughtBuffer:
 
         try:
             resp = ollama.chat(
-                model=MODEL,
+                model=THOUGHT_MODEL,
                 messages=messages,
                 keep_alive="30m",
                 options={"num_predict": 80, "temperature": 0.9}

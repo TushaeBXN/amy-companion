@@ -15,7 +15,7 @@ WORK_DIR = os.path.join(HERE, "work")
 WORK_LOG = os.path.join(HERE, "work_log.json")
 
 # Model for content generation — hermes handles long-form well
-WORK_MODEL = "amy-neo"
+WORK_MODEL = "amy-hermes"
 
 os.makedirs(WORK_DIR, exist_ok=True)
 
@@ -47,7 +47,7 @@ def draft_deliverable(gig_type: str, brief: str, extra_context: str = "") -> str
             {"role": "system", "content": system},
             {"role": "user", "content": "\n\n".join(user_parts)},
         ],
-        options={"num_predict": 2000, "temperature": 0.75},
+        options={"num_predict": 2000, "temperature": 0.75, "num_ctx": 8192},
     )
     return resp["message"]["content"].strip()
 
@@ -108,13 +108,11 @@ def execute(gig_type: str, brief: str, title: str = "", extra_context: str = "")
     if not title:
         title = f"{gig_type.title()} — {datetime.now().strftime('%b %d')}"
 
-    print(f"  [work] drafting: {title}...")
     start = time.time()
     content = draft_deliverable(gig_type, brief, extra_context)
     elapsed = round(time.time() - start, 1)
 
     path = save_deliverable(title, content, gig_type)
-    print(f"  [work] saved to {path} ({elapsed}s)")
 
     return {
         "title": title,

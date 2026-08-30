@@ -1,4 +1,4 @@
-"""Amy's journal — local markdown storage for Brian's daily entries."""
+"""Amy's personal journal — her own thoughts, reflections, and observations."""
 import os
 import re
 from datetime import datetime, timezone
