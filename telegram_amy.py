@@ -45,12 +45,24 @@ def _load_history() -> list:
     return []
 
 
+def _msg_to_dict(msg) -> dict:
+    """Convert an Ollama Message (Pydantic) or plain dict to a serialisable dict."""
+    if hasattr(msg, "model_dump"):
+        return msg.model_dump()
+    if hasattr(msg, "dict"):
+        return msg.dict()
+    return dict(msg)
+
+
 def _save_history(history: list):
     """Persist recent history to disk, stripping any image bytes first."""
     trimmed = []
     for msg in history[-HISTORY_KEEP:]:
-        clean = {k: v for k, v in msg.items() if k != "images"}
-        # Keep only roles the model understands across restarts
+        try:
+            d = _msg_to_dict(msg)
+        except Exception:
+            continue
+        clean = {k: v for k, v in d.items() if k != "images"}
         if clean.get("role") in ("user", "assistant", "tool"):
             trimmed.append(clean)
     try:
@@ -80,7 +92,8 @@ def _build_system(history_len: int = 0) -> str:
             lines = []
             for role, text, ts in recent:
                 label = "Brian" if role == "user" else "Amy"
-                lines.append(f"[{ts[:16]}] {label}: {text[:300]}")
+                ts_str = (ts or "")[:16]
+                lines.append(f"[{ts_str}] {label}: {text[:300]}")
             s += (
                 "\n\n[Recent Telegram conversation history — reconstructed from memory]\n"
                 + "\n".join(lines)
