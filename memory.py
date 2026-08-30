@@ -151,23 +151,30 @@ class Memory:
             raise RuntimeError(f"embed model returned no embeddings (model={EMBED_MODEL})")
         return np.array(embeddings[0], dtype=np.float32)
 
-    def add(self, role, text):
+    def add(self, role, text, source=None):
         try:
             emb = self._embed(text)
             emb_blob = _to_blob(emb.tolist())
         except Exception as e:
             print(f"[memory] embed failed, storing without vector: {e}")
             emb_blob = None
-        self.db.execute(
-            "INSERT INTO mem (role, text, emb) VALUES (?,?,?)",
-            (role, text, emb_blob),
-        )
+        cols = "role, text, emb, source" if source else "role, text, emb"
+        vals = (role, text, emb_blob, source) if source else (role, text, emb_blob)
+        self.db.execute(f"INSERT INTO mem ({cols}) VALUES ({','.join(['?']*len(vals))})", vals)
         self.db.commit()
 
-    def add_bg(self, role, text):
+    def add_bg(self, role, text, source=None):
         """Non-blocking add — runs embed in background thread."""
         import threading
-        threading.Thread(target=self.add, args=(role, text), daemon=True).start()
+        threading.Thread(target=self.add, args=(role, text, source), daemon=True).start()
+
+    def recent_telegram(self, limit=40):
+        """Return recent Telegram conversation turns for context reconstruction."""
+        rows = self.db.execute(
+            "SELECT role, text, ts FROM mem WHERE source='telegram' "
+            "ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return list(reversed(rows))  # chronological
 
     def recent_ai_convos(self, limit=6):
         """Return a brief summary of recent AI-to-AI conversation turns."""
