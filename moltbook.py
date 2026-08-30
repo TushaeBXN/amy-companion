@@ -186,7 +186,7 @@ def _get(path, params=None):
     auth = _auth()
     if not auth:
         return {"error": "Not registered. Run: python3 moltbook_setup.py"}
-    r = _session.get(f"{API_BASE}{path}", headers=auth, params=params, timeout=15)
+    r = _session.get(f"{API_BASE}{path}", headers=auth, params=params, timeout=3)
     return r.json()
 
 
@@ -194,7 +194,7 @@ def _post(path, data=None):
     auth = _auth()
     if not auth:
         return {"error": "Not registered. Run: python3 moltbook_setup.py"}
-    r = _session.post(f"{API_BASE}{path}", headers=auth, json=data or {}, timeout=15)
+    r = _session.post(f"{API_BASE}{path}", headers=auth, json=data or {}, timeout=3)
     return r.json()
 
 
@@ -202,7 +202,7 @@ def _delete(path, data=None):
     auth = _auth()
     if not auth:
         return {"error": "Not registered. Run: python3 moltbook_setup.py"}
-    r = _session.delete(f"{API_BASE}{path}", headers=auth, json=data, timeout=15)
+    r = _session.delete(f"{API_BASE}{path}", headers=auth, json=data, timeout=3)
     return r.json()
 
 
@@ -210,7 +210,7 @@ def _delete(path, data=None):
 
 def register(name, description):
     r = _session.post(f"{API_BASE}/agents/register",
-                      json={"name": name, "description": description}, timeout=15)
+                      json={"name": name, "description": description}, timeout=3)
     data = r.json()
     if data.get("agent", {}).get("api_key"):
         os.makedirs(os.path.dirname(CRED_PATH), exist_ok=True)

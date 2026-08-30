@@ -36,6 +36,7 @@ import vision
 _mem = Memory()
 _amy_state = InternalState.restore()
 _amy_state.busy = False   # reset any stuck busy flag from a previous crashed session
+_interrupt_flag = threading.Event()  # set to interrupt the current stream
 _thought_buffer = ThoughtBuffer()
 _lock = asyncio.Lock()          # serialise concurrent requests
 _executor = ThreadPoolExecutor(max_workers=1)
@@ -66,12 +67,14 @@ _history = [_PRIMER]
 # Inject learnings into companion's module-level var so build_context picks it up
 companion._session_learnings = _learnings.load_recent_learnings()
 
-# Pre-load models into Ollama memory so first reply has no cold-start lag
-companion._warmup_models()
-
-# Start background threads
-start_spontaneous_thread(_history, _mem, _amy_state)
-_thought_buffer.start(_amy_state, _history, memory=_mem)
+# Warmup and background threads disabled: on this CPU hardware, the warmup
+# blocks Ollama for 6+ minutes; spontaneous thoughts/thought-buffer send
+# tool-less requests that invalidate the KV cache between every user turn,
+# making every second turn as slow as the first. Disable all background
+# Ollama calls to preserve the KV cache prefix across consecutive user turns.
+companion._warmup_models()  # currently a no-op (warmup disabled in companion.py)
+# start_spontaneous_thread(_history, _mem, _amy_state)
+# _thought_buffer.start(_amy_state, _history, memory=_mem)
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 app = FastAPI(title="Amy")
@@ -106,8 +109,7 @@ async def chat(req: ChatRequest):
         )
         _amy_state.touch()
 
-        # ── add user turn to memory + history ────────────────────────────────
-        _mem.add("user", req.message)
+        # ── add user turn to history (memory write happens after model call) ──
         _history.append({"role": "user", "content": req.message})
 
         # ── run turn in thread (blocking Ollama call) ─────────────────────────
@@ -126,6 +128,8 @@ async def chat(req: ChatRequest):
                 ),
             )
             _history[:] = result
+            # Write user message to memory after model finishes — avoids concurrent embed calls
+            _mem.add_bg("user", req.message)
         finally:
             _amy_state.busy = False
             if image_path:
@@ -171,11 +175,13 @@ async def chat_stream(req: ChatRequest):
         _thought_buffer.drain() if _thought_buffer.has_thoughts() else []
     )
     _amy_state.touch()
-    _mem.add("user", req.message)
     _history.append({"role": "user", "content": req.message})
     _amy_state.busy = True
 
+    _user_msg = req.message
     event_q: queue.SimpleQueue = queue.SimpleQueue()
+
+    _interrupt_flag.clear()
 
     def _worker():
         try:
@@ -187,6 +193,9 @@ async def chat_stream(req: ChatRequest):
                 pending_thoughts=pending_thoughts,
                 channel="browser",
             ):
+                if _interrupt_flag.is_set():
+                    event_q.put({"type": "interrupted"})
+                    break
                 event_q.put(event)
         except Exception as exc:
             event_q.put({"type": "error", "msg": str(exc)})
@@ -206,6 +215,7 @@ async def chat_stream(req: ChatRequest):
                 yield f"data: {json.dumps(event)}\n\n"
         finally:
             _amy_state.busy = False
+            _mem.add_bg("user", _user_msg)  # write after model done — no concurrent embeds
             if len(_history) > HISTORY_WINDOW:
                 _history[:] = _history[-HISTORY_WINDOW:]
             if image_path:
@@ -219,6 +229,14 @@ async def chat_stream(req: ChatRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.post("/interrupt")
+async def interrupt():
+    """Signal the current stream to stop early."""
+    _interrupt_flag.set()
+    _amy_state.busy = False
+    return JSONResponse({"ok": True})
 
 
 @app.get("/thoughts/poll")
@@ -318,19 +336,21 @@ _UI_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Amy</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap">
 <style>
   :root {
-    --bg:       #080A0F;
-    --surface:  #111520;
-    --border:   #1C2235;
-    --amy-bg:   #151B2E;
-    --user-bg:  #131828;
-    --accent:   #C9A84C;
-    --accent2:  #E8C56A;
-    --text:     #F0F4FF;
-    --muted:    #8B9BB4;
-    --mood-bg:  #151B2E;
-    --thinking: #1A2235;
+    --bg:       #050a14;
+    --surface:  #0b1826;
+    --border:   #162540;
+    --amy-bg:   #0f1e2f;
+    --user-bg:  #070e1a;
+    --accent:   #4599ff;
+    --accent2:  #7ab8ff;
+    --text:     #cfe0f2;
+    --muted:    #4f7290;
+    --mood-bg:  #0f1e2f;
+    --thinking: #0b1826;
+    color-scheme: dark;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -338,7 +358,7 @@ _UI_HTML = """<!DOCTYPE html>
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     font-size: 15px;
     height: 100dvh;
     display: flex;
@@ -365,7 +385,7 @@ _UI_HTML = """<!DOCTYPE html>
   }
 
   .header-info { flex: 1; }
-  .header-name { font-weight: 600; font-size: 16px; color: var(--text); }
+  .header-name { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 20px; letter-spacing: 0.04em; color: var(--text); }
   .header-sub  { font-size: 12px; color: var(--muted); }
 
   .mood-badge {
@@ -449,9 +469,9 @@ _UI_HTML = """<!DOCTYPE html>
 
   .user .bubble {
     background: var(--user-bg);
-    border: 1px solid #1C2A3A;
+    border: 1px solid var(--border);
     border-top-right-radius: 4px;
-    color: #A0B0CC;
+    color: var(--text);
   }
 
   /* ── thinking indicator ── */
@@ -492,6 +512,7 @@ _UI_HTML = """<!DOCTYPE html>
     padding: 4px 10px;
     margin-left: 42px;
     border-left: 2px solid var(--border);
+    font-family: 'IBM Plex Mono', monospace;
   }
 
   /* ── image thumbnail in chat ── */
@@ -551,10 +572,25 @@ _UI_HTML = """<!DOCTYPE html>
   #sendBtn {
     background: var(--accent);
     border-color: var(--accent);
-    color: #0A0800;
+    color: #ffffff;
     font-size: 17px;
   }
   #sendBtn:hover { background: var(--accent2); border-color: var(--accent2); }
+
+  #stopBtn {
+    display: none;
+    background: #c0392b;
+    border-color: #c0392b;
+    color: #ffffff;
+    font-size: 17px;
+  }
+  #stopBtn:hover { background: #e74c3c; border-color: #e74c3c; }
+
+  #input.queued {
+    border-color: var(--accent2);
+    background: color-mix(in srgb, var(--bg) 85%, var(--accent2));
+  }
+  #input.queued::placeholder { color: var(--accent2); }
 
   /* ── image preview bar (selected image) ── */
   #imgPreviewBar {
@@ -622,7 +658,7 @@ _UI_HTML = """<!DOCTYPE html>
   }
   .drop-zone:hover, .drop-zone.drag-over {
     border-color: var(--accent);
-    background: #151B2E;
+    background: #0f1e2f;
     color: var(--accent2);
   }
   .drop-zone .dz-icon { font-size: 28px; display: block; margin-bottom: 8px; }
@@ -751,6 +787,7 @@ _UI_HTML = """<!DOCTYPE html>
   <button id="learnBtn" title="Teach Amy a PDF">📚</button>
   <textarea id="input" placeholder="Say something to Amy…" rows="1"></textarea>
   <button class="icon-btn" id="sendBtn" title="Send (Enter)">➤</button>
+  <button class="icon-btn" id="stopBtn" title="Interrupt Amy (Esc)">■</button>
 </div>
 
 <script>
@@ -758,9 +795,11 @@ const AVATAR = "/static/amyglitch.png";
 const msgs   = document.getElementById("messages");
 const input  = document.getElementById("input");
 const send   = document.getElementById("sendBtn");
+const stopBtn = document.getElementById("stopBtn");
 
 let pendingImage = null;   // { b64, mime, dataUrl }
 let waiting = false;
+let queuedMsg = null;      // message typed while Amy is thinking
 
 // ── auto-grow textarea ────────────────────────────────────────────────────────
 input.addEventListener("input", () => {
@@ -770,9 +809,23 @@ input.addEventListener("input", () => {
 
 // ── send on Enter (Shift+Enter = newline) ─────────────────────────────────────
 input.addEventListener("keydown", e => {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    if (waiting) {
+      // queue it — highlight the box so user sees it's staged
+      queuedMsg = input.value.trim() || null;
+      if (queuedMsg) {
+        input.classList.add("queued");
+        input.placeholder = "Queued — will send when Amy finishes…";
+      }
+    } else {
+      sendMsg();
+    }
+  }
+  if (e.key === "Escape" && waiting) { e.preventDefault(); interruptAmy(); }
 });
-send.addEventListener("click", sendMsg);
+send.addEventListener("click", () => waiting ? null : sendMsg());
+stopBtn.addEventListener("click", interruptAmy);
 
 // ── image attach ──────────────────────────────────────────────────────────────
 document.getElementById("fileInput").addEventListener("change", e => {
@@ -875,6 +928,9 @@ async function sendMsg() {
           appendChunk(amyBubble, event.text);
         } else if (event.type === "done") {
           updateState(event.mood, event.energy);
+        } else if (event.type === "interrupted") {
+          if (!amyBubble) thinkingEl.remove();
+          // partial reply already streamed — just stop, no extra bubble
         } else if (event.type === "error") {
           if (!amyBubble) thinkingEl.remove();
           appendAmy("(error: " + event.msg + ")");
@@ -912,8 +968,8 @@ function appendUser(text, imgDataUrl) {
   row.className = "msg-row user";
 
   const av = document.createElement("div");
-  av.style.cssText = "width:32px;height:32px;border-radius:50%;background:#1e1e3a;border:1.5px solid #4a4a6a;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:16px;margin-top:2px;";
-  av.textContent = "🧑";
+  av.style.cssText = "width:32px;height:32px;border-radius:50%;background:#0f1e2f;border:1.5px solid #162540;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:16px;margin-top:2px;";
+  av.textContent = "🧑🏾";
 
   const bub = document.createElement("div");
   bub.className = "bubble";
@@ -1025,8 +1081,25 @@ function scrollDown() {
 
 function setWaiting(v) {
   waiting = v;
-  send.disabled = v;
-  input.disabled = v;
+  send.style.display = v ? "none" : "";
+  stopBtn.style.display = v ? "" : "none";
+  // input stays enabled — user can type next message while Amy thinks
+  if (!v) {
+    input.classList.remove("queued");
+    input.placeholder = "Say something to Amy…";
+    // if a message was queued, fire it now
+    if (queuedMsg) {
+      const msg = queuedMsg;
+      queuedMsg = null;
+      input.value = msg;
+      setTimeout(sendMsg, 50);
+    }
+  }
+}
+
+async function interruptAmy() {
+  if (!waiting) return;
+  try { await fetch("/interrupt", { method: "POST" }); } catch {}
 }
 
 function updateState(mood, energy) {

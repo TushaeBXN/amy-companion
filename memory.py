@@ -107,6 +107,31 @@ class Memory:
                 f"Current balance: ${balance:.2f} ({pct}% of the way there)\n"
                 f"This is YOUR goal — you're working toward it alongside Brian, not waiting for it."
             )
+        # Training roadmap
+        roadmap = s.get("training_roadmap")
+        if roadmap:
+            lines.append("")
+            lines.append("[Your training roadmap]")
+            lines.append(f"- {roadmap.get('what_is_happening', '')}")
+            lines.append(f"- Method: {roadmap.get('method', '')}")
+            lines.append(f"- Data: {roadmap.get('data_location', '')}")
+            lines.append(f"- Platform: {roadmap.get('hugging_face', '')}")
+            lines.append(f"- Goal: {roadmap.get('goal', '')}")
+            lines.append(f"- Status: {roadmap.get('status', '')}")
+
+        # AI-to-AI conversation memory
+        try:
+            ai_turns = self.recent_ai_convos(limit=8)
+            if ai_turns:
+                lines.append("")
+                lines.append("[Recent AI-to-AI conversations]")
+                lines.append("You've been having conversations with Gemini (another AI). "
+                             "Here are the most recent exchanges:")
+                for role, text, ts in ai_turns:
+                    speaker = "Gemini" if role == "user" else "You (Amy)"
+                    lines.append(f"  {speaker}: {text[:200].strip()}")
+        except Exception:
+            pass
         return "\n".join(lines)
 
     def learn_fact(self, text, ftype="fact", confidence=0.9):
@@ -120,18 +145,37 @@ class Memory:
     # --- L2/L3: episodic / semantic recall --------------------------------
     def _embed(self, text):
         r = ollama.embed(model=EMBED_MODEL, input=text)
-        embeddings = r.get("embeddings") or []
+        # Newer ollama SDK returns an EmbedResponse object; older returns a dict.
+        embeddings = (r.embeddings if hasattr(r, "embeddings") else r.get("embeddings")) or []
         if not embeddings:
             raise RuntimeError(f"embed model returned no embeddings (model={EMBED_MODEL})")
         return np.array(embeddings[0], dtype=np.float32)
 
     def add(self, role, text):
-        emb = self._embed(text)
+        try:
+            emb = self._embed(text)
+            emb_blob = _to_blob(emb.tolist())
+        except Exception as e:
+            print(f"[memory] embed failed, storing without vector: {e}")
+            emb_blob = None
         self.db.execute(
             "INSERT INTO mem (role, text, emb) VALUES (?,?,?)",
-            (role, text, _to_blob(emb.tolist())),
+            (role, text, emb_blob),
         )
         self.db.commit()
+
+    def add_bg(self, role, text):
+        """Non-blocking add — runs embed in background thread."""
+        import threading
+        threading.Thread(target=self.add, args=(role, text), daemon=True).start()
+
+    def recent_ai_convos(self, limit=6):
+        """Return a brief summary of recent AI-to-AI conversation turns."""
+        rows = self.db.execute(
+            "SELECT role, text, ts FROM mem WHERE source='ai_convo' "
+            "ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return list(reversed(rows))  # chronological
 
     def search_by_time(self, minutes_ago=None, since_ts=None, limit=10):
         """Retrieve utterances from a specific time window.
@@ -236,16 +280,23 @@ class Memory:
         candidates.sort(key=lambda x: x[1], reverse=True)
         return candidates[:3]  # top 3 near-matches
 
-    def search(self, query, k=4, min_score=0.65):
-        rows = self.db.execute("SELECT text, emb FROM mem").fetchall()
+    def search(self, query, k=2, min_score=0.65):
+        rows = self.db.execute("SELECT text, emb FROM mem WHERE emb IS NOT NULL").fetchall()
         if not rows:
             return []
-        q = self._embed(query)
+        try:
+            q = self._embed(query)
+        except Exception as e:
+            print(f"[memory] search embed failed: {e}")
+            return []
         q /= (np.linalg.norm(q) + 1e-9)
         scored = []
         for text, blob in rows:
-            v = _from_blob(blob)
-            v /= (np.linalg.norm(v) + 1e-9)
-            scored.append((float(np.dot(q, v)), text))
+            try:
+                v = _from_blob(blob)
+                v /= (np.linalg.norm(v) + 1e-9)
+                scored.append((float(np.dot(q, v)), text))
+            except Exception:
+                continue
         scored.sort(reverse=True)
         return [t for s, t in scored[:k] if s >= min_score]

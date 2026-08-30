@@ -31,12 +31,18 @@ _JOURNAL_TRIGGER_RE = re.compile(
     re.IGNORECASE
 )
 
+_BRIEFING_TRIGGER_RE = re.compile(
+    r'\b(morning\s+brief(ing)?|daily\s+brief(ing)?|brief\s+me|start\s+my\s+day|what.s\s+on\s+today'
+    r'|give\s+me\s+(a\s+)?brief|brief\s+on|morning\s+update|day\s+brief)\b',
+    re.IGNORECASE
+)
+
 MODEL = os.environ.get("AMY_MODEL", "amy-hermes")         # tool-calling engine (Llama 3 8B)
 VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "gemma4:e2b")  # vision engine — use base, not persona model
 CODE_MODEL = os.environ.get("AMY_CODE_MODEL", "deepseek-coder:6.7b")  # code generation
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
 HISTORY_WINDOW = 16     # keep last N messages (user+assistant) to prevent context bloat
-CTX_WINDOW = 8192       # cap KV cache — 131K default on amy-hermes kills performance on CPU
+CTX_WINDOW = 8192       # cap KV cache — 131K default on amy-hermes kills performance on CPU; 8192 fits full system prompt
 KEEP_ALIVE = -1         # keep models loaded indefinitely — no eviction between turns
 MAX_LEARNINGS_CHARS = 2000  # cap session learnings injected into system prompt
 SELF_PORTRAIT = os.path.join(os.path.dirname(__file__), "amyglitch.png")
@@ -116,7 +122,10 @@ def _strip_trailers(text: str) -> str:
             if i < tail_start or not _TRAILER_RE.search(line):
                 clean.append(line)
         lines = clean
-    return "\n".join(lines).rstrip()
+    result = "\n".join(lines).rstrip()
+    # Never strip everything — if the whole response matched trailer patterns,
+    # the model sent a short conversational reply; return it rather than silence.
+    return result if result else text.strip()
 
 
 def _is_code_request(text: str) -> bool:
@@ -175,17 +184,8 @@ def build_context(mem, user_text, amy_state=None, absence=None,
                    "the person was away. Do NOT claim days, months, or years have passed. "
                    "Do NOT invent conversation history. If asked, say you don't know exactly.")
 
-    hits = mem.search(user_text, k=4)
-    if hits:
-        system += ("\n\n[Relevant context — things the user has said before]\n- "
-                   + "\n- ".join(hits))
-        conflicts = mem.check_contradiction(user_text)
-        relevant_conflicts = [c for c in conflicts if c[0] not in hits]
-        if relevant_conflicts:
-            system += ("\n\n[Possible tension — you may have said something "
-                       "different before. Be honest if there's a conflict, "
-                       "don't smooth it over.]\n- "
-                       + "\n- ".join(t for t, _ in relevant_conflicts))
+    # Memory search disabled on CPU — embed model too slow to run alongside inference
+    hits = []
 
     if _JOURNAL_TRIGGER_RE.search(user_text):
         system += (
@@ -199,6 +199,15 @@ def build_context(mem, user_text, amy_state=None, absence=None,
             "Do NOT respond with text before calling the tool. "
             "Call journal_entry first. If you have something to say after, say it after. "
             "Asking Brian what to write is forbidden."
+        )
+
+    if _BRIEFING_TRIGGER_RE.search(user_text):
+        system += (
+            "\n\n[BRIEFING DIRECTIVE — PRE-FETCHED DATA BELOW]\n"
+            "Brian asked for a morning brief. Live data has already been fetched and is "
+            "injected into the conversation below. Your job is to synthesize it into a "
+            "structured brief — do NOT call web_search again, do NOT say you cannot find "
+            "a file, do NOT apologize. Just write the brief using the data provided."
         )
 
     return [{"role": "system", "content": system}]
@@ -556,6 +565,45 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
         except Exception as _je:
             print(f"  [journal] pre-flight failed: {_je}")
 
+    # ── Briefing pre-flight: fetch live data before model turn ───────────────
+    # amy-hermes unreliably chains 5+ tool calls for briefings, defaulting to
+    # a polite deflection. Pre-fetch everything programmatically and inject it
+    # as tool results so the model only has to write the summary.
+    if _BRIEFING_TRIGGER_RE.search(user_task):
+        import web as _web
+        from datetime import datetime as _dt
+        _today = _dt.now().strftime("%A, %B %d, %Y")
+        _searches = [
+            ("weather",   "weather Winston-Salem NC 27105 today"),
+            ("markets",   f"global stock market news today {_dt.now().strftime('%B %Y')}"),
+            ("ai_news",   f"AI model news today {_dt.now().strftime('%B %Y')}"),
+            ("world",     f"top world news stories today {_dt.now().strftime('%B %d %Y')}"),
+            ("local",     f"Winston-Salem NC local news today {_dt.now().strftime('%B %Y')}"),
+        ]
+        _brief_parts = [f"[BRIEFING DATA — {_today}]"]
+        for _label, _q in _searches:
+            try:
+                print(f"  [brief] fetching {_label}...")
+                yield {"type": "tool", "name": f"web_search ({_label})"}
+                _res = _web.search(_q, max_results=4)
+                _snippets = "\n".join(
+                    f"- {r['title']}: {r['snippet']}" for r in _res if r.get("snippet")
+                )
+                _brief_parts.append(f"\n[{_label.upper()}]\n{_snippets or '(no results)'}")
+            except Exception as _be:
+                _brief_parts.append(f"\n[{_label.upper()}]\n(search failed: {_be})")
+        _brief_data = "\n".join(_brief_parts)
+        messages.append({
+            "role": "tool",
+            "content": (
+                _brief_data
+                + "\n\n[INSTRUCTION] Synthesize the above into Amy's structured morning brief. "
+                "Sections: Weather, Markets, AI News, World, Local (Winston-Salem), "
+                "Brian's Priorities (from goals/context). "
+                "End with one sharp actionable observation. Scannable — 90 seconds to read."
+            ),
+        })
+
     # ── Normal tool-hop loop ──────────────────────────────────────────────────
     _seen_calls = {}
     msg = None
@@ -681,19 +729,31 @@ def start_spontaneous_thread(history, mem, amy_state,
 
 
 def _warmup_models():
-    """Pre-load all models into Ollama memory at startup so first reply has no load lag."""
+    """Pre-load main model AND pre-build KV cache for the static system prompt + tool prefix.
+
+    The warmup uses the EXACT same system message prefix and tool list that real requests use.
+    Ollama's prefix cache reuses those tokens on the first user message, cutting prompt eval
+    from ~240s (full re-eval) to ~30-50s (only new dynamic tokens + user message).
+    """
     def _ping(model):
         try:
-            ollama.chat(model=model,
-                        messages=[{"role": "user", "content": "hi"}],
-                        keep_alive=KEEP_ALIVE,
-                        options={"num_predict": 1, "num_ctx": 512})
-            print(f"  [warmup] {model} ready")
+            ollama.chat(
+                model=model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": "hi"},
+                ],
+                tools=tools.TOOLS,          # must match real requests for cache prefix to align
+                keep_alive=KEEP_ALIVE,
+                options={"num_predict": 1, "num_ctx": CTX_WINDOW},
+            )
+            print(f"  [warmup] {model} ready — KV cache primed", flush=True)
         except Exception as e:
-            print(f"  [warmup] {model} unavailable: {e}")
+            print(f"  [warmup] {model} unavailable: {e}", flush=True)
 
-    for m in [MODEL, CODE_MODEL]:
-        threading.Thread(target=_ping, args=(m,), daemon=True).start()
+    # Warmup disabled: on this CPU hardware the 4096-token context warmup takes
+    # 6+ minutes and blocks all Ollama requests during that time. Cold-load is faster.
+    pass  # threading.Thread(target=_ping, args=(MODEL,), daemon=True).start()
 
 
 def main():
@@ -904,7 +964,7 @@ def main():
                     "Then answer this: " + q
                 )
 
-            mem.add("user", user)
+            mem.add_bg("user", user)
             history.append({"role": "user", "content": user})
             # Before touching the clock, capture absence info and buffered thoughts
             absence = amy_state.estimate_absence()
