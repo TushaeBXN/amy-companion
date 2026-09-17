@@ -25,6 +25,7 @@ from thoughts import ThoughtBuffer
 from amy_persona import SYSTEM_PROMPT
 import learnings as _learnings
 _session_learnings: str = ""
+_calendar_context: str = ""
 
 _JOURNAL_TRIGGER_RE = re.compile(
     r'\b(journal|write in (your )?journal|log this|write this down|make a journal entry)\b',
@@ -108,6 +109,31 @@ _TRAILER_RE = re.compile(
 )
 
 
+def load_calendar_context() -> str:
+    """Read ~/Amy/context/calendar.json and return a compact summary for the system prompt."""
+    import json
+    path = os.path.expanduser("~/Amy/context/calendar.json")
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return ""
+    events = data.get("events", [])
+    if not events:
+        return ""
+    generated = data.get("generated_at", "")[:10]
+    lines = [f"[Calendar — next 7 days as of {generated}]"]
+    for e in events:
+        start = e.get("start", "")[:16].replace("T", " ")
+        title = e.get("title", "(untitled)")
+        cal = e.get("calendar", "")
+        loc = f" @ {e['location']}" if e.get("location") else ""
+        lines.append(f"  {start}  {title}{loc}  [{cal}]")
+    for pair in data.get("conflicts", []):
+        lines.append(f"  ⚠ Overlap: {pair[0]} / {pair[1]}")
+    return "\n".join(lines)
+
+
 def _strip_trailers(text: str) -> str:
     """Remove Hermes 3 helpfulness sign-off lines that slip past the system prompt."""
     lines = text.splitlines()
@@ -160,6 +186,8 @@ def build_context(mem, user_text, amy_state=None, absence=None,
         system += "\n\n[Interface: terminal — Brian is typing in the terminal.]"
     if _session_learnings:
         system += "\n\n" + _session_learnings[:MAX_LEARNINGS_CHARS]
+    if _calendar_context:
+        system += "\n\n" + _calendar_context
     if amy_state:
         system += "\n\n[Internal state]\n" + amy_state.state_summary()
 
@@ -763,8 +791,9 @@ def main():
 
     _warmup_models()
     mem = Memory()
-    global _session_learnings
+    global _session_learnings, _calendar_context
     _session_learnings = _learnings.load_recent_learnings()
+    _calendar_context = load_calendar_context()
     amy_state = InternalState()
     thought_buffer = ThoughtBuffer()
     history = [{"role": "assistant", "content": random.choice([
