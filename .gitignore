@@ -30,3 +30,15 @@ credentials.json
 .env.amy
 work/
 work_log.json
+
+# Calendar bridge output — contains CEO schedule (personal data — stays local)
+context/calendar.json
+Amy/context/calendar.json
+
+# Google OAuth token (auto-generated after first auth — never commit)
+token.json
+token.pickle
+
+# Learnings + conflict log — private behavioral/session data
+learnings.md
+identity_conflicts.log
