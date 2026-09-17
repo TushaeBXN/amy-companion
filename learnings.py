@@ -119,6 +119,34 @@ def _action_note(emotion: str, patterns: list[str]) -> str:
     return "No specific adjustment needed — maintain attentive presence."
 
 # ---------------------------------------------------------------------------
+# CORRECTION INTERFACE  (explicit signal from Brian, bypasses auto-inference)
+# ---------------------------------------------------------------------------
+
+def record_correction(correction: str, context: str = "") -> None:
+    """Write an explicit correction directly into learnings.md.
+
+    Call this when Brian corrects Amy's behaviour mid-session or after the fact.
+    The correction is written immediately (not deferred to session end) and still
+    passes through the identity gate so it cannot be used to override core values.
+
+    Args:
+        correction: The adjusted behaviour rule, e.g. "Ask one question at a time."
+        context:    Optional description of the situation that prompted the correction.
+    """
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    ctx_line = f"\n**Context**: {context.strip()}" if context.strip() else ""
+    entry = (
+        f"\n## {date_str}\n"
+        f"**Topic**: correction | **Emotion**: neutral\n"
+        f"**Pattern**: Brian issued a direct correction{ctx_line}\n"
+        f"**Action**: {correction.strip()}\n"
+    )
+    if _passes_identity_check(entry):
+        with open(_LEARNINGS_PATH, "a") as f:
+            f.write(entry)
+
+
+# ---------------------------------------------------------------------------
 # WRITE LAYER
 # ---------------------------------------------------------------------------
 
