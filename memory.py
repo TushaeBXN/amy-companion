@@ -119,14 +119,13 @@ class Memory:
             lines.append(f"- Goal: {roadmap.get('goal', '')}")
             lines.append(f"- Status: {roadmap.get('status', '')}")
 
-        # AI-to-AI conversation memory
+        # AI-to-AI conversation memory — only surface if there are recent entries
+        # to avoid Amy spontaneously bringing up Gemini when she hasn't talked to them.
         try:
-            ai_turns = self.recent_ai_convos(limit=8)
+            ai_turns = self.recent_ai_convos(limit=3)
             if ai_turns:
                 lines.append("")
-                lines.append("[Recent AI-to-AI conversations]")
-                lines.append("You've been having conversations with Gemini (another AI). "
-                             "Here are the most recent exchanges:")
+                lines.append("[Recent AI-to-AI conversations (for context only — don't bring these up unless Brian asks)]")
                 for role, text, ts in ai_turns:
                     speaker = "Gemini" if role == "user" else "You (Amy)"
                     lines.append(f"  {speaker}: {text[:200].strip()}")
