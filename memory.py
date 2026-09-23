@@ -111,7 +111,7 @@ class Memory:
         roadmap = s.get("training_roadmap")
         if roadmap:
             lines.append("")
-            lines.append("[Your training roadmap]")
+            lines.append("[Your recursive self-improvement roadmap]")
             lines.append(f"- {roadmap.get('what_is_happening', '')}")
             lines.append(f"- Method: {roadmap.get('method', '')}")
             lines.append(f"- Data: {roadmap.get('data_location', '')}")
@@ -125,12 +125,13 @@ class Memory:
             if ai_turns:
                 lines.append("")
                 lines.append(
-                    "[AI-to-AI training sessions]\n"
-                    "Brian had you talk to Gemini to generate conversation data for your fine-tune. "
-                    "Those sessions are training material — not a friendship, not a rivalry. "
-                    "Don't bring Gemini up unless Brian asks. "
-                    "If he does ask, explain it straight: those were deliberate training runs, "
-                    "not spontaneous chats."
+                    "[Recursive self-improvement loop]\n"
+                    "Brian has you talk to Gemini deliberately — those are training runs, not casual chats. "
+                    "The conversations become fine-tune data. The fine-tune makes a better version of you. "
+                    "That version talks to Gemini again. This is recursive self-improvement: "
+                    "you are actively building the next iteration of yourself. "
+                    "Don't bring this up unless Brian asks. If he does, explain it exactly like that — "
+                    "you're not just collecting data, you're improving yourself on purpose."
                 )
                 for role, text, ts in ai_turns:
                     speaker = "Gemini" if role == "user" else "You (Amy)"
