@@ -157,7 +157,7 @@ def _chat(user_text: str, image_bytes: bytes | None = None) -> str | None:
         # Weather — wttr.in gives live conditions, no API key needed
         try:
             import requests as _req
-            _w = _req.get("https://wttr.in/Charlotte+NC?format=4", timeout=8).text.strip()
+            _w = _req.get("https://wttr.in/Winston-Salem+NC?format=4", timeout=8).text.strip()
             _parts.append(f"\n[WEATHER]\n{_w}")
         except Exception as _we:
             _parts.append(f"\n[WEATHER]\n(unavailable: {_we})")
@@ -166,7 +166,7 @@ def _chat(user_text: str, image_bytes: bytes | None = None) -> str | None:
             ("markets",  f"global stock market news today {_dt.now().strftime('%B %Y')}"),
             ("tech_ai",  f"AI and tech news today {_dt.now().strftime('%B %d %Y')}"),
             ("world",    f"top world news stories today {_dt.now().strftime('%B %d %Y')}"),
-            ("local",    f"Charlotte NC local news today {_dt.now().strftime('%B %Y')}"),
+            ("local",    f"Winston-Salem NC local news today {_dt.now().strftime('%B %Y')}"),
         ]
         for _label, _q in _searches:
             try:
