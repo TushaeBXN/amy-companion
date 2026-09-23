@@ -1,0 +1,92 @@
+{
+  "amy_persona": [],
+  "amy_server": [
+    "companion",
+    "learn_pdf",
+    "learnings",
+    "memory",
+    "state",
+    "thoughts",
+    "vision"
+  ],
+  "build_finetune_dataset": [],
+  "companion": [
+    "amy_persona",
+    "hearing",
+    "journal",
+    "learnings",
+    "logger",
+    "memory",
+    "state",
+    "thoughts",
+    "tools",
+    "vision",
+    "voice",
+    "web"
+  ],
+  "converse_ai": [
+    "companion",
+    "memory",
+    "moltbook",
+    "web"
+  ],
+  "email_amy": [],
+  "fine_tune": [],
+  "hearing": [],
+  "income": [],
+  "journal": [],
+  "learn_books": [],
+  "learn_pdf": [],
+  "learn_url": [
+    "learn_pdf"
+  ],
+  "learnings": [],
+  "load_nia_knowledge": [
+    "memory"
+  ],
+  "load_security_books": [
+    "learn_pdf"
+  ],
+  "logger": [],
+  "memory": [
+    "email_amy"
+  ],
+  "moltbook": [],
+  "moltbook_setup": [
+    "moltbook"
+  ],
+  "music": [],
+  "self_check": [],
+  "songs": [],
+  "state": [],
+  "supervisor": [
+    "logger"
+  ],
+  "telegram_amy": [
+    "amy_persona",
+    "learnings",
+    "memory",
+    "state",
+    "tools",
+    "web"
+  ],
+  "thoughts": [
+    "tools"
+  ],
+  "tools": [
+    "email_amy",
+    "income",
+    "journal",
+    "learn_books",
+    "moltbook",
+    "self_check",
+    "voice",
+    "web",
+    "work"
+  ],
+  "tools_retry_patch": [],
+  "vision": [],
+  "voice": [],
+  "web": [],
+  "work": []
+}
