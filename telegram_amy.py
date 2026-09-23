@@ -152,14 +152,22 @@ def _chat(user_text: str, image_bytes: bytes | None = None) -> str | None:
     if _BRIEFING_RE.search(user_text):
         import web as _web
         _today = _dt.now().strftime("%A, %B %d, %Y")
+        _parts = [f"[BRIEFING DATA — {_today}]"]
+
+        # Weather — wttr.in gives live conditions, no API key needed
+        try:
+            import requests as _req
+            _w = _req.get("https://wttr.in/Charlotte+NC?format=4", timeout=8).text.strip()
+            _parts.append(f"\n[WEATHER]\n{_w}")
+        except Exception as _we:
+            _parts.append(f"\n[WEATHER]\n(unavailable: {_we})")
+
         _searches = [
-            ("weather",  "weather Charlotte NC today"),
             ("markets",  f"global stock market news today {_dt.now().strftime('%B %Y')}"),
             ("tech_ai",  f"AI and tech news today {_dt.now().strftime('%B %d %Y')}"),
             ("world",    f"top world news stories today {_dt.now().strftime('%B %d %Y')}"),
             ("local",    f"Charlotte NC local news today {_dt.now().strftime('%B %Y')}"),
         ]
-        _parts = [f"[BRIEFING DATA — {_today}]"]
         for _label, _q in _searches:
             try:
                 _res = _web.search(_q, max_results=4)
