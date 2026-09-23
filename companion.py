@@ -38,12 +38,12 @@ _BRIEFING_TRIGGER_RE = re.compile(
     re.IGNORECASE
 )
 
-MODEL = os.environ.get("AMY_MODEL", "amy-hermes")         # tool-calling engine (Llama 3 8B)
-VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "gemma4:e2b")  # vision engine — use base, not persona model
+MODEL = os.environ.get("AMY_MODEL", "amy-vl")             # tool-calling + vision engine (Qwen2.5-VL 7B abliterated Q8)
+VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "amy-vl")  # same model handles vision natively
 CODE_MODEL = os.environ.get("AMY_CODE_MODEL", "deepseek-coder:6.7b")  # code generation
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
 HISTORY_WINDOW = 16     # keep last N messages (user+assistant) to prevent context bloat
-CTX_WINDOW = 8192       # cap KV cache — 131K default on amy-hermes kills performance on CPU; 8192 fits full system prompt
+CTX_WINDOW = 16384      # Qwen2.5-VL context window
 KEEP_ALIVE = -1         # keep models loaded indefinitely — no eviction between turns
 MAX_LEARNINGS_CHARS = 2000  # cap session learnings injected into system prompt
 SELF_PORTRAIT = os.path.join(os.path.dirname(__file__), "amyglitch.png")
@@ -255,7 +255,7 @@ def run_turn(history, mem, image=None, amy_state=None,
         if channel == "terminal":
             print(f"  [vision] image attached ({len(b64)//1024}KB b64)")
 
-    # Strip images from history before any text-model call — amy-hermes is text-only
+    # Strip images from history to keep context lean — amy-vl handles vision per-turn
     messages = build_context(mem, user_msg["content"], amy_state,
                              absence=absence,
                              pending_thoughts=pending_thoughts,

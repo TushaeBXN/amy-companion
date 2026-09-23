@@ -1,7 +1,7 @@
 """Amy's persistent thought buffer — what she thinks about while you're away.
 
 A background thread generates brief private thoughts during idle time.
-Every few cycles it runs a real autonomous session: amy-hermes with tools,
+Every few cycles it runs a real autonomous session: amy-vl with tools,
 dispatching web searches, Moltbook actions, income research, and journaling
 without waiting for Brian. When the human returns, drain() surfaces it all.
 Thoughts are also logged to ava_thoughts.log for training data.
@@ -22,8 +22,8 @@ MAX_BUFFER = 6
 # Every N thought cycles, run a full autonomous tool session
 AUTONOMOUS_EVERY_N = 3   # ~15 min at 5-min intervals
 
-THOUGHT_MODEL = "amy"        # vision model — text-only thoughts
-TOOL_MODEL    = "amy-hermes" # tool-calling model — autonomous actions
+THOUGHT_MODEL = "amy-vl"     # vision-language model — thoughts + image awareness
+TOOL_MODEL    = "amy-vl"     # tool-calling model — autonomous actions
 
 # Tools the background session is allowed to use (no avatar/hardware/email/timers)
 _AUTONOMOUS_TOOL_NAMES = {
@@ -138,7 +138,7 @@ class ThoughtBuffer:
     def _autonomous_session(self):
         """Run a real tool-calling session while Brian is away.
 
-        Uses amy-hermes (the tool-calling model) with a safe subset of tools.
+        Uses amy-vl (the tool-calling model) with a safe subset of tools.
         Dispatches up to 4 tool hops, then stores a summary thought.
         """
         import tools as _tools
