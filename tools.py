@@ -492,12 +492,13 @@ _BASE_TOOLS = [
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["impact", "test", "edit", "depmap"],
+                        "enum": ["impact", "test", "edit", "depmap", "history"],
                         "description": (
                             "impact: check blast radius for a file before touching it. "
                             "test: run the full test suite and see the score. "
                             "edit: apply a guarded change (requires old_text, new_text, filename, reason). "
-                            "depmap: print the full dependency map."
+                            "depmap: print the full dependency map. "
+                            "history: show a summary of recent edit attempts (applied, reverted, blocked)."
                         ),
                     },
                     "filename": {
@@ -1092,6 +1093,10 @@ def dispatch(name, args, memory=None):
             print(f"  [self_improve] guarded edit: {filename}")
             result = _sc.self_edit(filename, old_text, new_text, reason)
             return result.get("message", _json.dumps(result))
+        elif action == "history":
+            n = int(args.get("n", 20))
+            print(f"  [self_improve] reading edit history (last {n})...")
+            return _sc.history_summary(n)
         else:
             return f"unknown self_improve action: {action}"
 
