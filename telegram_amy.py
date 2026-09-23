@@ -20,10 +20,10 @@ try:
 except ModuleNotFoundError:
     _learnings = None
 
-MODEL        = "amy-hermes"
-VISION_MODEL = "gemma4:e2b"
+MODEL        = os.environ.get("AMY_MODEL", "amy-vl")
+VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "amy-vl")
 MAX_HOPS     = 6
-CTX_WINDOW   = 8192
+CTX_WINDOW   = 16384
 HISTORY_FILE = os.path.join(_here, "telegram_history.json")
 HISTORY_KEEP = 60   # messages to persist across restarts
 
