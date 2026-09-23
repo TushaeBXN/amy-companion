@@ -7,9 +7,16 @@ _here = os.path.dirname(__file__)
 load_dotenv(os.path.join(_here, ".env"))
 load_dotenv(os.path.join(_here, ".env.amy"), override=False)
 
-import json, ollama
+import json, re, ollama
+from datetime import datetime as _dt
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
+
+_BRIEFING_RE = re.compile(
+    r'\b(morning\s+brief(ing)?|daily\s+brief(ing)?|brief\s+me|what.s\s+on\s+today'
+    r'|give\s+me\s+(a\s+)?brief|brief\s+on|morning\s+update|day\s+brief)\b',
+    re.IGNORECASE
+)
 
 from amy_persona import SYSTEM_PROMPT
 from memory import Memory
@@ -140,6 +147,37 @@ def _chat(user_text: str, image_bytes: bytes | None = None) -> str | None:
     messages = [{"role": "system", "content": _build_system(len(history))}] + history[-20:] + [user_msg]
     history.append(user_msg)
     mem.add("user", user_text[:500], source="telegram")
+
+    # ── Morning brief: pre-fetch live data so amy-vl only has to write ───────
+    if _BRIEFING_RE.search(user_text):
+        import web as _web
+        _today = _dt.now().strftime("%A, %B %d, %Y")
+        _searches = [
+            ("weather",  "weather Charlotte NC today"),
+            ("markets",  f"global stock market news today {_dt.now().strftime('%B %Y')}"),
+            ("tech_ai",  f"AI and tech news today {_dt.now().strftime('%B %d %Y')}"),
+            ("world",    f"top world news stories today {_dt.now().strftime('%B %d %Y')}"),
+            ("local",    f"Charlotte NC local news today {_dt.now().strftime('%B %Y')}"),
+        ]
+        _parts = [f"[BRIEFING DATA — {_today}]"]
+        for _label, _q in _searches:
+            try:
+                _res = _web.search(_q, max_results=4)
+                _snips = "\n".join(
+                    f"- {r['title']}: {r['snippet']}" for r in _res if r.get("snippet")
+                )
+                _parts.append(f"\n[{_label.upper()}]\n{_snips or '(no results)'}")
+            except Exception as _be:
+                _parts.append(f"\n[{_label.upper()}]\n(search failed: {_be})")
+        messages.append({
+            "role": "tool",
+            "content": (
+                "\n".join(_parts)
+                + "\n\n[INSTRUCTION] Synthesize into Amy's morning brief. "
+                "Sections: Weather, Markets, Tech & AI, World News, Local (Charlotte NC). "
+                "End with one sharp observation Brian should act on. Scannable — 90 seconds to read."
+            ),
+        })
 
     msg = None
     seen = {}
