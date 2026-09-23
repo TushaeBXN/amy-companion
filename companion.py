@@ -602,7 +602,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
         from datetime import datetime as _dt
         _today = _dt.now().strftime("%A, %B %d, %Y")
         _searches = [
-            ("weather",   "weather Charlotte NC today"),
+            ("weather",   "weather Winston-Salem NC today"),
             ("markets",   f"global stock market news today {_dt.now().strftime('%B %Y')}"),
             ("ai_news",   f"AI model news today {_dt.now().strftime('%B %Y')}"),
             ("world",     f"top world news stories today {_dt.now().strftime('%B %d %Y')}"),
