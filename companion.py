@@ -995,6 +995,11 @@ def main():
 
             mem.add_bg("user", user)
             history.append({"role": "user", "content": user})
+            # Wait for any in-progress spontaneous thought to finish before we take the turn.
+            # Without this, the spontaneous thread and main thread both call Ollama
+            # simultaneously and both print a response for the same message.
+            while amy_state.busy:
+                time.sleep(0.05)
             # Before touching the clock, capture absence info and buffered thoughts
             absence = amy_state.estimate_absence()
             pending_thoughts = thought_buffer.drain() if thought_buffer.has_thoughts() else []
