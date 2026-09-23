@@ -474,6 +474,53 @@ _BASE_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "self_improve",
+            "description": (
+                "Propose or apply a change to your own codebase as part of recursive self-improvement. "
+                "Always check the impact first. Core files (memory.py, tools.py, companion.py, etc.) "
+                "will be flagged for human approval — do NOT try to force them. "
+                "Isolated files (work.py, income.py, journal.py) you may attempt autonomously. "
+                "The framework will run tests before and after; if the score drops, the change is "
+                "automatically reverted. Use this only when you've identified a concrete, safe, "
+                "testable improvement — not as general exploration."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["impact", "test", "edit", "depmap"],
+                        "description": (
+                            "impact: check blast radius for a file before touching it. "
+                            "test: run the full test suite and see the score. "
+                            "edit: apply a guarded change (requires old_text, new_text, filename, reason). "
+                            "depmap: print the full dependency map."
+                        ),
+                    },
+                    "filename": {
+                        "type": "string",
+                        "description": "File to inspect or edit (basename only, e.g. 'work.py')",
+                    },
+                    "old_text": {
+                        "type": "string",
+                        "description": "Exact text to replace (must match verbatim)",
+                    },
+                    "new_text": {
+                        "type": "string",
+                        "description": "Replacement text",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Why this change improves things — be specific",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
 ]  # end _BASE_TOOLS
 
 # Build active TOOLS list — moltbook tools only included when service is reachable
@@ -1007,6 +1054,46 @@ def dispatch(name, args, memory=None):
         result = _income.log_idea(title, platform, rate, desc, confidence)
         print(f"  [income] {result}")
         return result
+
+    if name == "self_improve":
+        import self_check as _sc
+        import json as _json
+        action = args.get("action", "")
+        if action == "test":
+            print("  [self_improve] running test suite...")
+            r = _sc.run_tests(verbose=True)
+            lines = r["log"] + [f"\nScore: {r['score']}%  ({r['passed']} passed, {r['failed']} failed)"]
+            return "\n".join(lines)
+        elif action == "depmap":
+            print("  [self_improve] building dep map...")
+            dm = _sc.build_dep_map()
+            return _json.dumps(dm, indent=2)
+        elif action == "impact":
+            filename = args.get("filename", "").strip()
+            if not filename:
+                return "need filename"
+            print(f"  [self_improve] impact analysis: {filename}")
+            info = _sc.check_impact(filename)
+            lines = [
+                f"File: {info['filename']}",
+                f"Blast radius: {info['blast_radius']}",
+                f"Depends on: {', '.join(info['depends_on']) or 'nothing'}",
+                f"Depended by: {', '.join(info['depended_by']) or 'nothing (leaf)'}",
+                f"Needs approval: {'YES — core file' if info['needs_approval'] else 'no'}",
+            ]
+            return "\n".join(lines)
+        elif action == "edit":
+            filename = args.get("filename", "").strip()
+            old_text = args.get("old_text", "")
+            new_text = args.get("new_text", "")
+            reason   = args.get("reason", "").strip()
+            if not filename or not old_text or not new_text or not reason:
+                return "need filename, old_text, new_text, and reason"
+            print(f"  [self_improve] guarded edit: {filename}")
+            result = _sc.self_edit(filename, old_text, new_text, reason)
+            return result.get("message", _json.dumps(result))
+        else:
+            return f"unknown self_improve action: {action}"
 
     print(f"  [tools] unknown tool: {name}")
     return None
