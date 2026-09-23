@@ -14,8 +14,8 @@ HERE = os.path.dirname(__file__)
 WORK_DIR = os.path.join(HERE, "work")
 WORK_LOG = os.path.join(HERE, "work_log.json")
 
-# Model for content generation — hermes handles long-form well
-WORK_MODEL = "amy-hermes"
+# Model for content generation
+WORK_MODEL = "amy-vl"
 
 os.makedirs(WORK_DIR, exist_ok=True)
 
