@@ -24,6 +24,7 @@ import traceback
 from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+EDIT_HISTORY_PATH = os.path.join(HERE, "edit_history.jsonl")
 
 # ── Safety gates ──────────────────────────────────────────────────────────────
 
@@ -266,6 +267,64 @@ def score_tests() -> int:
     return r["score"]
 
 
+# ── Edit history log ──────────────────────────────────────────────────────────
+
+def _log_edit(entry: dict) -> None:
+    """Append one edit record to edit_history.jsonl (one JSON object per line)."""
+    record = {
+        "timestamp": entry.get("timestamp", datetime.now().isoformat(timespec="seconds")),
+        "file": entry.get("file", ""),
+        "reason": entry.get("reason", ""),
+        "status": entry.get("status", ""),
+        "score_before": entry.get("score_before"),
+        "score_after": entry.get("score_after"),
+        "blast_radius": entry.get("blast_radius", ""),
+        "depended_by": entry.get("depended_by", []),
+        "old_text": entry.get("old_text", "")[:300],
+        "new_text": entry.get("new_text", "")[:300],
+        "message": entry.get("message", ""),
+    }
+    try:
+        with open(EDIT_HISTORY_PATH, "a") as f:
+            f.write(json.dumps(record) + "\n")
+    except Exception:
+        pass  # never let logging break the caller
+
+
+def read_edit_history(n: int = 20) -> list[dict]:
+    """Return the last n edit records, newest first."""
+    if not os.path.exists(EDIT_HISTORY_PATH):
+        return []
+    try:
+        with open(EDIT_HISTORY_PATH) as f:
+            lines = [l.strip() for l in f if l.strip()]
+        records = []
+        for line in lines:
+            try:
+                records.append(json.loads(line))
+            except Exception:
+                pass
+        return list(reversed(records[-n:]))
+    except Exception:
+        return []
+
+
+def history_summary(n: int = 20) -> str:
+    """Return a human-readable summary of the last n edit attempts."""
+    records = read_edit_history(n)
+    if not records:
+        return "No edit history yet."
+    lines = [f"Last {len(records)} edits (newest first):"]
+    for r in records:
+        score_str = ""
+        if r.get("score_before") is not None and r.get("score_after") is not None:
+            score_str = f" [{r['score_before']}→{r['score_after']}]"
+        lines.append(
+            f"  {r['timestamp']}  {r['status']:20s}  {r['file']:20s}{score_str}  {r['reason'][:60]}"
+        )
+    return "\n".join(lines)
+
+
 # ── Guarded self-edit ──────────────────────────────────────────────────────────
 
 def self_edit(
@@ -317,51 +376,68 @@ def self_edit(
 
     # 3. Core file gate
     if impact["needs_approval"] and not force_autonomous:
-        return {
+        result = {
             "status": "approval_required",
             "file": basename,
             "reason": reason,
             "old_text": old_text[:300],
             "new_text": new_text[:300],
             "impact": impact,
+            "blast_radius": impact["blast_radius"],
+            "depended_by": impact["depended_by"],
             "message": (
                 f"'{basename}' is a core file (blast radius: {impact['blast_radius']}, "
                 f"depended by: {impact['depended_by']}). "
                 "I need Brian to approve this change before I apply it."
             ),
         }
+        _log_edit({**result, "old_text": old_text, "new_text": new_text})
+        return result
 
     # High blast radius guard (even for non-core files)
     if impact["blast_radius"] == "high" and not force_autonomous:
-        return {
+        result = {
             "status": "high_blast_radius",
             "file": basename,
+            "reason": reason,
+            "blast_radius": "high",
             "depended_by": impact["depended_by"],
             "message": (
                 f"'{basename}' is depended on by {len(impact['depended_by'])} other modules. "
                 "That's a high blast radius — I'd rather check with Brian before touching it."
             ),
         }
+        _log_edit({**result, "old_text": old_text, "new_text": new_text})
+        return result
 
     # 4. Syntax-check proposed change
     with open(filepath) as f:
         original = f.read()
     if old_text not in original:
-        return {
+        result = {
             "status": "error",
+            "file": basename,
+            "reason": reason,
             "message": f"old_text not found verbatim in {basename}. No change made.",
         }
+        _log_edit({**result, "old_text": old_text, "new_text": new_text,
+                   "blast_radius": impact["blast_radius"], "depended_by": impact["depended_by"]})
+        return result
     proposed = original.replace(old_text, new_text, 1)
     if filepath.endswith(".py"):
         try:
             ast.parse(proposed, filename=basename)
         except SyntaxError as e:
-            return {
+            result = {
                 "status": "syntax_error",
                 "file": basename,
+                "reason": reason,
                 "error": f"line {e.lineno}: {e.msg}",
                 "message": "Proposed change has a syntax error — not applied.",
             }
+            _log_edit({**result, "old_text": old_text, "new_text": new_text,
+                       "blast_radius": impact["blast_radius"], "depended_by": impact["depended_by"]})
+            return result
 
     # 5. Backup
     backup_path = filepath + f".bak_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -377,7 +453,11 @@ def self_edit(
     except Exception as e:
         shutil.copy2(backup_path, filepath)
         os.remove(backup_path)
-        return {"status": "error", "message": f"Write failed: {e}"}
+        result = {"status": "error", "file": basename, "reason": reason,
+                  "message": f"Write failed: {e}"}
+        _log_edit({**result, "old_text": old_text, "new_text": new_text,
+                   "blast_radius": impact["blast_radius"], "depended_by": impact["depended_by"]})
+        return result
 
     # 8. Score after
     score_after = score_tests()
@@ -392,18 +472,22 @@ def self_edit(
                 importlib.reload(sys.modules[mod])
             except Exception:
                 pass
-        return {
+        result = {
             "status": "reverted",
             "file": basename,
             "score_before": score_before,
             "score_after": score_after,
             "reason": reason,
+            "blast_radius": impact["blast_radius"],
+            "depended_by": impact["depended_by"],
             "message": (
                 f"Score dropped from {score_before} → {score_after} after edit. "
                 "I've reverted the file to its original state. "
                 "The change didn't pass the test suite."
             ),
         }
+        _log_edit({**result, "old_text": old_text, "new_text": new_text})
+        return result
 
     # 9. Success — reload cached module
     os.remove(backup_path)
@@ -414,18 +498,22 @@ def self_edit(
         except Exception:
             pass
 
-    return {
+    result = {
         "status": "applied",
         "file": basename,
         "score_before": score_before,
         "score_after": score_after,
         "reason": reason,
+        "blast_radius": impact["blast_radius"],
+        "depended_by": impact["depended_by"],
         "impact": impact,
         "message": (
             f"Change applied to {basename}. "
             f"Test score: {score_before} → {score_after}."
         ),
     }
+    _log_edit({**result, "old_text": old_text, "new_text": new_text})
+    return result
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
