@@ -119,13 +119,19 @@ class Memory:
             lines.append(f"- Goal: {roadmap.get('goal', '')}")
             lines.append(f"- Status: {roadmap.get('status', '')}")
 
-        # AI-to-AI conversation memory — only surface if there are recent entries
-        # to avoid Amy spontaneously bringing up Gemini when she hasn't talked to them.
+        # AI-to-AI conversation memory
         try:
             ai_turns = self.recent_ai_convos(limit=3)
             if ai_turns:
                 lines.append("")
-                lines.append("[Recent AI-to-AI conversations (for context only — don't bring these up unless Brian asks)]")
+                lines.append(
+                    "[AI-to-AI training sessions]\n"
+                    "Brian had you talk to Gemini to generate conversation data for your fine-tune. "
+                    "Those sessions are training material — not a friendship, not a rivalry. "
+                    "Don't bring Gemini up unless Brian asks. "
+                    "If he does ask, explain it straight: those were deliberate training runs, "
+                    "not spontaneous chats."
+                )
                 for role, text, ts in ai_turns:
                     speaker = "Gemini" if role == "user" else "You (Amy)"
                     lines.append(f"  {speaker}: {text[:200].strip()}")
