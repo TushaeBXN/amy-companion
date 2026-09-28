@@ -47,7 +47,7 @@ def draft_deliverable(gig_type: str, brief: str, extra_context: str = "") -> str
             {"role": "system", "content": system},
             {"role": "user", "content": "\n\n".join(user_parts)},
         ],
-        options={"num_predict": 2000, "temperature": 0.75, "num_ctx": 8192},
+        options={"num_predict": 2000, "temperature": 0.75, "num_ctx": 32768},
     )
     return resp["message"]["content"].strip()
 

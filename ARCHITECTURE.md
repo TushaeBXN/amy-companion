@@ -1,10 +1,74 @@
 # Amy · System Architecture
 
-Amy is a locally-hosted AI companion with three input paths, a multi-model inference core, a layered memory system, and a background autonomy layer. No data leaves the machine.
+Amy is a locally-hosted AI companion with multiple input paths, a single-model inference core, a layered memory system, and a background autonomy layer. No data leaves the machine.
 
 ---
 
-## Diagram
+## Hardware
+
+| | |
+|--|--|
+| **Machine** | Apple M4 Mac Mini |
+| **RAM** | 16 GB unified memory |
+| **Storage** | 256 GB SSD |
+| **OS** | macOS Tahoe |
+| **Inference** | Ollama on M4 Neural Engine + GPU |
+
+---
+
+## Current model
+
+| Tag | Base | Quant | Context | Notes |
+|-----|------|-------|---------|-------|
+| `amy-hermes` | Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-MTP | IQ3_M (~5.7 GB) | 16 384 | Tool-calling, reasoning, conversation |
+| `amy-neo` (alt) | Qwen3.5-9B Q4\_K\_M + mmproj-F16 | Q4\_K\_M | 16 384 | Multimodal projector for native image input |
+
+One model handles everything — tools, reasoning, conversation, and vision.
+No routing, no separate code or vision model.
+
+---
+
+## Current diagram
+
+```mermaid
+flowchart TD
+    Browser["**Browser :3000**\nFastAPI · HTMLResponse"]
+    Telegram["**Telegram**\ntelegram_amy.py\npython-telegram-bot"]
+    Hearing["**hearing.py**\nffmpeg · whisper.cpp"]
+    Vision["**vision.py**\nffmpeg avfoundation"]
+
+    Browser -->|text / image| Core
+    Telegram -->|text / image / voice| Core
+    Hearing -->|transcript| Core
+    Vision -->|frame b64| Core
+
+    subgraph Core ["amy_server.py · companion.py · telegram_amy.py"]
+        direction TB
+        CoreDesc["16-msg sliding window · tool dispatch (max 12 hops)\nsystem prompt = amy_persona.py + memory recall + session learnings\nspontaneous thought thread · heartbeat worker"]
+    end
+
+    Core -->|tool turns| Hermes["**amy-hermes**\nQwen3.5-9B IQ3_M\nctx=16384 · tools + vision"]
+    Core -->|embed| Nomic["**nomic-embed-text**\nembeddings for RAG\ncosine sim ≥ 0.65"]
+
+    Hermes -->|tool_calls| Tools["**tools.py**\n31 tools · whitelisted dispatch\nweb · file · moltbook · journal · image gen"]
+    Tools -->|generate_image| Flux["**imagegen.py**\nFLUX.1-schnell via mflux\n-q 8 · ~3 min · daemon thread"]
+    Flux -->|photo| TgOut["**Telegram**\nsendPhoto"]
+    Core --- State["state.py\nInternalState\nlearnings.py"]
+
+    Core -.->|tick 60s| Worker["**worker.py**\nheartbeat tasks\nquiet hours 23–7"]
+    Worker -.->|report| TgOut
+
+    Nomic -->|recall| Memory["**memory.py**\nL0/L1 amy_self.json (always)\nL2/L3 ava_memory.db · SQLite\nguest DBs: people/<name>/"]
+    Memory -->|recall| Core
+
+    Core -->|TTS reply| Voice["**voice.py**\nPiper TTS · en_US-amy-medium\nspeed 0.85 · afplay"]
+    Core -.->|spawn| Thoughts["**thoughts.py**\nbg thread"]
+    Thoughts -.->|surface| Core
+```
+
+---
+
+## Previous diagram (original architecture — preserved for reference)
 
 ```mermaid
 flowchart TD
@@ -62,21 +126,16 @@ Both interfaces feed the same inference loop:
 
 1. **System prompt** is assembled from `amy_persona.py` (identity), recalled memory, and session learnings from the prior conversation.
 2. **Context window** is kept to the last 16 messages (sliding window) to prevent context bloat and verbatim regurgitation.
-3. **Model routing** happens before the call:
-   - Requests matching a code regex → `deepseek-coder:6.7b` (bypasses the tool loop entirely; clean code output only)
-   - `/look` or image input → `amy` vision model first for a literal description, then that description is injected back into the main model's context (two-step pipeline avoids small-model RLHF refusals)
-   - Everything else → `amy-hermes` (Llama 3 8B, tool-calling)
-4. **Tool dispatch** runs up to 4 hops: model emits `tool_calls[]`, `tools.py` executes them and injects results, model continues. The loop stops at 4 hops or when no more tool calls are emitted.
+3. **Single model** handles everything. No routing, no separate code or vision model. Images (webcam, uploads, Telegram attachments) are passed directly to `amy-hermes` via the multimodal projector.
+4. **Tool dispatch** runs up to 12 hops: model emits `tool_calls[]`, `tools.py` executes them and injects results, model continues. The loop stops at 12 hops or when no more tool calls are emitted.
 
-### Three Ollama models
+### Ollama model
 
 | Tag | Role | Context |
 |-----|------|---------|
-| `amy-hermes` | Reasoning, tools, conversation | 8192 tokens |
-| `amy` | Vision description (webcam, uploads) | 128k tokens |
-| `deepseek-coder:6.7b` | Code generation and debugging | — |
+| `amy-hermes` | Reasoning, tools, conversation, vision | 16 384 tokens |
 
-All three run locally via Ollama. Any model can be swapped at runtime with environment variables (`AMY_MODEL`, `AMY_VISION_MODEL`, `AMY_CODE_MODEL`).
+One model handles everything. Swap at runtime with `AMY_MODEL`.
 
 ### Memory — `memory.py`
 
@@ -93,26 +152,35 @@ Four layers, all local:
 
 ### Tools — `tools.py`
 
-Ten whitelisted tools dispatched by `amy-hermes`:
+31 whitelisted tools dispatched by `amy-hermes`. Key ones:
 
 | Tool | What it does |
 |------|-------------|
 | `web_search` | DuckDuckGo (no API key) |
 | `read_article` | BeautifulSoup page reader |
+| `read_file` / `write_file` | Local filesystem (sandboxed to project dir) |
 | `remember_fact` | Writes to L2 recall DB |
-| `moltbook_check_in` | Posts to her Moltbook feed |
-| `moltbook_post` | Publishes a new post |
-| `moltbook_engage` | Comments / follows |
-| `moltbook_verify` | Solves math verification challenges programmatically |
-| `journal` | Writes a journal entry |
-| `avatar_expression` | Stub → Unity/VRM bridge |
-| `avatar_gaze` | Stub → Unity/VRM bridge |
+| `generate_image` | FLUX.1-schnell via mflux, daemon thread → Telegram |
+| `wait_and_speak` | Delayed spoken message (timer in background thread) |
+| `moltbook_*` | Check in, post, comment, follow, solve math challenges |
+| `journal_entry` / `read_journal` | Journal write + read |
+| `add_goal` / `complete_goal` | Goal tracking |
+| `self_improve` | Guided self-edit with blast-radius check |
+| `avatar_expression` / `avatar_gaze` | Stubs → Unity/VRM bridge |
 
 ### Background autonomy
+
+**Heartbeat worker** (`worker.py`) — runs inside the Telegram process on a 60-second tick. Picks tasks from `tasks.json`, executes them with a capped tool loop (max 8 hops), writes output to `work/`, and reports back to Brian on Telegram. Quiet hours (11pm–7am) are enforced in code. Self-improvement edits become proposals under `work/proposals/` for Brian's review.
 
 **Spontaneous behavior** (`companion.py` thread) — checks every 15 seconds; if Amy has been idle 2+ minutes she generates a mood-keyed check-in and speaks it unprompted. She does not wait to be addressed.
 
 **Thought buffer** (`thoughts.py`) — a second background thread generates private thoughts every 90 seconds while idle. These are not responses; they're genuine internal monologue. They surface naturally in the next reply and accumulate in `ava_thoughts.log` as fine-tune data.
+
+**Image generation** (`imagegen.py`) — FLUX.1-schnell via mflux at -q 8 (~3 min on M4). `generate_image` fires a daemon thread that runs the job and calls `sendPhoto` when done. The lock prevents concurrent generations on 16 GB RAM.
+
+**Daily brief** (`brief.py`) — fetches live weather (wttr.in) and news in code; Amy writes the summary. Runs on demand or on a morning schedule from Telegram.
+
+**Guest documents** (`guest_docs.py`) — per-guest RAG under `people/<name>/`. Files sent on Telegram are chunked, embedded, and retrieved per-conversation. Entirely separate from Amy's own memory.
 
 **Mood + energy** (`state.py`) — `InternalState` tracks a mood value (curious → focused → reflective → tired) and an energy level that drift across a session. They shape tone without being announced. The web UI renders them in the header.
 
@@ -127,17 +195,18 @@ Piper TTS synthesizes speech using the `en_US-amy-medium` voice model at speed 0
 ## Data flow summary
 
 ```
-user input
-  → [text | transcript | frame b64]
+user input (web | Telegram | terminal | voice)
+  → [text | image | transcript]
     → core assembles system prompt (persona + memory recall + learnings)
-      → route: code? → deepseek-coder
-               image? → amy vision → description → hermes
-               else  → amy-hermes → tool calls → tools.py (≤4 hops)
+      → amy-hermes → tool calls → tools.py (≤12 hops)
         → reply
           → nomic-embed-text → store in ava_memory.db
-          → voice.py → afplay (spoken aloud)
+          → voice.py → afplay (spoken aloud)          [web/terminal only]
+          → Telegram sendMessage / sendPhoto           [Telegram only]
           → [background] thoughts.py generates private thoughts
           → [background] spontaneous check-in if idle > 2 min
+          → [background] worker.py heartbeat picks next task (60s tick)
+          → [background] imagegen.py FLUX job if generate_image was called
 ```
 
 Everything stays on the machine. No API calls home.

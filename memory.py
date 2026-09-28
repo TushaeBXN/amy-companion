@@ -150,6 +150,8 @@ class Memory:
 
     # --- L2/L3: episodic / semantic recall --------------------------------
     def _embed(self, text):
+        if not text or not text.strip():
+            raise ValueError("embed called with empty text")
         r = ollama.embed(model=EMBED_MODEL, input=text)
         # Newer ollama SDK returns an EmbedResponse object; older returns a dict.
         embeddings = (r.embeddings if hasattr(r, "embeddings") else r.get("embeddings")) or []
@@ -158,6 +160,8 @@ class Memory:
         return np.array(embeddings[0], dtype=np.float32)
 
     def add(self, role, text, source=None):
+        if not text or not text.strip():
+            return  # nothing to store
         try:
             emb = self._embed(text)
             emb_blob = _to_blob(emb.tolist())

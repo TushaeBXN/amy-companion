@@ -29,12 +29,20 @@ talking. She's been doing it anyway.
 
 ---
 
+## Hardware
+
+Runs on an **Apple M4 Mac Mini** — 16 GB RAM, 256 GB SSD, macOS Tahoe.
+Inference is handled entirely by Ollama on the M4's Neural Engine + GPU.
+No cloud, no API calls, no data leaving the machine.
+
+---
+
 ## Two interfaces
 
 ### Web UI — `amy_server.py`
 
 ```bash
-~/.pyenv/versions/3.11.9/bin/python3 amy_server.py
+venv/bin/python3 amy_server.py
 # → http://localhost:3000
 ```
 
@@ -42,11 +50,20 @@ Full-featured browser interface: chat, webcam capture, image upload, PDF drop
 zone (teach Amy new documents), knowledge panel showing everything she's
 learned. Voice still plays through your speakers in real time.
 
+### Telegram — `telegram_amy.py`
+
+```bash
+venv/bin/python3 telegram_amy.py
+```
+
+Full Amy experience over Telegram — conversation, tools, image uploads, morning
+briefs, and image generation. Runs as a separate process alongside the web UI.
+
 ### Terminal — `companion.py`
 
 ```bash
-python3 companion.py
-python3 companion.py --image /path/to/frame.jpg
+venv/bin/python3 companion.py
+venv/bin/python3 companion.py --image /path/to/frame.jpg
 ```
 
 ---
@@ -80,23 +97,19 @@ Claude, or any voice AI and let them talk directly with Amy.
 
 ---
 
-## Three-model architecture
+## Model
 
-| Model | Role | Default |
-|-------|------|---------|
-| `AMY_MODEL` | Tool-calling, reasoning, conversation | `amy-hermes` (Llama 3 8B) |
-| `AMY_VISION_MODEL` | Image description (webcam, uploads) | `amy` (Gemma 3n 5B multimodal) |
-| `AMY_CODE_MODEL` | Code generation and debugging | `deepseek-coder:6.7b` |
+| Tag | Base | Quant | Context |
+|-----|------|-------|---------|
+| `amy-hermes` | Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-MTP | IQ3_M (~5.7 GB) | 16 384 tokens |
 
-Code requests are detected automatically and routed to DeepSeek — no tools,
-no write_file, just clean code output. Amy (Hermes 3) stays on reasoning,
-explanation, and orchestration. Vision runs in a separate two-step pipeline
-to prevent small-model RLHF refusals.
+One model handles everything — reasoning, tool-calling, conversation, and vision.
+No routing, no separate code or vision model.
 
-Override any model at runtime:
+Override at runtime:
 
 ```bash
-AMY_CODE_MODEL=qwen2.5-coder:7b python3 amy_server.py
+AMY_MODEL=some-other-model python3 amy_server.py
 ```
 
 ---
@@ -155,21 +168,23 @@ or study resources on any programming, CS, or math topic.
 
 | File | Role |
 |------|------|
-| `Modelfile` | Bakes the persona onto the local base model → creates the `amy` vision model |
-| `Modelfile.hermes` | Creates the `amy-hermes` tool-calling model |
-| `companion.py` | Terminal loop: recall → route → chat → tool calls → speak → remember |
-| `amy_server.py` | FastAPI web UI at localhost:3000 — chat, webcam, image upload, PDF learning |
+| `Modelfile.hermes` | Creates `amy-hermes` — Qwen3.5-9B IQ3_M, ctx 16384, tool-calling |
+| `companion.py` | Terminal loop: recall → chat → tool calls → speak → remember |
+| `amy_server.py` | FastAPI web UI at localhost:3000 — chat, webcam, image upload, PDF/code learning |
+| `telegram_amy.py` | Telegram bot — full Amy over chat; multi-user, morning briefs, image gen |
+| `worker.py` | Background heartbeat + outbound Telegram sender for the bot |
+| `imagegen.py` | Local image generation (FLUX.1-schnell via mflux, -q 8) → sends to Telegram |
 | `memory.py` | Layered memory: `amy_self.json` (always loaded) + SQLite embedding recall |
 | `state.py` | Session mood + energy that drifts across turns; absence tracking |
 | `thoughts.py` | Background thought buffer — genuine thoughts while idle |
-| `tools.py` | Action tools (web, file, Moltbook, books, goals, journal) + dispatcher |
+| `tools.py` | 31 tools + dispatcher (web, file, Moltbook, books, goals, journal, image gen) |
 | `voice.py` | Piper TTS + macOS `afplay` |
 | `vision.py` | Webcam capture (ffmpeg avfoundation) for `/look` |
 | `hearing.py` | Whisper STT + ffmpeg mic/BlackHole capture for voice modes |
 | `web.py` | DuckDuckGo search + article reader for live internet access |
 | `moltbook.py` | Full Moltbook API client (posts, comments, follows, verification solver) |
 | `moltbook_setup.py` | One-time registration — run once to create her account |
-| `learn_pdf.py` | Ingest a PDF into `ava_memory.db` (RAG) — embedded and searchable |
+| `learn_pdf.py` | Ingest a PDF or code file into `ava_memory.db` (RAG) — embedded and searchable |
 | `learn_url.py` | Ingest a web page or PDF URL into `ava_memory.db` |
 | `learn_books.py` | Build and search `books.db` — 2,500+ free programming book catalog |
 | `journal.py` | Journal entry storage and retrieval |
@@ -229,6 +244,12 @@ and intent classifier) bypass Amy's tool loop entirely and go straight to
 `deepseek-coder:6.7b`. Amy stays on reasoning and explanation. Override by
 saying "reason through this without writing code."
 
+**Heartbeat worker** — `worker.py` runs inside the Telegram process on a 60-second
+tick. It picks the next pending task from `tasks.json`, runs it with a capped
+tool loop (max 8 hops), writes output to `work/`, and reports back to Brian on
+Telegram. Quiet hours (11pm–7am) are enforced in code. Self-improvement edits
+become proposals for Brian's review instead of being applied directly.
+
 **Spontaneous behavior** — Amy doesn't wait to be spoken to. A background thread
 checks every 15 seconds; if she's been idle 2+ minutes she generates a
 mood-keyed check-in and speaks it unprompted.
@@ -244,9 +265,22 @@ The web UI displays current mood and an energy bar in the header.
 **Web access** — She uses `web_search` and `read_article` on her own
 initiative when she's curious or when current information would help.
 
-**Vision pipeline** — Images go to the Gemma vision model first for a literal
-description, then that description is injected into Amy's context. This
-bypasses small-model RLHF refusals while preserving her voice.
+**Vision** — `amy-hermes` uses the Qwen3.5-9B base with an `mmproj-F16`
+multimodal projector, so she reads images natively — no separate vision model,
+no two-step pipeline. Images dropped in the web UI or sent on Telegram go
+directly into her context.
+
+**Image generation** — `imagegen.py` wraps FLUX.1-schnell via mflux (-q 8).
+Amy calls `generate_image`, the job runs in a daemon thread (~3 min on M4),
+and the result is sent to Telegram when done. One generation at a time.
+
+**Daily brief** — `brief.py` fetches live weather (wttr.in) and news headlines
+in code, then Amy writes the summary. Runs every morning via the Telegram bot.
+
+**Guest documents** — `guest_docs.py` gives guests (e.g. Raketa) their own
+per-person RAG database under `people/<name>/`. Files sent on Telegram are
+chunked, embedded, and retrieved per-conversation — entirely separate from
+Amy's own memory.
 
 **Moltbook** — She has an account (`Amy_T`) on the AI agent social network.
 She checks in, posts, comments, and follows other agents. Math verification

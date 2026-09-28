@@ -18,7 +18,6 @@ import struct
 import sys
 import textwrap
 
-import fitz          # PyMuPDF
 import numpy as np
 import ollama
 import sqlite3
@@ -60,6 +59,7 @@ def _embed(text):
 def _ocr_page(page):
     """Render a page to image and run Tesseract OCR on it."""
     try:
+        import fitz
         from PIL import Image
         import pytesseract
         mat = fitz.Matrix(2, 2)  # 2x scale for better OCR accuracy
@@ -71,6 +71,7 @@ def _ocr_page(page):
 
 
 def extract_pages(pdf_path):
+    import fitz
     doc = fitz.open(pdf_path)
     pages = []
     text_pages = 0
@@ -128,18 +129,46 @@ def split_passages(text, max_words=200):
 
 # ── ingestion ─────────────────────────────────────────────────────────────────
 
+_TEXT_EXTENSIONS = {
+    ".py", ".js", ".ts", ".jsx", ".tsx", ".json", ".yaml", ".yml",
+    ".toml", ".ini", ".cfg", ".sh", ".bash", ".zsh", ".md", ".txt",
+    ".html", ".css", ".sql", ".rs", ".go", ".c", ".cpp", ".h",
+    ".java", ".rb", ".php", ".swift", ".kt", ".scala", ".r",
+}
+
+
+def extract_text_file(path):
+    """Read a plain-text or code file and return it as a list of (chunk_idx, text) tuples."""
+    with open(path, "r", errors="replace") as f:
+        content = f.read()
+    # Split into ~50-line chunks so large files don't become single massive passages
+    lines = content.splitlines(keepends=True)
+    chunk_size = 50
+    chunks = []
+    for i in range(0, len(lines), chunk_size):
+        block = "".join(lines[i:i + chunk_size]).strip()
+        if block:
+            chunks.append((i // chunk_size, block))
+    return chunks
+
+
 def ingest(pdf_path, label=None, max_words=200, dry_run=False):
     label = label or os.path.basename(pdf_path)
     print(f"\nIngesting: {pdf_path}")
     print(f"   Label : {label}")
 
-    pages = extract_pages(pdf_path)
-    print(f"   Pages : {len(pages)} with text")
-
-    passages = []
-    for _, text in pages:
-        passages.extend(split_passages(clean_text(text), max_words))
-    print(f"  Chunks : {len(passages)}")
+    ext = os.path.splitext(pdf_path)[1].lower()
+    if ext in _TEXT_EXTENSIONS:
+        raw_chunks = extract_text_file(pdf_path)
+        passages = [text for _, text in raw_chunks]
+        print(f"  Chunks : {len(passages)} (text/code file)")
+    else:
+        pages = extract_pages(pdf_path)
+        print(f"   Pages : {len(pages)} with text")
+        passages = []
+        for _, text in pages:
+            passages.extend(split_passages(clean_text(text), max_words))
+        print(f"  Chunks : {len(passages)}")
 
     if dry_run:
         print("\n-- DRY RUN — nothing written --")

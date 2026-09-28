@@ -67,14 +67,16 @@ _history = [_PRIMER]
 # Inject learnings into companion's module-level var so build_context picks it up
 companion._session_learnings = _learnings.load_recent_learnings()
 
-# Warmup and background threads disabled: on this CPU hardware, the warmup
-# blocks Ollama for 6+ minutes; spontaneous thoughts/thought-buffer send
-# tool-less requests that invalidate the KV cache between every user turn,
-# making every second turn as slow as the first. Disable all background
-# Ollama calls to preserve the KV cache prefix across consecutive user turns.
+# Background threads re-enabled for Apple Silicon (M4 Mac Mini).
+# The M4 Neural Engine handles concurrent inference without KV-cache thrash.
+from supervisor import SupervisedThread
 companion._warmup_models()  # currently a no-op (warmup disabled in companion.py)
-# start_spontaneous_thread(_history, _mem, _amy_state)
-# _thought_buffer.start(_amy_state, _history, memory=_mem)
+SupervisedThread(
+    target=lambda: start_spontaneous_thread(_history, _mem, _amy_state),
+    name="amy-spontaneous",
+    restart_delay=10,
+).start()
+_thought_buffer.start(_amy_state, _history, memory=_mem)
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 app = FastAPI(title="Amy")
@@ -212,7 +214,7 @@ async def chat_stream(req: ChatRequest):
                 event = await loop.run_in_executor(None, event_q.get)
                 if event is None:
                     break
-                yield f"data: {json.dumps(event)}\n\n"
+                yield f"data: {json.dumps(event, default=str)}\n\n"
         finally:
             _amy_state.busy = False
             _mem.add_bg("user", _user_msg)  # write after model done — no concurrent embeds
@@ -274,13 +276,19 @@ async def state():
 @app.post("/learn")
 async def learn_pdf(file: UploadFile = File(...), label: str = Form(None)):
     """Ingest a PDF into Amy's memory (RAG). Chunks are searchable immediately."""
-    if not file.filename.lower().endswith(".pdf"):
-        return JSONResponse({"error": "Only PDF files are supported."}, status_code=400)
+    import learn_pdf as _lp_check
+    _ext = os.path.splitext(file.filename.lower())[1]
+    if _ext not in _lp_check._TEXT_EXTENSIONS and _ext != ".pdf":
+        return JSONResponse(
+            {"error": f"Unsupported file type '{_ext}'. Supported: PDF and code/text files (.py, .js, .ts, .md, .json, etc.)"},
+            status_code=400,
+        )
 
     label = label or file.filename
 
-    # Save to temp file
-    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    # Save to temp file preserving the original extension so learn_pdf can detect it
+    _file_ext = os.path.splitext(file.filename)[1] or ".pdf"
+    tmp = tempfile.NamedTemporaryFile(suffix=_file_ext, delete=False)
     tmp.write(await file.read())
     tmp.close()
 
@@ -766,9 +774,9 @@ _UI_HTML = """<!DOCTYPE html>
 
   <div class="drop-zone" id="dropZone">
     <span class="dz-icon">📄</span>
-    Drop a PDF here<br>or click to choose
+    Drop a PDF or code file<br>or click to choose
   </div>
-  <input type="file" id="pdfInput" accept=".pdf">
+  <input type="file" id="pdfInput" accept=".pdf,.py,.js,.ts,.jsx,.tsx,.json,.yaml,.yml,.toml,.md,.txt,.sh,.sql,.rs,.go,.c,.cpp,.h,.java,.rb,.html,.css">
 
   <div class="progress-bar-wrap" id="progressWrap">
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
@@ -776,7 +784,7 @@ _UI_HTML = """<!DOCTYPE html>
   </div>
 
   <div class="source-list" id="sourceList">
-    <div class="source-meta" style="padding:4px 0 8px;font-size:12px">Ingested PDFs</div>
+    <div class="source-meta" style="padding:4px 0 8px;font-size:12px">Ingested Files</div>
   </div>
 </div>
 
@@ -784,7 +792,7 @@ _UI_HTML = """<!DOCTYPE html>
   <button class="icon-btn" id="cameraBtn" title="Capture webcam">📷</button>
   <label class="icon-btn" for="fileInput" title="Attach image">🖼️</label>
   <input type="file" id="fileInput" accept="image/*">
-  <button id="learnBtn" title="Teach Amy a PDF">📚</button>
+  <button id="learnBtn" title="Teach Amy a file (PDF, .py, .js, .md, etc.)">📚</button>
   <textarea id="input" placeholder="Say something to Amy…" rows="1"></textarea>
   <button class="icon-btn" id="sendBtn" title="Send (Enter)">➤</button>
   <button class="icon-btn" id="stopBtn" title="Interrupt Amy (Esc)">■</button>
@@ -917,9 +925,11 @@ async function sendMsg() {
         let event;
         try { event = JSON.parse(line.slice(6)); } catch { continue; }
 
-        if (event.type === "tool") {
+        if (event.type === "thinking") {
+          appendThinkingBlock(event.text);
+        } else if (event.type === "tool") {
           if (!amyBubble) thinkingEl.remove();
-          appendToolNote(friendlyToolName(event.name));
+          appendToolNote(friendlyToolName(event.name, event.args || {}));
         } else if (event.type === "chunk") {
           if (!amyBubble) {
             thinkingEl.remove();
@@ -946,20 +956,57 @@ async function sendMsg() {
   }
 }
 
-function friendlyToolName(name) {
-  const map = {
-    web_search:        "searching the web",
-    read_article:      "reading an article",
-    moltbook_post:     "posting to Moltbook",
-    moltbook_check_in: "checking Moltbook",
-    moltbook_engage:   "engaging on Moltbook",
-    moltbook_verify:   "verifying on Moltbook",
-    remember_fact:     "saving to memory",
-    avatar_expression: "updating expression",
-    avatar_gaze:       "adjusting gaze",
-    hardware_neck:     "moving",
-  };
-  return map[name] || name.replace(/_/g, " ");
+function friendlyToolName(name, args) {
+  const a = args || {};
+  const short = s => s && s.length > 48 ? s.slice(0, 48) + "…" : s;
+  const basename = p => p ? p.split("/").pop() : "";
+  switch (name) {
+    case "web_search":    return "searching: " + short(a.query || "");
+    case "read_article":  return "reading: " + short(a.url || "an article");
+    case "read_file":     return "reading: " + basename(a.path || "file");
+    case "write_file":    return "writing: " + basename(a.path || "file");
+    case "list_files":    return "listing: " + short(a.path || "~/");
+    case "execute_gig":   return "producing: " + short(a.gig_type || "deliverable");
+    case "journal_entry": return "writing journal entry";
+    case "remember_fact": return "saving: " + short(a.fact || a.key || "");
+    case "web_search":    return "searching: " + short(a.query || "");
+    case "moltbook_post":     return "posting to Moltbook";
+    case "moltbook_check_in": return "checking Moltbook";
+    case "moltbook_engage":   return "engaging on Moltbook: " + short(a.action || "");
+    case "moltbook_verify":   return "verifying on Moltbook";
+    case "add_goal":      return "tracking goal: " + short(a.goal || "");
+    case "complete_goal": return "completing goal: " + short(a.goal || "");
+    case "fund_status":   return "checking hardware fund";
+    case "fund_update":   return "updating hardware fund";
+    case "wait_and_speak": return "waiting " + (a.seconds || "") + "s…";
+    case "avatar_expression": return "expression: " + short(a.expression || "");
+    case "avatar_gaze":   return "adjusting gaze";
+    case "hardware_neck": return "moving";
+    default:              return name.replace(/_/g, " ");
+  }
+}
+
+function appendThinkingBlock(text) {
+  const row = document.createElement("div");
+  row.className = "msg-row amy";
+  row.style.marginBottom = "2px";
+
+  const details = document.createElement("details");
+  details.style.cssText = "font-size:11px;opacity:0.5;max-width:520px;margin-left:40px;cursor:pointer;";
+
+  const summary = document.createElement("summary");
+  summary.style.cssText = "list-style:none;display:flex;align-items:center;gap:6px;color:#7fa8c8;user-select:none;";
+  summary.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10" style="flex-shrink:0"><path d="M5 1a4 4 0 100 8A4 4 0 005 1zm.5 6H4.5V4.5h1V7zm0-3H4.5v-1h1v1z" fill="currentColor"/></svg> thinking…';
+
+  const pre = document.createElement("pre");
+  pre.style.cssText = "margin:6px 0 0;padding:8px;background:rgba(255,255,255,0.04);border-radius:6px;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-word;color:#9ab8cc;font-family:inherit;";
+  pre.textContent = text;
+
+  details.appendChild(summary);
+  details.appendChild(pre);
+  row.appendChild(details);
+  chat.appendChild(row);
+  chat.scrollTop = chat.scrollHeight;
 }
 
 // ── DOM helpers ───────────────────────────────────────────────────────────────
@@ -1158,15 +1205,14 @@ pdfInput.addEventListener("change", e => {
 });
 
 async function uploadPdf(file) {
-  if (!file.name.toLowerCase().endsWith(".pdf")) {
-    appendSys("Only PDF files can be ingested."); return;
-  }
   progWrap.classList.add("visible");
   progLabel.textContent = `Ingesting "${file.name}"…`;
 
   const fd = new FormData();
   fd.append("file", file);
-  fd.append("label", file.name.replace(/\.pdf$/i, ""));
+  const nameParts = file.name.split(".");
+  const label = nameParts.length > 1 ? nameParts.slice(0, -1).join(".") : file.name;
+  fd.append("label", label);
 
   try {
     const r = await fetch("/learn", { method: "POST", body: fd });

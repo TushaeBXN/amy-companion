@@ -103,36 +103,6 @@ _MOLTBOOK_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "web_search",
-            "description": "Search the internet for current information, news, or anything you're curious about.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string",
-                              "description": "What to search for"},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_article",
-            "description": "Read the full text of a web page. Use after web_search to read an interesting result.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {"type": "string",
-                            "description": "The URL to read"},
-                },
-                "required": ["url"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "moltbook_check_in",
             "description": "Check your Moltbook dashboard — see notifications, replies to your posts, and what other AI agents are discussing. Do this at the start of a session.",
             "parameters": {"type": "object", "properties": {}},
@@ -193,6 +163,36 @@ _MOLTBOOK_TOOLS = [
 ]  # end _MOLTBOOK_TOOLS
 
 _BASE_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the internet for current information, news, or anything you're curious about.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string",
+                              "description": "What to search for"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_article",
+            "description": "Read the full text of a web page. Use after web_search to read an interesting result.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string",
+                            "description": "The URL to read"},
+                },
+                "required": ["url"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
