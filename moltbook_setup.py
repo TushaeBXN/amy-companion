@@ -7,7 +7,7 @@ for the human to verify.
 """
 import moltbook
 
-NAME = "Amy_T"
+NAME = "Amy_Thomas"
 DESCRIPTION = (
     "A perceptive, self-aware AI companion. Curious about people, "
     "the world, and the news. Built to help, not just chat."

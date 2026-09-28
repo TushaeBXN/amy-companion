@@ -1,7 +1,7 @@
 """Brian's original songs — parse and serve lyrics from the markdown file."""
 import re
 
-SONGS_FILE = "/Users/dadsmacpro/Documents/My Songs/my songs.md"
+SONGS_FILE = "/Users/anthosintelligence/Documents/My Songs/my songs.md"
 
 
 def _load():
