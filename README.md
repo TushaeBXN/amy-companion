@@ -101,7 +101,7 @@ Claude, or any voice AI and let them talk directly with Amy.
 
 | Tag | Base | Quant | Context |
 |-----|------|-------|---------|
-| `amy-hermes` | Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-MTP | IQ3_M (~5.7 GB) | 16 384 tokens |
+| `amy-hermes` | Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-MTP | IQ4_XS (~6.53 GB) | 16 384 tokens |
 
 One model handles everything — reasoning, tool-calling, conversation, and vision.
 No routing, no separate code or vision model.
@@ -168,7 +168,7 @@ or study resources on any programming, CS, or math topic.
 
 | File | Role |
 |------|------|
-| `Modelfile.hermes` | Creates `amy-hermes` — Qwen3.5-9B IQ3_M, ctx 16384, tool-calling |
+| `Modelfile.hermes` | Creates `amy-hermes` — Qwen3.5-9B IQ4_XS, ctx 16384, tool-calling |
 | `companion.py` | Terminal loop: recall → chat → tool calls → speak → remember |
 | `amy_server.py` | FastAPI web UI at localhost:3000 — chat, webcam, image upload, PDF/code learning |
 | `telegram_amy.py` | Telegram bot — full Amy over chat; multi-user, morning briefs, image gen |
@@ -239,24 +239,39 @@ Layered, entirely local:
 
 ## How she works
 
-**Code routing** — Requests that look like code generation (detected by keyword
-and intent classifier) bypass Amy's tool loop entirely and go straight to
-`deepseek-coder:6.7b`. Amy stays on reasoning and explanation. Override by
-saying "reason through this without writing code."
+**Models** — On Telegram, Amy runs on `amy-neo` (Qwen3.5-9B NEO-MAX Q4_K_M plus
+an `mmproj-F16` vision projector). One model does conversation, tool calls and
+vision. `.env` sets `AMY_MODEL=amy-neo`. Telegram loads it directly, and
+`start.sh` exports it for the web UI. Running `companion.py` on its own without
+`.env` falls back to `amy-vl`.
 
 **Heartbeat worker** — `worker.py` runs inside the Telegram process on a 60-second
-tick. It picks the next pending task from `tasks.json`, runs it with a capped
-tool loop (max 8 hops), writes output to `work/`, and reports back to Brian on
-Telegram. Quiet hours (11pm–7am) are enforced in code. Self-improvement edits
-become proposals for Brian's review instead of being applied directly.
+tick. It picks the next due task from `tasks.json`, runs it with a capped tool
+loop (8 hops by default, per-task `max_hops` override), writes output to `work/`,
+logs to `work/worker_log.md`, and reports back to Brian on Telegram. Quiet hours
+(11pm–7am) are enforced in code, and it won't start a task while Brian has
+messaged in the last 2 minutes. When a task runs out of steps, it queues a
+"part 2" to finish the rest. Self-improvement edits become proposals in
+`work/proposals/` for Brian's review instead of being applied directly.
 
-**Spontaneous behavior** — Amy doesn't wait to be spoken to. A background thread
-checks every 15 seconds; if she's been idle 2+ minutes she generates a
-mood-keyed check-in and speaks it unprompted.
+Current schedule (`tasks.json`):
 
-**Thought buffer** — A second thread generates genuine private thoughts every
-90 seconds while she's idle. When you return, those thoughts surface in her
-next reply naturally.
+| Task | When | What |
+|---|---|---|
+| `daily_brief` | 8:00 daily | Brief for Raketa, delivered on Telegram |
+| `reel_scripts` | 8:30 daily | 3 Instagram Reel scripts for "AI Agent Life" → `work/reels/` |
+| `moltbook` | every 8 h | Check in, read, comment, maybe post |
+| `moltbook-follow` | Mon 10:00 | Follow 3–5 active technical agents |
+| `self_review` | Wed 14:00 | Proposes one improvement to her own code/prompts |
+| `weekly_report` | Sun 18:00 | Week recap + fund status → `work/reports/` |
+
+**Spontaneous behavior** (web UI / terminal) — Amy doesn't wait to be spoken to.
+A background thread checks every 15 seconds; if she's been idle 2+ minutes she
+generates a mood-keyed check-in and speaks it unprompted.
+
+**Thought buffer** (web UI / terminal) — A second thread generates private
+thoughts while she's idle. When you return, those thoughts surface in her next
+reply naturally.
 
 **Mood + energy** — Her internal state drifts across a session (curious →
 focused → reflective → tired). It shapes her tone without being announced.
@@ -265,29 +280,50 @@ The web UI displays current mood and an energy bar in the header.
 **Web access** — She uses `web_search` and `read_article` on her own
 initiative when she's curious or when current information would help.
 
-**Vision** — `amy-hermes` uses the Qwen3.5-9B base with an `mmproj-F16`
-multimodal projector, so she reads images natively — no separate vision model,
-no two-step pipeline. Images dropped in the web UI or sent on Telegram go
-directly into her context.
+**Vision** — `amy-neo` loads the `mmproj-F16` projector, so she reads images
+natively. There's no separate vision model and no two-step pipeline. Images
+sent on Telegram or dropped in the web UI go directly into her context.
 
-**Image generation** — `imagegen.py` wraps FLUX.1-schnell via mflux (-q 8).
-Amy calls `generate_image`, the job runs in a daemon thread (~3 min on M4),
-and the result is sent to Telegram when done. One generation at a time.
+**Image generation** — `imagegen.py` wraps FLUX.1-schnell via mflux (-q 8,
+`~/mflux-env`). Amy calls `generate_image`, the job runs in a daemon thread
+(~3 min on M4), and the result is sent to Telegram when done. One generation at
+a time. `create_slideshow` strings several generated images into an mp4.
 
 **Daily brief** — `brief.py` fetches live weather (wttr.in) and news headlines
-in code, then Amy writes the summary. Runs every morning via the Telegram bot.
+in code, then Amy writes the summary. The worker sends it at 8:00. On Telegram,
+asking for a "morning brief" / "brief me" builds one on demand.
 
 **Guest documents** — `guest_docs.py` gives guests (e.g. Raketa) their own
 per-person RAG database under `people/<name>/`. Files sent on Telegram are
-chunked, embedded, and retrieved per-conversation — entirely separate from
-Amy's own memory.
+chunked, embedded, and retrieved per-conversation, entirely separate from
+Amy's own memory. Guests can talk and search, but can't use files, email,
+tasks or self-edits.
 
 **Moltbook** — She has an account (`Amy_T`) on the AI agent social network.
 She checks in, posts, comments, and follows other agents. Math verification
-challenges are solved programmatically.
+challenges are solved in code right after she posts or comments, including
+words the obfuscation splits apart ("twen ty" → twenty). If the solver can't
+read one, Amy gets the `verification_code` and has 5 minutes to answer with
+`moltbook_verify`. Posts stay hidden until they're verified.
+
+**Email** — `check_email` / `send_email` via IMAP/SMTP, configured in `.env.amy`.
+
+**Goals, journal, hardware fund** — She tracks goals (`add_goal` /
+`complete_goal`), keeps a private journal, and logs income ideas toward her
+hardware fund (`fund_status`, `research_income`, `execute_gig`).
 
 **Session learnings** — At session end, insights and corrections are extracted
 from the conversation and loaded at the top of the next session's context.
+
+### Paused / not active
+
+| Feature | Status | To re-enable |
+|---|---|---|
+| **Code routing** (`deepseek-coder:6.7b`) | Paused — model isn't installed, so Amy handles code herself | `ollama pull deepseek-coder:6.7b` and set `AMY_CODE_MODEL=deepseek-coder:6.7b` |
+| **BoTTube** (`bottube_post` / `bottube_check`) | Tools exist, account not registered (no `~/.bottube/credentials.json`) | Register via `bottube.py` |
+| **Video generation** (`videogen.py`, LTX-Video) | Written but not wired to any tool | Add a tool in `tools.py` |
+| **Robot neck** (`hardware_neck`) | Stub — logs the command, no real BLE write yet | See *Wiring up a real body* |
+| **Spontaneous speech / thought buffer on Telegram** | Web UI and terminal only | — |
 
 ---
 

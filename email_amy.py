@@ -1,6 +1,9 @@
-"""Amy's email module — ProtonMail via Bridge (IMAP/SMTP on localhost).
+"""Amy's email module — Google (Gmail / Workspace) or ProtonMail via Bridge.
 
-Two modes:
+Google: set EMAIL_PROVIDER=google in .env.amy. AMY_EMAIL_PASSWORD must be a
+Google *App Password* (myaccount.google.com/apppasswords), not the normal one.
+
+Proton modes:
   PROTON_USE_BRIDGE=true  — connects to Proton Bridge running on localhost
   PROTON_USE_BRIDGE=false — stubs out; Amy knows her address but can't send yet
 
@@ -33,7 +36,8 @@ def _load_env():
                 config[k.strip()] = v.strip()
     # Environment variables override file
     for key in ["AMY_EMAIL", "AMY_EMAIL_PASSWORD", "PROTON_BRIDGE_IMAP_PORT",
-                 "PROTON_BRIDGE_SMTP_PORT", "PROTON_BRIDGE_PASSWORD", "PROTON_USE_BRIDGE"]:
+                 "PROTON_BRIDGE_SMTP_PORT", "PROTON_BRIDGE_PASSWORD", "PROTON_USE_BRIDGE",
+                 "EMAIL_PROVIDER"]:
         if os.environ.get(key):
             config[key] = os.environ[key]
     return config
@@ -47,12 +51,21 @@ def amy_address() -> str:
     return _cfg().get("AMY_EMAIL", "")
 
 
+def _is_google() -> bool:
+    return _cfg().get("EMAIL_PROVIDER", "").lower() == "google"
+
+
 def _use_bridge() -> bool:
-    return _cfg().get("PROTON_USE_BRIDGE", "false").lower() == "true"
+    """True when email is usable at all (Google, or Proton with Bridge running)."""
+    return _is_google() or _cfg().get("PROTON_USE_BRIDGE", "false").lower() == "true"
 
 
 def _imap_conn():
     cfg = _cfg()
+    if _is_google():
+        conn = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+        conn.login(cfg["AMY_EMAIL"], cfg.get("AMY_EMAIL_PASSWORD", "").replace(" ", ""))
+        return conn
     port = int(cfg.get("PROTON_BRIDGE_IMAP_PORT", 1143))
     password = cfg.get("PROTON_BRIDGE_PASSWORD") or cfg.get("AMY_EMAIL_PASSWORD", "")
     conn = imaplib.IMAP4("127.0.0.1", port)
@@ -85,7 +98,7 @@ def check_inbox(limit: int = 10, folder: str = "INBOX") -> list[dict]:
         ids = ids[-limit:][::-1]  # newest first
         messages = []
         for mid in ids:
-            _, msg_data = conn.fetch(mid, "(RFC822)")
+            _, msg_data = conn.fetch(mid, "(BODY.PEEK[])")
             msg = _email_lib.message_from_bytes(msg_data[0][1])
             body = ""
             if msg.is_multipart():
@@ -122,9 +135,14 @@ def send_email(to: str, subject: str, body: str) -> str:
         msg["To"] = to
         msg["Subject"] = subject
         msg.set_content(body)
-        with smtplib.SMTP("127.0.0.1", port) as s:
-            s.login(cfg["AMY_EMAIL"], password)
-            s.send_message(msg)
+        if _is_google():
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+                s.login(cfg["AMY_EMAIL"], cfg.get("AMY_EMAIL_PASSWORD", "").replace(" ", ""))
+                s.send_message(msg)
+        else:
+            with smtplib.SMTP("127.0.0.1", port) as s:
+                s.login(cfg["AMY_EMAIL"], password)
+                s.send_message(msg)
         print(f"  [email] sent → {to}: {subject}")
         return "sent"
     except Exception as e:
@@ -145,7 +163,7 @@ def inbox_summary() -> str:
     if not _use_bridge():
         addr = amy_address()
         if addr:
-            return f"My email is {addr}. Bridge not running yet — I can't check it until you install Proton Bridge."
+            return f"My email is {addr}, but email isn't switched on yet (set EMAIL_PROVIDER=google in .env.amy)."
         return "Email not configured yet — fill in .env.amy."
     messages = check_inbox(limit=5)
     if not messages:
