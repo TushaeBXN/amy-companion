@@ -1,4 +1,4 @@
-FROM /Users/anthosintelligence/Downloads/Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-MTP-IQ3_M.gguf
+FROM /Users/anthosintelligence/Downloads/Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-MTP-IQ4_XS.gguf
 PARAMETER temperature 0.75
 PARAMETER top_p 0.9
 PARAMETER repeat_penalty 1.15

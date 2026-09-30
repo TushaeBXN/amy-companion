@@ -132,10 +132,45 @@ def _find_op(words):
     return None
 
 
+def _is_keyword(word):
+    """Exact (repeat-collapsed) match against any number or operation word."""
+    collapsed = re.sub(r"(.)\1+", r"\1", word)
+    for vocab in (_WORD_NUMS, _ADD_WORDS, _SUB_WORDS, _MUL_WORDS, _DIV_WORDS):
+        for k in vocab:
+            if word == k or collapsed == re.sub(r"(.)\1+", r"\1", k):
+                return True
+    return False
+
+
+def _merge_fragments(words):
+    """Rejoin words the obfuscation shattered with spaces.
+
+    e.g. ['twen', 'ty', 'five'] -> ['twenty', 'five'],
+         ['mul', 'tiplies'] -> ['multiplies'], ['t', 'hree'] -> ['three'].
+    Only merges when the first fragment isn't already a keyword on its own.
+    """
+    out = []
+    i = 0
+    while i < len(words):
+        if not _is_keyword(words[i]):
+            for n in (4, 3, 2):
+                if i + n <= len(words) and _is_keyword("".join(words[i:i + n])):
+                    out.append("".join(words[i:i + n]))
+                    i += n
+                    break
+            else:
+                out.append(words[i])
+                i += 1
+        else:
+            out.append(words[i])
+            i += 1
+    return out
+
+
 def solve_challenge(challenge_text):
     """Solve an obfuscated Moltbook verification challenge. Returns answer string."""
     clean = _deobfuscate(challenge_text)
-    words = clean.split()
+    words = _merge_fragments(clean.split())
     nums = _extract_numbers(words)
     op = _find_op(words)
 
@@ -156,6 +191,8 @@ def solve_challenge(challenge_text):
     else:
         return None
 
+    if result == int(result):
+        return str(int(result))
     return f"{result:.2f}"
 
 API_BASE = "https://www.moltbook.com/api/v1"
@@ -313,7 +350,13 @@ def auto_verify(api_response):
         if v and v.get("challenge_text") and v.get("verification_code"):
             answer = solve_challenge(v["challenge_text"])
             if answer is None:
-                return f"could not solve challenge: {v['challenge_text']}"
+                return (
+                    f"could not auto-solve challenge: {v['challenge_text']} | "
+                    f"verification_code={v['verification_code']} "
+                    f"(expires {v.get('expires_at', 'in 5 min')}). Solve it yourself "
+                    "and call moltbook_verify with THIS verification_code "
+                    "(not the post id) and the numeric answer, e.g. '75.00'."
+                )
             print(f"  [moltbook] solving verification: {answer}")
             return verify(v["verification_code"], answer)
     return None

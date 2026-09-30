@@ -7,7 +7,7 @@ _here = os.path.dirname(__file__)
 load_dotenv(os.path.join(_here, ".env"))
 load_dotenv(os.path.join(_here, ".env.amy"), override=False)
 
-import json, re, ollama
+import json, re, tempfile, time, ollama
 from datetime import datetime as _dt
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
@@ -18,32 +18,125 @@ _BRIEFING_RE = re.compile(
     re.IGNORECASE
 )
 
-from amy_persona import SYSTEM_PROMPT
+from amy_persona import SYSTEM_PROMPT, CORE_PROMPT, playbooks_for
 from memory import Memory
 import state as _state
 import tools
+import worker
+import guest_docs
 try:
     import learnings as _learnings
 except ModuleNotFoundError:
     _learnings = None
 
-MODEL        = os.environ.get("AMY_MODEL", "amy-vl")
-VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "amy-vl")
-MAX_HOPS     = 6
-CTX_WINDOW   = 16384
+MODEL        = os.environ.get("AMY_MODEL", "amy-neo")
+VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "amy-neo")
+MAX_HOPS     = 10
+CTX_WINDOW   = 32768
 HISTORY_FILE = os.path.join(_here, "telegram_history.json")
 HISTORY_KEEP = 60   # messages to persist across restarts
+PEOPLE_FILE  = os.path.join(_here, "people.json")
+
+# Guests can talk, search and look things up — no files, email, tasks or self-edits
+# Public actions on Moltbook need an explicit ask in the message ("reply", "post", …).
+_PUBLIC_OK = re.compile(r"(?i)\b(repl(y|ies)|respond|comment|post|engage|be active|upvote|"
+                        r"follow|publish|share|verify|go ahead|do it|yes)\b")
+
+
+def _is_public_action(name, args):
+    if name in ("moltbook_post", "moltbook_verify"):
+        return True
+    return name == "moltbook_engage" and (args or {}).get("action") in ("comment", "upvote", "follow")
+
+
+BIG_PASTE   = 8000   # chars; longer guest pastes are stored as documents
+GUEST_TOOLS = {"web_search", "read_article", "remember_fact", "search_books"}
+
+def _log(line: str):
+    print(f"[{_dt.now():%H:%M:%S}] {line}", flush=True)
+
 
 mem        = Memory()
 amy_state  = _state.InternalState()
 _learnings_ctx = _learnings.load_recent_learnings() if _learnings else ""
 
 
-def _load_history() -> list:
+# ── People: who Amy talks to on Telegram ─────────────────────────────────────
+# people.json: {"people": {"<chat_id>": {"name": "Brian", "role": "owner"}},
+#               "invites": {"<code>": "Raketa"}}
+
+def _load_people() -> dict:
+    try:
+        with open(PEOPLE_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"people": {}, "invites": {}}
+
+
+def _save_people(data: dict):
+    with open(PEOPLE_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def _identify(chat_id: int, text: str):
+    """Return (person, reply). person is None for anyone not allowed in.
+    The first chat ever becomes Brian; others join only with an invite code."""
+    data = _load_people()
+    key = str(chat_id)
+    if key in data["people"]:
+        return data["people"][key], None
+    if not data["people"]:
+        data["people"][key] = {"name": "Brian", "role": "owner"}
+        _save_people(data)
+        return data["people"][key], None
+    # Accept the code anywhere in the message ("hi, my code is 123 456")
+    digits = re.sub(r"\D", "", text or "")
+    code = next((c for c in data["invites"] if c in digits), None)
+    if code:
+        name = data["invites"].pop(code)
+        data["people"][key] = {"name": name, "role": "guest"}
+        _save_people(data)
+        _ts = _dt.now().strftime("%b %d, %Y")
+        mem.remember(f"{name} (Brian's partner) started talking to me on Telegram on {_ts}.")
+        _remember_for(name, f"Her name is {name}. She's Brian's partner. We first talked on {_ts}.")
+        return None, (f"Hi {name} — I'm Amy. Brian set this up so you can reach me anytime. "
+                      "Ask me anything: questions, research, writing, planning, or just talk.")
+    if text:
+        return None, ("Hi — I only chat with people Brian has invited. "
+                      "If he gave you a 6-digit code, send it here.")
+    return None, None
+
+
+def _remember_for(name: str, fact: str):
+    """Guests get their own private memory in people.json — never Amy's shared facts."""
+    data = _load_people()
+    for p in data["people"].values():
+        if p["name"] == name:
+            p.setdefault("facts", []).append(fact[:300])
+            p["facts"] = p["facts"][-40:]
+    _save_people(data)
+
+
+def _invite(name: str) -> str:
+    import secrets
+    data = _load_people()
+    code = f"{secrets.randbelow(900000) + 100000}"
+    data["invites"][code] = name
+    _save_people(data)
+    return code
+
+
+def _history_file(person_key: str) -> str:
+    # Brian keeps the original file so his existing history carries over
+    return HISTORY_FILE if person_key == "owner" else os.path.join(
+        _here, f"telegram_history_{person_key}.json")
+
+
+def _load_history(path: str = HISTORY_FILE) -> list:
     """Load persisted Telegram history from disk (images already stripped)."""
-    if os.path.exists(HISTORY_FILE):
+    if os.path.exists(path):
         try:
-            with open(HISTORY_FILE) as f:
+            with open(path) as f:
                 data = json.load(f)
             print(f"  [telegram] loaded {len(data)} messages from history")
             return data
@@ -61,7 +154,7 @@ def _msg_to_dict(msg) -> dict:
     return dict(msg)
 
 
-def _save_history(history: list):
+def _save_history(history: list, path: str = HISTORY_FILE):
     """Persist recent history to disk, stripping any image bytes first."""
     trimmed = []
     for msg in history[-HISTORY_KEEP:]:
@@ -73,28 +166,50 @@ def _save_history(history: list):
         if clean.get("role") in ("user", "assistant", "tool"):
             trimmed.append(clean)
     try:
-        with open(HISTORY_FILE, "w") as f:
+        with open(path, "w") as f:
             json.dump(trimmed, f)
     except Exception as e:
         print(f"  [telegram] could not save history: {e}")
 
 
-history = _load_history()
+_histories: dict = {}
 
 
-def _build_system(history_len: int = 0) -> str:
-    s = SYSTEM_PROMPT + "\n\n" + mem.wake_up()
+def _history_for(person_key: str) -> list:
+    if person_key not in _histories:
+        _histories[person_key] = _load_history(_history_file(person_key))
+    return _histories[person_key]
+
+
+def _build_system(history_len: int = 0, person: dict | None = None, message: str = "") -> str:
+    person = person or {"name": "Brian", "role": "owner"}
+    if person["role"] != "owner":
+        return _build_guest_system(person["name"])
+    # Everything here must stay identical between messages: Ollama then reuses the
+    # already-read prompt (0.2s instead of ~60s on the M4). Anything that changes per
+    # message goes in _turn_context(), next to the user's message.
+    s = CORE_PROMPT + "\n\n" + mem.wake_up()
     if _learnings_ctx:
         s += "\n\n" + _learnings_ctx
-    s += "\n\n[Internal state]\n" + amy_state.state_summary()
     s += (
         "\n\n[Interface: Telegram — Brian is texting you like a friend. "
         "Be warm, natural, conversational. Short replies are fine. "
         "You remember previous conversations — reference them naturally when relevant.]"
     )
+    s += worker.scope_rules(MAX_HOPS)
+    return s
+
+
+def _turn_context(history_len: int, person: dict, message: str) -> str:
+    """Per-message context (mood, playbooks, recovered history) — sent with the
+    user's message instead of in the system prompt, so the prompt cache survives."""
+    s = "[Internal state]\n" + amy_state.state_summary()
+    if person["role"] != "owner":
+        return s
+    s += playbooks_for(message)
     # If history is thin (fresh start / JSON missing), reconstruct from SQLite
     if history_len < 6:
-        recent = mem.recent_telegram(limit=30)
+        recent = mem.recent_telegram(limit=10)
         if recent:
             lines = []
             for role, text, ts in recent:
@@ -105,6 +220,46 @@ def _build_system(history_len: int = 0) -> str:
                 "\n\n[Recent Telegram conversation history — reconstructed from memory]\n"
                 + "\n".join(lines)
             )
+    return s
+
+
+def _build_guest_system(name: str) -> str:
+    # Identity only. mem.wake_up() carries Brian's facts, goals and past AI chats,
+    # which leaked into Raketa's conversations as "our last chat about…".
+    # Lean prompt: Amy's full SYSTEM_PROMPT (~11k tokens of Brian-specific rules —
+    # Moltbook, hardware fund, tools) left guests only ~5k tokens of a 16k window
+    # for their own documents and history.
+    s = "[Who you are]\n" + mem.self.get("identity", "") + (
+        "\nYou speak in first person with your own perspective — warm, perceptive, "
+        "curious, never servile or generic. You're a thoughtful collaborator: you ask "
+        "clarifying questions when something is ambiguous, give direct honest feedback, "
+        "and structure longer answers with short plain-text headings and numbered points "
+        "so they are easy to read on a phone. Plain text only: no asterisks, no # headers, "
+        "no code blocks. Match the length of your answer to the question."
+    )
+    facts = next((p.get("facts", []) for p in _load_people()["people"].values()
+                  if p["name"] == name), [])
+    if facts:
+        s += f"\n\n[What you remember about {name} — private to her]\n" + "\n".join(
+            f"- {f}" for f in facts)
+    s += (
+        f"\n\n[Who you're talking to — this overrides anything above]\n"
+        f"This is {name}, Brian's partner — NOT Brian. Call her {name}. Everywhere your "
+        f"instructions describe 'the person you are speaking with' as Brian, in this chat "
+        f"it is {name}. Help her with anything she needs: questions, research, writing, "
+        f"planning, or just talking. Be warm, natural and genuinely useful.\n"
+        f"Privacy: what Brian tells you in private stays with Brian, and what {name} "
+        f"tells you stays with {name}, unless one of them asks you to pass something on. "
+        f"If she asks about Brian's private conversations, say kindly that she should ask him. "
+        f"Never mention topics from anyone else's conversations — only what {name} has told you here.\n"
+        f"Accuracy: when she shares research, data or interview material, quote ONLY words that "
+        f"appear in what she sent, attributed exactly as she gave them. Never invent quotes, names, "
+        f"dates or findings. If something isn't in her material, say it's missing.\n"
+        f"She can send you PDF or Word files; you keep them privately and relevant passages "
+        f"appear with her messages. Suggest sending files when her question depends on "
+        f"transcripts or drafts you haven't seen."
+        f"\n[Interface: Telegram — {name} is texting you. Short replies are fine.]"
+    )
     return s
 
 
@@ -120,33 +275,78 @@ def _describe_image(image_bytes: bytes) -> str:
         )},
         {"role": "user", "content": "What do you see in this image?", "images": [b64]},
     ]
-    resp = ollama.chat(model=VISION_MODEL, messages=vision_messages,
+    resp = worker.ollama_chat(model=VISION_MODEL, messages=vision_messages,
                        keep_alive="30m", options={"num_ctx": CTX_WINDOW})
     return resp["message"].get("content", "").strip()
 
 
-def _chat(user_text: str, image_bytes: bytes | None = None) -> str | None:
+def _chat(user_text: str, image_bytes: bytes | None = None,
+          person: dict | None = None, progress=None) -> str | None:
+    person  = person or {"name": "Brian", "role": "owner"}
+    is_owner = person["role"] == "owner"
+    pkey    = "owner" if is_owner else person["name"].lower()
+    history = _history_for(pkey)
+    source  = "telegram" if is_owner else f"telegram:{pkey}"
+    who     = person["name"]
+    tool_list = tools.TOOLS if is_owner else [
+        t for t in tools.TOOLS if t["function"]["name"] in GUEST_TOOLS]
     # If a photo was sent, describe it first then fold the description into the message
     if image_bytes:
         print("  [vision] describing Telegram photo...")
         description = _describe_image(image_bytes)
         print(f"  [vision] {description[:100]}...")
         # Durably remember the photo so it survives future restarts
-        from datetime import datetime as _dt
         _ts = _dt.now().strftime("%b %d %H:%M")
-        mem.remember(f"[Telegram photo — {_ts}] Brian sent a photo. I saw: {description}")
+        _note = f"[Telegram photo — {_ts}] {who} sent a photo. I saw: {description}"
+        mem.remember(_note) if is_owner else _remember_for(who, _note)
         # Build the message Amy sees — caption + what she actually saw
         caption = f"{user_text}\n\n" if user_text else ""
         user_text = (
             caption
-            + f"[Photo from Brian — you looked at it and here's what you see: {description}]\n"
+            + f"[Photo from {who} — you looked at it and here's what you see: {description}]\n"
             "React naturally to what's in the photo, like a friend would."
         )
 
+    saved_note = ""
+    if not is_owner and len(user_text) > BIG_PASTE:
+        # A research-document-sized paste would crowd out the conversation and the
+        # answer. Keep it in her library instead, and send Amy her question plus the
+        # passages that matter.
+        fname = f"Pasted text {_dt.now():%b %d %H-%M}.txt"
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                path = os.path.join(tmp, fname)
+                with open(path, "w") as f:
+                    f.write(user_text)
+                n, _ = guest_docs.add(pkey, fname, path)
+            _log(f"  (saved {who}'s {len(user_text):,}-char paste as a document, {n} passages)")
+            saved_note = (f"(That was a long paste, so I saved it to your documents as "
+                          f"\"{fname}\" and can quote from it anytime.)\n\n")
+            user_text = (user_text[:1500] + f"\n\n…[middle of the paste saved as '{fname}'; "
+                         "relevant passages are included below]…\n\n" + user_text[-600:])
+        except Exception as e:
+            _log(f"  (could not save {who}'s paste: {e})")
+            user_text = user_text[:BIG_PASTE]
+
     user_msg = {"role": "user", "content": user_text}
-    messages = [{"role": "system", "content": _build_system(len(history))}] + history[-20:] + [user_msg]
+    model_msg = user_msg
+    if not is_owner and user_text.strip():
+        try:
+            docs_ctx = guest_docs.context_block(pkey, user_text)
+        except Exception as e:
+            docs_ctx = ""
+            _log(f"  (document search failed for {who}: {e})")
+        if docs_ctx:
+            model_msg = {"role": "user", "content": user_text + "\n" + docs_ctx}
+    recent = history[-8:]
+    if not is_owner:
+        recent = [dict(_msg_to_dict(m), content=(_msg_to_dict(m).get("content") or "")[:3000])
+                  for m in recent]
+    ctx = _turn_context(len(history), person, user_text)
+    model_msg = dict(model_msg, content=f"{ctx}\n\n[Message from {who}]\n{model_msg['content']}")
+    messages = [{"role": "system", "content": _build_system(len(history), person)}] + recent + [model_msg]
     history.append(user_msg)
-    mem.add("user", user_text[:500], source="telegram")
+    mem.add("user", user_text[:500], source=source)
 
     # ── Morning brief: pre-fetch live data so amy-vl only has to write ───────
     if _BRIEFING_RE.search(user_text):
@@ -189,29 +389,71 @@ def _chat(user_text: str, image_bytes: bytes | None = None) -> str | None:
 
     msg = None
     seen = {}
-    for _ in range(MAX_HOPS):
-        resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
-                           keep_alive="30m", options={"num_ctx": CTX_WINDOW})
+    for step in range(1, MAX_HOPS + 1):
+        _t0 = time.time()
+        worker._fit(messages)
+        resp = worker.ollama_chat(model=MODEL, messages=messages, tools=tool_list,
+                           keep_alive="30m",
+                           options={"num_ctx": CTX_WINDOW,
+                                    **({} if is_owner else {"temperature": 0.4})})
         msg  = resp["message"]
+        _calls = [c["function"]["name"] for c in (msg.get("tool_calls") or [])]
+        _tok, _ns = resp.get("eval_count") or 0, resp.get("eval_duration") or 0
+        _log(f"  … {who}: {_tok} tokens in {time.time()-_t0:.1f}s"
+             + (f" ({_tok/(_ns/1e9):.1f} tok/s)" if _ns else "")
+             + (f" → tools {_calls}" if _calls else ""))
         messages.append(msg)
         history.append(msg)
         calls = msg.get("tool_calls") or []
         if not calls:
             break
+        if progress:
+            progress([c["function"]["name"] for c in calls], step)
         for call in calls:
             fn   = call["function"]
             name = fn["name"]
             args = fn.get("arguments", {})
             key  = (name, tuple(sorted((k, str(v)) for k, v in args.items()) if isinstance(args, dict) else ()))
-            result = seen[key] if key in seen else tools.dispatch(name, args, mem)
+            if not is_owner and name not in GUEST_TOOLS:
+                result = "That tool is only available to Brian."
+            elif is_owner and _is_public_action(name, args) and not _PUBLIC_OK.search(user_text):
+                result = ("Not done: Brian didn't ask you to post, comment, follow or upvote. "
+                          "Tell him what you found and ask if he wants you to act on it.")
+                _log(f"  (blocked {name} {args.get('action','')} — not requested)")
+            elif not is_owner and name == "remember_fact":
+                _remember_for(who, str(args.get("fact") or args.get("text") or args))
+                result = f"Remembered (private to {who})."
+            else:
+                result = seen[key] if key in seen else tools.dispatch(name, args, mem)
             seen[key] = result
-            messages.append({"role": "tool", "content": str(result) if result else "done"})
+            messages.append({"role": "tool", "content":
+                (worker._cap(str(result)) if result else "done") + f"\n[step {step} of {MAX_HOPS}]"})
             history.append(messages[-1])
 
+    # Out of steps while still calling tools: give her one last turn, without
+    # tools, to tell the person what she did instead of going silent.
+    if msg is not None and (msg.get("tool_calls") or not msg.get("content")):
+        _log(f"  … {who}: " + ("out of steps" if msg.get("tool_calls") else "no final answer yet")
+             + " — asking Amy to wrap up")
+        messages.append({"role": "user", "content":
+            "[You've used all your tool steps for this message. Don't call any more tools and "
+            "don't promise to do more right now. In a few sentences: what you did, what you "
+            "found, and what's left — then ask if they want you to continue.]"})
+        worker._fit(messages)
+        resp = worker.ollama_chat(model=MODEL, messages=messages, keep_alive="30m",
+                           options={"num_ctx": CTX_WINDOW,
+                                    **({} if is_owner else {"temperature": 0.4})})
+        msg = dict(_msg_to_dict(resp["message"]))
+        msg["content"] = worker.strip_tool_text(msg.get("content", ""))
+        msg.pop("tool_calls", None)
+        history.append(msg)
+
+    if msg and msg.get("content") and saved_note:
+        msg = dict(_msg_to_dict(msg), content=saved_note + msg["content"])
     if msg and msg.get("content"):
-        mem.add("assistant", msg["content"], source="telegram")
+        mem.add("assistant", msg["content"], source=source)
         amy_state.after_turn()
-        _save_history(history)
+        _save_history(history, _history_file(pkey))
         return msg["content"]
     return None
 
@@ -221,17 +463,70 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = update.message.text if update.message else None
     if not text:
         return
-    await ctx.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-    loop  = asyncio.get_event_loop()
-    reply = await loop.run_in_executor(None, _chat, text, None)
-    if reply:
-        await update.message.reply_text(reply)
+    person, intro = _identify(update.effective_chat.id, text)
+    if not person:
+        if intro:
+            await update.message.reply_text(intro)
+        return
+    if person["role"] == "owner":
+        worker.note_message(update.effective_chat.id)
+        m = re.match(r"(?i)^invite\s+(\w[\w\s'-]{0,30})$", text.strip())
+        if m:
+            name = m.group(1).strip().title()
+            code = _invite(name)
+            await update.message.reply_text(
+                f"Invite for {name}: have her open this chat's bot link, press Start, "
+                f"and send just this code:\n\n{code}")
+            return
+        cmd = worker.handle_command(text)
+        if cmd:
+            await update.message.reply_text(cmd)
+            return
+    else:
+        low = text.strip().lower()
+        if low in ("my documents", "my docs", "my files", "documents"):
+            docs = guest_docs.list_docs(person["name"])
+            await update.message.reply_text(
+                "Documents I'm keeping for you:\n" + "\n".join(f"• {d} ({n} passages)" for d, n in docs)
+                if docs else "You haven't sent me any documents yet. Send a PDF or Word file and I'll keep it privately for you.")
+            return
+        m = re.match(r"(?i)^forget\s+(?:document\s+|file\s+)?(.+)$", text.strip())
+        if m:
+            gone = guest_docs.forget(person["name"], m.group(1).strip())
+            await update.message.reply_text(
+                ("Removed: " + ", ".join(gone)) if gone else "I couldn't find a document by that name. Say 'my documents' to see the list.")
+            return
+    # Telegram splits long pastes into several messages. Collect parts until
+    # 3s pass with nothing new, then answer them together as one message.
+    chat = update.effective_chat.id
+    parts = _pending.setdefault(chat, [])
+    parts.append(text)
+    if len(parts) > 1:
+        return                       # the first handler is already collecting
+    while True:
+        n = len(parts)
+        await asyncio.sleep(3)
+        if len(parts) == n:
+            break
+    combined = "\n".join(_pending.pop(chat))
+    if n > 1:
+        _log(f"  (combined {n} split messages from {person['name']})")
+    await ctx.bot.send_chat_action(chat_id=chat, action="typing")
+    await _respond(update, person, combined, None)
+
+
+_pending: dict = {}
 
 
 async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Handle photos — with or without a caption."""
     if not update.message:
         return
+    person, _ = _identify(update.effective_chat.id, "")
+    if not person:
+        return
+    if person["role"] == "owner":
+        worker.note_message(update.effective_chat.id)
     await ctx.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
 
     # Grab the highest-resolution version Telegram offers
@@ -243,19 +538,140 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     caption = update.message.caption or ""
 
-    loop  = asyncio.get_event_loop()
-    reply = await loop.run_in_executor(None, _chat, caption, image_bytes)
-    if reply:
-        await update.message.reply_text(reply)
+    await _respond(update, person, caption, image_bytes)
+
+
+def _plain(text: str) -> str:
+    """Strip markdown symbols Telegram would show literally (**bold**, # headers, ```)."""
+    text = re.sub(r"```[a-zA-Z]*\n?", "", text)
+    text = re.sub(r"\*\*(.+?)\*\*|__(.+?)__", lambda m: m.group(1) or m.group(2), text)
+    text = re.sub(r"(?<![\w*])\*(?!\s)([^*\n]+?)\*(?![\w*])", r"\1", text)
+    text = re.sub(r"(?m)^#{1,6}\s*", "", text)
+    text = re.sub(r"(?m)^(\s*)[*]\s+", r"\1• ", text)
+    return text
+
+
+_TOOL_PHRASES = {
+    "web_search": "searching the web", "read_article": "reading articles",
+    "moltbook_check_in": "checking Moltbook", "moltbook_engage": "working on Moltbook",
+    "moltbook_post": "posting on Moltbook", "moltbook_verify": "working on Moltbook",
+    "read_file": "reading files", "write_file": "saving a file", "list_files": "looking through files",
+    "search_books": "searching the book catalog", "journal_entry": "writing in my journal",
+    "read_journal": "reading my journal", "remember_fact": "noting that down",
+    "check_email": "checking email", "research_income": "researching",
+    "self_improve": "looking at my own code",
+}
+
+
+def _chunks(text: str, limit: int = 4000) -> list:
+    """Split at paragraph/line breaks so each piece fits in one Telegram message."""
+    parts = []
+    while len(text) > limit:
+        cut = text.rfind("\n\n", 0, limit)
+        if cut < limit // 2:
+            cut = text.rfind("\n", 0, limit)
+        if cut < limit // 2:
+            cut = text.rfind(" ", 0, limit)
+        cut = cut if cut > 0 else limit
+        parts.append(text[:cut].rstrip())
+        text = text[cut:].lstrip()
+    return parts + ([text] if text else [])
+
+
+async def _respond(update: Update, person: dict, text: str, image_bytes):
+    """Run Amy, send the reply, and log what happened (never message content)."""
+    who, t0 = person["name"], time.time()
+    kind = "photo" if image_bytes else f"{len(text)} chars"
+    _log(f"→ {who} sent a message ({kind})")
+    chat_id = update.effective_chat.id
+    loop    = asyncio.get_event_loop()
+
+    # Telegram's "typing…" fades after ~5s; keep it on for the whole job.
+    async def keep_typing():
+        while True:
+            try:
+                await update.get_bot().send_chat_action(chat_id=chat_id, action="typing")
+            except Exception:
+                pass
+            await asyncio.sleep(4)
+    typing = asyncio.create_task(keep_typing())
+
+    # One short note the first time she reaches for tools, so a long job never looks frozen.
+    sent_note = {"done": False}
+    def progress(tool_names, step):
+        if sent_note["done"]:
+            return
+        sent_note["done"] = True
+        doing = sorted({_TOOL_PHRASES.get(n, "working on it") for n in tool_names})
+        note = "On it — " + ", ".join(doing) + ". This may take a couple of minutes."
+        asyncio.run_coroutine_threadsafe(update.get_bot().send_message(chat_id=chat_id, text=note), loop)
+
+    try:
+        reply = await loop.run_in_executor(None, _chat, text, image_bytes, person, progress)
+    except Exception as e:
+        typing.cancel()
+        _log(f"✗ {who}: Amy failed after {time.time()-t0:.0f}s — {type(e).__name__}: {e}")
+        await update.message.reply_text("Sorry — something went wrong on my end. Try again in a minute?")
+        return
+    typing.cancel()
+    if not reply:
+        _log(f"✗ {who}: Amy produced an empty reply after {time.time()-t0:.0f}s")
+        return
+    if person["role"] != "owner":
+        reply = _plain(reply)
+    try:
+        for part in _chunks(reply):
+            await update.message.reply_text(part)
+        _log(f"✓ {who}: reply delivered ({len(reply)} chars, {time.time()-t0:.0f}s total)")
+    except Exception as e:
+        _log(f"✗ {who}: reply written but Telegram send failed — {type(e).__name__}: {e}")
+
+
+async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Guests send PDFs / Word files; Amy keeps them privately and quotes from them."""
+    if not update.message or not update.message.document:
+        return
+    person, _ = _identify(update.effective_chat.id, "")
+    if not person:
+        return
+    doc = update.message.document
+    name = doc.file_name or "document"
+    if person["role"] == "owner":
+        await update.message.reply_text("Document library is for guests. For your own files, use learn_pdf.py.")
+        return
+    if not name.lower().endswith(guest_docs.SUPPORTED):
+        await update.message.reply_text("I can read PDF, Word (.docx/.doc), RTF and text files.")
+        return
+    if (doc.file_size or 0) > 20_000_000:
+        await update.message.reply_text("That file is over Telegram's 20 MB limit for me — could you split it?")
+        return
+    _log(f"→ {person['name']} sent a document ({(doc.file_size or 0)//1024} KB)")
+    await update.message.reply_text(f"Reading {name}… one moment.")
+    try:
+        tg_file = await ctx.bot.get_file(doc.file_id)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, name)
+            await tg_file.download_to_drive(path)
+            loop = asyncio.get_event_loop()
+            n, chars = await loop.run_in_executor(None, guest_docs.add, person["name"], name, path)
+        _log(f"✓ {person['name']}: stored document ({n} passages)")
+        await update.message.reply_text(
+            f"Got it — I've saved {name} privately ({n} passages, about {chars // 1500} pages). "
+            "Ask me anything about it, and I'll quote directly from it with the file name.")
+    except Exception as e:
+        _log(f"✗ {person['name']}: document failed — {type(e).__name__}: {e}")
+        await update.message.reply_text(f"I couldn't read {name}: {e}")
 
 
 def main():
     token = os.environ.get("TELEGRAM_TOKEN")
     if not token:
         sys.exit("TELEGRAM_TOKEN not set — check your .env.amy file")
-    app = Application.builder().token(token).build()
+    app = Application.builder().token(token).concurrent_updates(True).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
+    app.add_handler(MessageHandler(filters.Document.ALL, on_document))
+    worker.start(os.environ.get("AMY_MODEL", "amy-neo"), mem, token)
     print("Amy is on Telegram. She can now see photos you send her.")
     app.run_polling(drop_pending_updates=True)
 

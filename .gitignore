@@ -42,3 +42,18 @@ token.pickle
 # Learnings + conflict log — private behavioral/session data
 learnings.md
 identity_conflicts.log
+
+# Heartbeat worker runtime state (owner chat id, last runs)
+worker_state.json
+people.json
+telegram_history_*.json
+
+# Guests' private documents and data
+people/
+telegram_history.json
+amy_state.json
+tasks.json
+
+# Local backups
+*.bak
+*.iq3-backup

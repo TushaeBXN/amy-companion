@@ -20,7 +20,7 @@ Amy is a locally-hosted AI companion with multiple input paths, a single-model i
 
 | Tag | Base | Quant | Context | Notes |
 |-----|------|-------|---------|-------|
-| `amy-hermes` | Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-MTP | IQ3_M (~5.7 GB) | 16 384 | Tool-calling, reasoning, conversation |
+| `amy-hermes` | Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-MTP | IQ4_XS (~6.53 GB) | 16 384 | Tool-calling, reasoning, conversation |
 | `amy-neo` (alt) | Qwen3.5-9B Q4\_K\_M + mmproj-F16 | Q4\_K\_M | 16 384 | Multimodal projector for native image input |
 
 One model handles everything — tools, reasoning, conversation, and vision.
@@ -47,7 +47,7 @@ flowchart TD
         CoreDesc["16-msg sliding window · tool dispatch (max 12 hops)\nsystem prompt = amy_persona.py + memory recall + session learnings\nspontaneous thought thread · heartbeat worker"]
     end
 
-    Core -->|tool turns| Hermes["**amy-hermes**\nQwen3.5-9B IQ3_M\nctx=16384 · tools + vision"]
+    Core -->|tool turns| Hermes["**amy-hermes**\nQwen3.5-9B IQ4_XS\nctx=16384 · tools + vision"]
     Core -->|embed| Nomic["**nomic-embed-text**\nembeddings for RAG\ncosine sim ≥ 0.65"]
 
     Hermes -->|tool_calls| Tools["**tools.py**\n31 tools · whitelisted dispatch\nweb · file · moltbook · journal · image gen"]
@@ -106,6 +106,19 @@ flowchart TD
 - **Blue** — Ollama inference (tool-calling · vision · code)
 - **Amber** — Memory layer (SQLite + embeddings · always recalled)
 - **Purple dashed** — Background thread (spontaneous thoughts)
+
+**Running the three-model setup again.** The routing code is still in
+`companion.py` (web UI + terminal); only the models are swapped out. Each role
+is an env var:
+
+```bash
+ollama pull deepseek-coder:6.7b          # not installed by default
+export AMY_MODEL=hermes3                 # tool-calling (Llama 3 8B base; today's amy-hermes tag is Qwen3.5)
+export AMY_VISION_MODEL=amy              # vision-only model for /look
+export AMY_CODE_MODEL=deepseek-coder:6.7b  # re-enables code routing (empty = paused)
+```
+
+Leave `AMY_CODE_MODEL` unset to keep code routing paused.
 
 ---
 <img width="656" height="699" alt="Screenshot 2026-08-21 at 8 40 53 PM" src="https://github.com/user-attachments/assets/b71875d4-b2b6-4d91-9079-ed68915d81ce" />

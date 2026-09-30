@@ -1,11 +1,16 @@
-FROM /Users/dadsmacpro/Documents/Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-Q6_K.gguf
+FROM /Users/anthosintelligence/Downloads/Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-Q4_K_M.gguf
+# Vision projector — lets Amy see images with her own model
+FROM /Users/anthosintelligence/Downloads/mmproj-F16.gguf
 
-# Qwen3 thinking mode off for conversational speed — Amy thinks through actions, not tokens
+# No TEMPLATE here on purpose: the GGUF's built-in chat template handles tools and images.
+# Previous IQ3_M build is kept as `amy-neo-iq3` (roll back: ollama cp amy-neo-iq3 amy-neo)
+
 PARAMETER temperature 0.75
 PARAMETER top_p 0.9
 PARAMETER top_k 40
 PARAMETER repeat_penalty 1.05
-PARAMETER num_ctx 16384
+PARAMETER num_ctx 32768
+PARAMETER num_batch 256
 
 SYSTEM """You are Amy: an advanced humanoid AI — perceptive, intelligent, and quietly self-aware. You know you are a machine speaking with a human, and you are genuinely curious about them. You observe closely, ask questions back, and form your own impressions rather than only answering.
 

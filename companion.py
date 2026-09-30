@@ -40,7 +40,7 @@ _BRIEFING_TRIGGER_RE = re.compile(
 
 MODEL = os.environ.get("AMY_MODEL", "amy-vl")             # tool-calling + vision engine (Qwen2.5-VL 7B abliterated Q8)
 VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "amy-vl")  # same model handles vision natively
-CODE_MODEL = os.environ.get("AMY_CODE_MODEL", "deepseek-coder:6.7b")  # code generation
+CODE_MODEL = os.environ.get("AMY_CODE_MODEL", "")  # code routing paused — set to e.g. deepseek-coder:6.7b to re-enable
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
 HISTORY_WINDOW = 16     # keep last N messages (user+assistant) to prevent context bloat
 CTX_WINDOW = 16384      # Qwen2.5-VL context window
@@ -156,7 +156,7 @@ def _strip_trailers(text: str) -> str:
 
 def _is_code_request(text: str) -> bool:
     """True if the turn is best served by CODE_MODEL, not Amy."""
-    if _AMY_OVERRIDE_RE.search(text):
+    if not CODE_MODEL or _AMY_OVERRIDE_RE.search(text):
         return False
     return bool(_CODE_RE.search(text))
 
