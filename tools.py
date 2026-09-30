@@ -611,6 +611,97 @@ _BASE_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "listen_to_track",
+            "description": (
+                "Listen to an audio file (e.g. one of Brian's instrumentals) and get notes on "
+                "tempo, key, chord movement, energy over time, sections and tone. You can't "
+                "hear audio directly — this measures it for you. Tracks Brian shares are saved "
+                "in work/tracks/. Takes ~30 s."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path to the audio file, or just its name inside work/tracks/"},
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "listen_live",
+            "description": (
+                "Listen to whatever is playing on the Mac right now (system audio via BlackHole) "
+                "for a number of seconds, then get listening notes. Use when Brian says he's "
+                "playing something for you. Headset mics can't pick up headphone audio, so this "
+                "is the only live option."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "seconds": {"type": "integer", "description": "How long to listen, 10–120 (default 45)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "task_push",
+            "description": (
+                "Add a task to your working queue. The first pending task is your current "
+                "focus — always finish it before starting the next. Use this when Brian "
+                "hands you a list of things to do, or when you identify work that should "
+                "be tracked rather than forgotten."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title":   {"type": "string", "description": "Short name for the task (max 200 chars)"},
+                    "details": {"type": "string", "description": "Optional context or acceptance criteria"},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "task_complete",
+            "description": (
+                "Mark the current task (or a specific task by id) as done and advance to "
+                "the next one. Call this as soon as the work is finished — don't wait for "
+                "Brian to ask."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {"type": "string", "description": "8-char task id (omit to complete the current task)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "task_list",
+            "description": "Show the full task queue — pending, done, and skipped.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["all", "pending", "done"],
+                        "description": "Which tasks to show (default: all)",
+                    },
+                },
+            },
+        },
+    },
 ]  # end _BASE_TOOLS
 
 # Build active TOOLS list — moltbook tools only included when service is reachable
@@ -1206,6 +1297,30 @@ def dispatch(name, args, memory=None):
         else:
             return f"unknown self_improve action: {action}"
 
+    if name == "listen_to_track":
+        import listen as _ls
+        path = os.path.expanduser(args.get("path", "").strip())
+        if path and not os.path.exists(path):
+            path = os.path.join(_ls.TRACK_DIR, os.path.basename(path))
+        if not path or not os.path.exists(path):
+            have = sorted(os.listdir(_ls.TRACK_DIR)) if os.path.isdir(_ls.TRACK_DIR) else []
+            return f"couldn't find that track. Saved tracks: {have or 'none yet'}"
+        print(f"  [listen] analysing {os.path.basename(path)}...")
+        try:
+            return _ls.describe(path)
+        except Exception as e:
+            return f"couldn't analyse that audio: {e}"
+
+    if name == "listen_live":
+        import listen as _ls
+        secs = max(10, min(120, int(args.get("seconds") or 45)))
+        print(f"  [listen] recording system audio for {secs}s...")
+        try:
+            wav = _ls.record_system(secs)
+            return _ls.describe(wav, name=f"live recording ({secs}s)")
+        except Exception as e:
+            return f"couldn't listen live: {e}"
+
     if name == "generate_image":
         import imagegen as _ig
         prompt = args.get("prompt", "").strip()
@@ -1276,6 +1391,56 @@ def dispatch(name, args, memory=None):
             return f"unknown action: {action}"
         except Exception as e:
             return f"BoTTube error: {e}"
+
+    if name == "task_push":
+        from task_queue import get_queue as _tq
+        title   = args.get("title", "").strip()
+        details = args.get("details", "")
+        if not title:
+            return "need a title"
+        try:
+            tid = _tq().push(title, details)
+            pending = len(_tq().list_pending())
+            print(f"  [task] pushed [{tid}] {title!r} ({pending} pending)")
+            return f"Task [{tid}] added. {pending} task(s) now pending."
+        except ValueError as e:
+            return str(e)
+
+    if name == "task_complete":
+        from task_queue import get_queue as _tq
+        task_id = args.get("task_id", None)
+        ok = _tq().complete(task_id)
+        if not ok:
+            return "No matching pending task found."
+        nxt = _tq().current()
+        msg = "Task marked done."
+        if nxt:
+            msg += f" Next up: [{nxt['id']}] {nxt['title']}"
+        else:
+            msg += " Queue is clear."
+        print(f"  [task] completed → {msg}")
+        return msg
+
+    if name == "task_list":
+        from task_queue import get_queue as _tq
+        status_filter = args.get("status", "all")
+        tasks = _tq().list_all()
+        if status_filter == "pending":
+            tasks = [t for t in tasks if t["status"] == "pending"]
+        elif status_filter == "done":
+            tasks = [t for t in tasks if t["status"] in ("done", "skipped")]
+        if not tasks:
+            return "Queue is empty."
+        import datetime as _dt
+        lines = []
+        for t in tasks:
+            icon = {"pending": "▶", "done": "✓", "skipped": "↷"}.get(t["status"], "?")
+            when = _dt.datetime.fromtimestamp(t["created_at"]).strftime("%m/%d %H:%M")
+            line = f"{icon} [{t['id']}] {t['title']}  ({t['status']}, added {when})"
+            if t["details"]:
+                line += f"\n   {t['details']}"
+            lines.append(line)
+        return "\n".join(lines)
 
     print(f"  [tools] unknown tool: {name}")
     return None
