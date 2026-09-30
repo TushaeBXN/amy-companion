@@ -22,8 +22,9 @@ import hearing
 from memory import Memory
 from state import InternalState
 from thoughts import ThoughtBuffer
-from amy_persona import SYSTEM_PROMPT
+from amy_persona import CORE_PROMPT, playbooks_for
 import learnings as _learnings
+from task_queue import get_queue as _get_task_queue
 _session_learnings: str = ""
 _calendar_context: str = ""
 
@@ -43,7 +44,7 @@ VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "amy-vl")  # same model handle
 CODE_MODEL = os.environ.get("AMY_CODE_MODEL", "")  # code routing paused — set to e.g. deepseek-coder:6.7b to re-enable
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
 HISTORY_WINDOW = 16     # keep last N messages (user+assistant) to prevent context bloat
-CTX_WINDOW = 16384      # Qwen2.5-VL context window
+CTX_WINDOW = int(os.environ.get("AMY_CTX", 32768))  # match telegram_amy.py/worker.py so Ollama shares one loaded model
 KEEP_ALIVE = -1         # keep models loaded indefinitely — no eviction between turns
 MAX_LEARNINGS_CHARS = 2000  # cap session learnings injected into system prompt
 SELF_PORTRAIT = os.path.join(os.path.dirname(__file__), "amyglitch.png")
@@ -177,7 +178,9 @@ def _drop_images(msgs):
 def build_context(mem, user_text, amy_state=None, absence=None,
                   pending_thoughts=None, channel="terminal"):
     """System turn = persona + her self-layer (L0/L1) + state + recalled memories."""
-    system = SYSTEM_PROMPT + "\n\n" + mem.wake_up()
+    # Lean prompt like telegram_amy.py: core persona always, playbooks only when
+    # the message calls for them (full SYSTEM_PROMPT is ~12k tokens).
+    system = CORE_PROMPT + "\n\n" + mem.wake_up()
     if channel == "browser":
         system += ("\n\n[Interface: browser — Brian is messaging you through the web UI. "
                    "Your reply goes to the browser chat, not the terminal. "
@@ -191,6 +194,14 @@ def build_context(mem, user_text, amy_state=None, absence=None,
     if amy_state:
         system += "\n\n[Internal state]\n" + amy_state.state_summary()
 
+    # Task queue — pin current focus to prevent context drift
+    try:
+        _task_ctx = _get_task_queue().context_snippet()
+        if _task_ctx:
+            system += "\n\n" + _task_ctx
+    except Exception:
+        pass  # never let a queue error break a conversation turn
+
     # Surface buffered thoughts from while the human was away
     if pending_thoughts:
         thought_texts = [t for _, t in pending_thoughts]
@@ -201,6 +212,8 @@ def build_context(mem, user_text, amy_state=None, absence=None,
                    "do NOT add 'I was thinking...' or 'I found...' framing. "
                    "Only assert things you are confident are true. "
                    "Never mention a specific URL, video title, or source you did not actually retrieve.")
+
+    system += playbooks_for(user_text)
 
     # Time estimation for absence
     if absence:
@@ -563,7 +576,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
         )
         journal_prompt = [
             {"role": "system", "content": (
-                SYSTEM_PROMPT
+                CORE_PROMPT
                 + ("\n\n[Internal state]\n" + _state_summary if _state_summary else "")
                 + _mem_context
                 + ("\n\n[Recent conversation]\n" + _history_text if _history_text else "")
@@ -707,7 +720,7 @@ def _spontaneous_thought(history, mem, amy_state):
     mood = amy_state.mood
     checkin_prompt = _CHECKIN_PROMPTS.get(mood, _CHECKIN_PROMPTS["curious"])
 
-    system = (SYSTEM_PROMPT + "\n\n" + mem.wake_up() +
+    system = (CORE_PROMPT + "\n\n" + mem.wake_up() +
               "\n\n[Internal state]\n" + amy_state.state_summary() +
               "\n\n[HARD RULE — spontaneous speech only]\n"
               "You are generating a spontaneous check-in, NOT a tool-calling turn. "
@@ -768,7 +781,7 @@ def _warmup_models():
             ollama.chat(
                 model=model,
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": CORE_PROMPT},
                     {"role": "user", "content": "hi"},
                 ],
                 tools=tools.TOOLS,          # must match real requests for cache prefix to align
