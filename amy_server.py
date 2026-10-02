@@ -273,6 +273,43 @@ async def state():
     })
 
 
+@app.post("/readfile")
+async def read_file_for_context(file: UploadFile = File(...)):
+    """Read a file and return its text — injected into conversation, NOT stored in memory."""
+    import learn_pdf as _lp
+    _ext = os.path.splitext(file.filename.lower())[1]
+    supported = set(_lp._TEXT_EXTENSIONS) | {".pdf"}
+    if _ext not in supported:
+        return JSONResponse({"error": f"Unsupported type '{_ext}'"}, status_code=400)
+
+    _file_ext = os.path.splitext(file.filename)[1] or ".txt"
+    tmp = tempfile.NamedTemporaryFile(suffix=_file_ext, delete=False)
+    tmp.write(await file.read())
+    tmp.close()
+
+    try:
+        if _ext == ".pdf":
+            text = "\n\n".join(t for _, t in _lp.extract_pages(tmp.name))
+        else:
+            text = "\n\n".join(t for _, t in _lp.extract_text_file(tmp.name))
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
+    # Cap at ~12k chars to stay inside context window
+    cap = 12_000
+    truncated = len(text) > cap
+    text = text[:cap]
+    return JSONResponse({
+        "filename": file.filename,
+        "text": text,
+        "truncated": truncated,
+        "chars": len(text),
+    })
+
+
 @app.post("/learn")
 async def learn_pdf(file: UploadFile = File(...), label: str = Form(None)):
     """Ingest a PDF into Amy's memory (RAG). Chunks are searchable immediately."""
@@ -793,6 +830,8 @@ _UI_HTML = """<!DOCTYPE html>
   <label class="icon-btn" for="fileInput" title="Attach image">🖼️</label>
   <input type="file" id="fileInput" accept="image/*">
   <button id="learnBtn" title="Teach Amy a file (PDF, .py, .js, .md, etc.)">📚</button>
+  <label class="icon-btn" for="readFileInput" title="Share a file with Amy (read only — not stored)">📄</label>
+  <input type="file" id="readFileInput" accept=".pdf,.py,.js,.ts,.jsx,.tsx,.json,.yaml,.yml,.toml,.md,.txt,.sh,.sql,.rs,.go,.c,.cpp,.h,.java,.rb,.html,.css">
   <textarea id="input" placeholder="Say something to Amy…" rows="1"></textarea>
   <button class="icon-btn" id="sendBtn" title="Send (Enter)">➤</button>
   <button class="icon-btn" id="stopBtn" title="Interrupt Amy (Esc)">■</button>
@@ -851,6 +890,28 @@ document.getElementById("clearImg").addEventListener("click", () => {
   document.getElementById("imgThumb").src = "";
 });
 
+// ── read file into context (not stored) ──────────────────────────────────────
+let pendingFileContext = null;   // { filename, text, truncated }
+
+document.getElementById("readFileInput").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = "";
+  appendSys(`Reading ${file.name}…`);
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const r = await fetch("/readfile", { method: "POST", body: fd });
+    const d = await r.json();
+    if (d.error) { appendSys("Could not read file: " + d.error); return; }
+    pendingFileContext = { filename: d.filename, text: d.text, truncated: d.truncated };
+    const note = d.truncated ? ` (first ${d.chars} chars — file was truncated)` : ` (${d.chars} chars)`;
+    appendSys(`📄 ${d.filename}${note} — attached. Type a question or just hit send.`);
+  } catch (err) {
+    appendSys("File read failed: " + err);
+  }
+});
+
 // ── webcam capture ────────────────────────────────────────────────────────────
 document.getElementById("cameraBtn").addEventListener("click", async () => {
   document.getElementById("cameraBtn").disabled = true;
@@ -876,15 +937,25 @@ function setImage(dataUrl, mime, b64override) {
 // ── send message (streaming) ──────────────────────────────────────────────────
 async function sendMsg() {
   const text = input.value.trim();
-  if (!text && !pendingImage) return;
+  if (!text && !pendingImage && !pendingFileContext) return;
   if (waiting) return;
 
-  const msg = text || "(image)";
+  let msg = text || (pendingImage ? "(image)" : "");
   const img = pendingImage;
+  const fileCtx = pendingFileContext;
   pendingImage = null;
+  pendingFileContext = null;
   document.getElementById("imgPreviewBar").classList.remove("visible");
   input.value = "";
   input.style.height = "auto";
+
+  // Prepend file content to the message Amy receives
+  let fullMsg = msg;
+  if (fileCtx) {
+    const header = `[File: ${fileCtx.filename}${fileCtx.truncated ? " (truncated)" : ""}]\n`;
+    fullMsg = header + fileCtx.text + (msg ? `\n\n---\n${msg}` : "");
+    msg = msg || `(read ${fileCtx.filename})`;
+  }
 
   appendUser(msg, img?.dataUrl);
   const thinkingEl = appendThinking();
@@ -894,7 +965,7 @@ async function sendMsg() {
   let buffer = "";
 
   try {
-    const body = { message: msg };
+    const body = { message: fullMsg };
     if (img) body.image_b64 = img.b64;
 
     const r = await fetch("/chat/stream", {
