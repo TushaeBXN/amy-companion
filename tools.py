@@ -702,7 +702,32 @@ _BASE_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "speak",
+            "description": (
+                "Convert text to a voice message sent via Telegram. Use for encouragement, "
+                "emotional messages, or anything that lands better heard than read. "
+                "Keep under 200 words for natural pacing. Returns 'voice queued' on success."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "The text to speak aloud.",
+                        "maxLength": 1000,
+                    },
+                },
+                "required": ["text"],
+            },
+        },
+    },
 ]  # end _BASE_TOOLS
+
+# Pending voice file path — set by speak(), consumed by worker._run_task
+_pending_voice: "Path | None" = None
 
 # Build active TOOLS list — moltbook tools only included when service is reachable
 TOOLS = _BASE_TOOLS + (_MOLTBOOK_TOOLS if _MOLTBOOK_UP else [])
@@ -1441,6 +1466,19 @@ def dispatch(name, args, memory=None):
                 line += f"\n   {t['details']}"
             lines.append(line)
         return "\n".join(lines)
+
+    if name == "speak":
+        import tools as _self
+        import tts as _tts
+        text = args.get("text", "").strip()
+        if not text:
+            return "speak: text is required"
+        try:
+            path = _tts.generate_ogg(text)
+            _self._pending_voice = path
+            return "voice queued"
+        except Exception as e:
+            return f"speak failed: {e}"
 
     print(f"  [tools] unknown tool: {name}")
     return None

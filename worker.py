@@ -40,7 +40,7 @@ ALLOWED_TOOLS = {
     "fund_status", "search_books",
     "moltbook_check_in", "moltbook_post", "moltbook_engage", "moltbook_verify",
     "create_slideshow", "bottube_post", "bottube_check",
-    "self_improve",
+    "self_improve", "speak",
 }
 
 _WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -141,6 +141,27 @@ def _recipient(name):
         if p["name"].lower() == (name or "").lower():
             return int(chat_id), p["name"]
     return _state().get("owner_chat_id"), "Brian"
+
+
+def _send_voice(path, chat=None):
+    chat = chat or _state().get("owner_chat_id")
+    if not (_token and chat):
+        return False
+    try:
+        with open(path, "rb") as f:
+            r = requests.post(
+                f"https://api.telegram.org/bot{_token}/sendVoice",
+                data={"chat_id": chat},
+                files={"voice": ("voice.ogg", f, "audio/ogg")},
+                timeout=30,
+            )
+        ok = r.ok and r.json().get("ok")
+        if not ok:
+            print(f"  [worker] sendVoice failed: {r.text[:200]}")
+        return bool(ok)
+    except Exception as e:
+        print(f"  [worker] sendVoice failed: {e}")
+        return False
 
 
 def _send(text, chat=None):
@@ -386,13 +407,19 @@ def _run_task(task):
         # Lean prompt: the full chat SYSTEM_PROMPT is ~10.6k tokens and the tool
         # definitions ~2.7k more — tasks overflowed the window after one or two
         # tool results and failed with "No user query found in messages".
+        recipient = task.get("to")
+        if recipient:
+            closing = (f"When finished, just return your message for {recipient} "
+                       "— plain text only, no explanation, no preamble, nothing else.")
+        else:
+            closing = ("When finished, reply with a short, natural note to Brian: "
+                       "what you did and where you saved it.")
         system = (
             (_memory.wake_up() if _memory else "") + WORK_PERSONA + scope_rules(task_hops) +
             "\n\n[Work time] Brian isn't talking to you right now. This is your own "
             "scheduled work. Use your tools to actually do the task — don't describe "
             f"what you would do. Today is {datetime.now():%A, %B %d, %Y}. Save files under "
-            f"{WORK_DIR}/ (use full paths). When finished, reply with a short, "
-            "natural note to Brian: what you did and where you saved it."
+            f"{WORK_DIR}/ (use full paths). {closing}"
         )
         allowed = [t for t in tools.TOOLS if t["function"]["name"] in ALLOWED_TOOLS]
         messages = [{"role": "system", "content": system},
@@ -450,7 +477,22 @@ def _run_task(task):
         f.write(f"\n## {datetime.fromtimestamp(started):%Y-%m-%d %H:%M} — {task['id']} "
                 f"({mins:.1f} min)\nTools: {', '.join(used) or 'none'}\n\n{final}\n")
     print(f"  [worker] {task['id']} done in {mins:.1f} min — tools: {used}")
-    _send(f"🛠 {task['id']}\n\n{final or '(finished, nothing to say)'}")
+    voice_path = tools._pending_voice
+    if voice_path:
+        tools._pending_voice = None
+        dest_chat = _recipient(task["to"])[0] if task.get("to") else _state().get("owner_chat_id")
+        sent = _send_voice(voice_path, dest_chat)
+        try:
+            voice_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        if sent:
+            return
+    if task.get("to"):
+        chat, name = _recipient(task["to"])
+        _send(final or "(finished, nothing to say)", chat=chat)
+    else:
+        _send(f"🛠 {task['id']}\n\n{final or '(finished, nothing to say)'}")
 
 
 def _loop():

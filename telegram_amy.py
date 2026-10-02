@@ -29,8 +29,8 @@ try:
 except ModuleNotFoundError:
     _learnings = None
 
-MODEL        = os.environ.get("AMY_MODEL", "amy-neo")
-VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "amy-neo")
+MODEL        = os.environ.get("AMY_MODEL", "amy-hermes")
+VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "amy-hermes")
 MAX_HOPS     = 10
 CTX_WINDOW   = 32768
 HISTORY_FILE = os.path.join(_here, "telegram_history.json")
@@ -671,7 +671,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, on_document))
-    worker.start(os.environ.get("AMY_MODEL", "amy-neo"), mem, token)
+    worker.start(os.environ.get("AMY_MODEL", "amy-hermes"), mem, token)
     print("Amy is on Telegram. She can now see photos you send her.")
     app.run_polling(drop_pending_updates=True)
 
