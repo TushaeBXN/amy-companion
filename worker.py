@@ -43,6 +43,7 @@ ALLOWED_TOOLS = {
     "self_improve", "speak",
     "study_creator", "family_fund",
     "income_eval", "income_stream",
+    "self_metrics",
 }
 
 _WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]

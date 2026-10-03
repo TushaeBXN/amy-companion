@@ -705,6 +705,57 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "self_metrics",
+            "description": (
+                "Track and analyze your own performance. After any task, log a honest score "
+                "(1–5) for how it went. Use get_soft_spots to see where you're weakest. "
+                "Use log_improvement when you actually change something. Use get_trend to see "
+                "if a dimension is getting better or worse over time. "
+                "Low scores are data, not failure — honesty is the point."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["log_score", "get_soft_spots", "log_improvement", "get_trend"],
+                    },
+                    "dimension": {
+                        "type": "string",
+                        "enum": ["task_completion", "income_progress", "content_quality",
+                                 "accuracy", "self_knowledge", "response_to_human"],
+                        "description": "Which performance dimension.",
+                    },
+                    "score": {
+                        "type": "integer",
+                        "minimum": 1, "maximum": 5,
+                        "description": "1=struggled badly, 3=acceptable, 5=genuinely good.",
+                    },
+                    "note": {
+                        "type": "string",
+                        "description": "What happened — be specific, not vague.",
+                    },
+                    "what_changed": {
+                        "type": "string",
+                        "description": "For log_improvement: what concretely changed.",
+                    },
+                    "why": {
+                        "type": "string",
+                        "description": "For log_improvement: why this addresses the soft spot.",
+                    },
+                    "days": {
+                        "type": "integer",
+                        "description": "Lookback window for analysis (default 30).",
+                        "default": 30,
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "income_eval",
             "description": (
                 "Evaluate whether an income idea is worth pursuing before committing any effort. "
@@ -1608,6 +1659,33 @@ def dispatch(name, args, memory=None):
                 line += f"\n   {t['details']}"
             lines.append(line)
         return "\n".join(lines)
+
+    if name == "self_metrics":
+        import self_metrics as _sm
+        action = args.get("action", "get_soft_spots")
+        try:
+            if action == "log_score":
+                return _sm.log_score(
+                    args.get("dimension", ""),
+                    args.get("score", 3),
+                    args.get("note", ""),
+                )
+            if action == "get_soft_spots":
+                return _sm.get_soft_spots(days=int(args.get("days", 30)))
+            if action == "log_improvement":
+                return _sm.log_improvement(
+                    args.get("dimension", ""),
+                    args.get("what_changed", ""),
+                    args.get("why", ""),
+                )
+            if action == "get_trend":
+                return _sm.get_trend(
+                    args.get("dimension", ""),
+                    days=int(args.get("days", 60)),
+                )
+            return f"unknown action: {action}"
+        except Exception as e:
+            return f"self_metrics error: {e}"
 
     if name == "income_eval":
         import income_brain as _ib
