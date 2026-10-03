@@ -44,6 +44,7 @@ ALLOWED_TOOLS = {
     "study_creator", "family_fund",
     "income_eval", "income_stream",
     "self_metrics", "engram_memory",
+    "tiktok_search",
 }
 
 _WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
