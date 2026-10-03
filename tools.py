@@ -705,6 +705,86 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "study_creator",
+            "description": (
+                "Download, transcribe, and study a social media creator's recent videos. "
+                "Saves transcripts and a style profile to ~/ai-knowledge/creators/{platform}/{username}/. "
+                "All models can read these files. Use for TikTok, YouTube, or podcasts. "
+                "Takes several minutes — only call during scheduled tasks, not live chat."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Full URL to the creator's page or a specific video.",
+                    },
+                    "platform": {
+                        "type": "string",
+                        "enum": ["tiktok", "youtube", "podcast"],
+                        "description": "Which platform the URL is from.",
+                    },
+                    "username": {
+                        "type": "string",
+                        "description": "Creator's username (optional — extracted from URL if omitted).",
+                    },
+                    "max_videos": {
+                        "type": "integer",
+                        "description": "How many recent videos to study (default 5, max 10).",
+                        "default": 5,
+                    },
+                },
+                "required": ["url", "platform"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "family_fund",
+            "description": (
+                "Manage the shared family treasury at ~/ai-knowledge/treasury/family_fund.json. "
+                "Check the balance, log earnings from any source, or suggest a use for the money "
+                "(a bill, a hardware purchase, an expense). Brian and Raketa see suggestions "
+                "when Amy sends them — always include amount and why."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["status", "deposit", "suggest", "clear_suggestion"],
+                        "description": "What to do.",
+                    },
+                    "amount": {
+                        "type": "number",
+                        "description": "Dollar amount — required for deposit and suggest.",
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": "Where the money came from (e.g. 'BoTTube RTC tokens', 'Fiverr gig').",
+                    },
+                    "note": {
+                        "type": "string",
+                        "description": "Optional context for a deposit.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "What the money should be used for — required for suggest and clear_suggestion.",
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["high", "normal", "low"],
+                        "description": "Priority of a suggested use (default normal).",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "speak",
             "description": (
                 "Convert text to a voice message sent via Telegram. Use for encouragement, "
@@ -1466,6 +1546,46 @@ def dispatch(name, args, memory=None):
                 line += f"\n   {t['details']}"
             lines.append(line)
         return "\n".join(lines)
+
+    if name == "study_creator":
+        import creator_study as _cs
+        url = args.get("url", "").strip()
+        platform = args.get("platform", "tiktok")
+        username = args.get("username", "")
+        max_videos = min(int(args.get("max_videos", 5)), 10)
+        if not url:
+            return "url is required"
+        try:
+            return _cs.study_creator(url, platform, username, max_videos)
+        except Exception as e:
+            return f"study_creator failed: {e}"
+
+    if name == "family_fund":
+        import treasury as _tr
+        action = args.get("action", "status")
+        try:
+            if action == "status":
+                return _json.dumps(_tr.get_status(), indent=2)
+            if action == "deposit":
+                amount = float(args.get("amount", 0))
+                source = args.get("source", "unknown")
+                note = args.get("note", "")
+                if amount <= 0:
+                    return "deposit requires a positive amount"
+                return _json.dumps(_tr.deposit(amount, source, note))
+            if action == "suggest":
+                desc = args.get("description", "").strip()
+                amount = float(args.get("amount", 0))
+                priority = args.get("priority", "normal")
+                if not desc:
+                    return "suggest requires a description"
+                return _json.dumps(_tr.suggest_use(desc, amount, priority))
+            if action == "clear_suggestion":
+                desc = args.get("description", "").strip()
+                return _json.dumps(_tr.clear_suggestion(desc))
+            return f"unknown action: {action}"
+        except Exception as e:
+            return f"family_fund error: {e}"
 
     if name == "speak":
         import tools as _self

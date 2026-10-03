@@ -41,6 +41,7 @@ ALLOWED_TOOLS = {
     "moltbook_check_in", "moltbook_post", "moltbook_engage", "moltbook_verify",
     "create_slideshow", "bottube_post", "bottube_check",
     "self_improve", "speak",
+    "study_creator", "family_fund",
 }
 
 _WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
