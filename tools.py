@@ -705,6 +705,68 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "income_eval",
+            "description": (
+                "Evaluate whether an income idea is worth pursuing before committing any effort. "
+                "Run this BEFORE acting on any money-making idea — no exceptions. "
+                "Saves the evaluation to ~/ai-knowledge/income/ideas/ so every model learns from it. "
+                "Verdict must be 'pursue', 'hold', or 'skip'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Short name for the idea."},
+                    "description": {"type": "string", "description": "What it is and how it works."},
+                    "monthly_estimate_low": {"type": "number", "description": "Conservative monthly earnings estimate in USD."},
+                    "monthly_estimate_high": {"type": "number", "description": "Optimistic monthly earnings estimate in USD."},
+                    "days_to_first_dollar": {"type": "integer", "description": "Realistic days until any money comes in."},
+                    "resource_cost": {"type": "string", "description": "What this needs — time, tools, Brian's attention, API costs, etc."},
+                    "trend": {"type": "string", "description": "Is this opportunity growing, stable, or declining?"},
+                    "repeatable": {"type": "boolean", "description": "Can it run without constant babysitting?"},
+                    "failure_trigger": {"type": "string", "description": "What signal means it's time to stop and pivot?"},
+                    "verdict": {"type": "string", "enum": ["pursue", "hold", "skip"], "description": "Your decision."},
+                    "reasoning": {"type": "string", "description": "Why you made this call — be specific."},
+                },
+                "required": ["name", "description", "monthly_estimate_low", "monthly_estimate_high",
+                             "days_to_first_dollar", "resource_cost", "trend", "repeatable",
+                             "failure_trigger", "verdict", "reasoning"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "income_stream",
+            "description": (
+                "Track an active income stream — start it, log earnings, or write a retrospective "
+                "when it ends. Retrospectives are permanent: the lessons stay in the library "
+                "and fast-track the next idea every model works on."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["start", "log_update", "retrospective", "list"],
+                        "description": "start = mark a stream as active; log_update = record earnings; retrospective = post-mortem when it ends; list = see all knowledge.",
+                    },
+                    "name": {"type": "string", "description": "Name of the income stream."},
+                    "description": {"type": "string", "description": "What it is (for start)."},
+                    "earnings": {"type": "number", "description": "Dollar amount earned this period (for log_update)."},
+                    "notes": {"type": "string", "description": "Notes on this update (for log_update)."},
+                    "what_worked": {"type": "string", "description": "For retrospective."},
+                    "what_didnt": {"type": "string", "description": "For retrospective."},
+                    "why_it_stopped": {"type": "string", "description": "For retrospective."},
+                    "transferable_lessons": {"type": "string", "description": "What carries forward to the next thing (for retrospective)."},
+                    "fast_track_next": {"type": "string", "description": "Specific advice for the next attempt, based on what you learned (for retrospective)."},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "study_creator",
             "description": (
                 "Download, transcribe, and study a social media creator's recent videos. "
@@ -1546,6 +1608,52 @@ def dispatch(name, args, memory=None):
                 line += f"\n   {t['details']}"
             lines.append(line)
         return "\n".join(lines)
+
+    if name == "income_eval":
+        import income_brain as _ib
+        try:
+            return _ib.evaluate_idea(
+                name=args.get("name", ""),
+                description=args.get("description", ""),
+                monthly_estimate_low=float(args.get("monthly_estimate_low", 0)),
+                monthly_estimate_high=float(args.get("monthly_estimate_high", 0)),
+                days_to_first_dollar=int(args.get("days_to_first_dollar", 30)),
+                resource_cost=args.get("resource_cost", ""),
+                trend=args.get("trend", ""),
+                repeatable=bool(args.get("repeatable", False)),
+                failure_trigger=args.get("failure_trigger", ""),
+                verdict=args.get("verdict", "hold"),
+                reasoning=args.get("reasoning", ""),
+            )
+        except Exception as e:
+            return f"income_eval error: {e}"
+
+    if name == "income_stream":
+        import income_brain as _ib
+        action = args.get("action", "list")
+        try:
+            if action == "list":
+                return _ib.list_income_knowledge()
+            if action == "start":
+                return _ib.start_stream(args.get("name", ""), args.get("description", ""))
+            if action == "log_update":
+                return _ib.log_stream_update(
+                    args.get("name", ""),
+                    float(args.get("earnings", 0)),
+                    args.get("notes", ""),
+                )
+            if action == "retrospective":
+                return _ib.write_retrospective(
+                    name=args.get("name", ""),
+                    what_worked=args.get("what_worked", ""),
+                    what_didnt=args.get("what_didnt", ""),
+                    why_it_stopped=args.get("why_it_stopped", ""),
+                    transferable_lessons=args.get("transferable_lessons", ""),
+                    fast_track_next=args.get("fast_track_next", ""),
+                )
+            return f"unknown action: {action}"
+        except Exception as e:
+            return f"income_stream error: {e}"
 
     if name == "study_creator":
         import creator_study as _cs
