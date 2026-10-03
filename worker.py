@@ -42,6 +42,7 @@ ALLOWED_TOOLS = {
     "create_slideshow", "bottube_post", "bottube_check",
     "self_improve", "speak",
     "study_creator", "family_fund",
+    "income_eval", "income_stream",
 }
 
 _WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
