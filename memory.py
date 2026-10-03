@@ -138,6 +138,17 @@ class Memory:
                     lines.append(f"  {speaker}: {text[:200].strip()}")
         except Exception:
             pass
+
+        # Engram diary — recent task history for drift prevention
+        try:
+            import engram_bridge as _eb
+            diary = _eb.diary_read(last_n=3)
+            if diary and "No diary entries yet" not in diary:
+                lines.append("")
+                lines.append(f"[Recent task memory]\n{diary}")
+        except Exception:
+            pass
+
         return "\n".join(lines)
 
     def learn_fact(self, text, ftype="fact", confidence=0.9):
