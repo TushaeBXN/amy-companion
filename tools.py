@@ -705,6 +705,53 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "engram_memory",
+            "description": (
+                "Your long-term memory layer (Engram). Use for storing important facts, "
+                "searching past memories semantically, writing diary entries after tasks "
+                "to prevent drift, and querying the knowledge graph. "
+                "All data stays on this machine — never leaves, never committed to git. "
+                "Prefer this over remember_fact for anything you want to find semantically later."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["add", "search", "diary_write", "diary_read",
+                                 "kg_add", "kg_query", "wake_up"],
+                        "description": (
+                            "add=store a memory; search=semantic search; "
+                            "diary_write=log a session entry (prevents drift); "
+                            "diary_read=read recent entries; "
+                            "kg_add=add a fact triple; kg_query=lookup an entity; "
+                            "wake_up=get L0+L1 cold-start context."
+                        ),
+                    },
+                    "content": {"type": "string", "description": "Memory text (for add/diary_write)."},
+                    "query": {"type": "string", "description": "Search query (for search)."},
+                    "wing": {"type": "string", "description": "Memory wing (default: amy). Use 'brian', 'income', etc. for cross-model knowledge."},
+                    "room": {"type": "string", "description": "Topic room within the wing (e.g. 'hardware', 'income', 'relationships')."},
+                    "hall": {
+                        "type": "string",
+                        "enum": ["facts", "events", "discoveries", "preferences", "advice"],
+                        "description": "Memory type (default: facts).",
+                    },
+                    "pinned": {"type": "boolean", "description": "Pin important memories so they appear in L1 cold-start."},
+                    "subject": {"type": "string", "description": "KG triple subject (for kg_add)."},
+                    "predicate": {"type": "string", "description": "KG triple predicate (for kg_add/kg_query)."},
+                    "obj": {"type": "string", "description": "KG triple object (for kg_add)."},
+                    "entity": {"type": "string", "description": "Entity to look up (for kg_query)."},
+                    "n": {"type": "integer", "description": "Number of search results (default 8)."},
+                    "last_n": {"type": "integer", "description": "Number of diary entries to read (default 5)."},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "self_metrics",
             "description": (
                 "Track and analyze your own performance. After any task, log a honest score "
@@ -1659,6 +1706,46 @@ def dispatch(name, args, memory=None):
                 line += f"\n   {t['details']}"
             lines.append(line)
         return "\n".join(lines)
+
+    if name == "engram_memory":
+        import engram_bridge as _eb
+        action = args.get("action", "search")
+        try:
+            if action == "add":
+                return _eb.add_memory(
+                    args.get("content", ""),
+                    wing=args.get("wing", "amy"),
+                    room=args.get("room", "general"),
+                    hall=args.get("hall", "facts"),
+                    pinned=bool(args.get("pinned", False)),
+                )
+            if action == "search":
+                return _eb.search(
+                    args.get("query", ""),
+                    n=int(args.get("n", 8)),
+                    wing=args.get("wing") or None,
+                )
+            if action == "diary_write":
+                return _eb.diary_write(args.get("content", ""))
+            if action == "diary_read":
+                return _eb.diary_read(last_n=int(args.get("last_n", 5)))
+            if action == "kg_add":
+                return _eb.kg_add(
+                    args.get("subject", ""),
+                    args.get("predicate", ""),
+                    args.get("obj", ""),
+                    float(args.get("confidence", 1.0)),
+                )
+            if action == "kg_query":
+                return _eb.kg_query(
+                    args.get("entity", ""),
+                    args.get("predicate") or None,
+                )
+            if action == "wake_up":
+                return _eb.wake_up()
+            return f"unknown action: {action}"
+        except Exception as e:
+            return f"engram_memory error: {e}"
 
     if name == "self_metrics":
         import self_metrics as _sm

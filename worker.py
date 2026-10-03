@@ -43,7 +43,7 @@ ALLOWED_TOOLS = {
     "self_improve", "speak",
     "study_creator", "family_fund",
     "income_eval", "income_stream",
-    "self_metrics",
+    "self_metrics", "engram_memory",
 }
 
 _WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -480,6 +480,16 @@ def _run_task(task):
         f.write(f"\n## {datetime.fromtimestamp(started):%Y-%m-%d %H:%M} — {task['id']} "
                 f"({mins:.1f} min)\nTools: {', '.join(used) or 'none'}\n\n{final}\n")
     print(f"  [worker] {task['id']} done in {mins:.1f} min — tools: {used}")
+    # Write Engram diary entry for drift prevention (non-blocking, best-effort)
+    if final and final.strip() and "(task failed" not in final:
+        try:
+            import engram_bridge as _eb
+            _eb.diary_write(
+                f"Task '{task['id']}' completed. Tools used: {', '.join(used) or 'none'}. "
+                f"Summary: {final[:400]}"
+            )
+        except Exception:
+            pass
     voice_path = tools._pending_voice
     if voice_path:
         tools._pending_voice = None
