@@ -16,6 +16,9 @@ INDEX_FILE = KNOWLEDGE_BASE / "creators" / "index.md"
 
 PLATFORMS = {"tiktok", "youtube", "podcast"}
 
+# Pass --cookies-from-browser safari so yt-dlp reads the logged-in Safari session
+TIKTOK_COOKIE_ARGS = ["--cookies-from-browser", "safari"]
+
 
 def _slug(text: str) -> str:
     return re.sub(r"[^\w\-]", "_", text.lower().strip("@"))
@@ -28,11 +31,13 @@ def _creator_dir(platform: str, username: str) -> Path:
     return d
 
 
-def _download_videos(url: str, out_dir: Path, max_videos: int = 5) -> list[Path]:
+def _download_videos(url: str, out_dir: Path, max_videos: int = 5, use_cookies: bool = True) -> list[Path]:
     """Download audio tracks from a creator's page using yt-dlp."""
     template = str(out_dir / "%(id)s.%(ext)s")
-    cmd = [
-        "yt-dlp",
+    cmd = ["yt-dlp"]
+    if use_cookies and "tiktok.com" in url:
+        cmd += TIKTOK_COOKIE_ARGS
+    cmd += [
         "--no-playlist" if "watch?v=" in url else f"--playlist-end={max_videos}",
         "-x", "--audio-format", "mp3",
         "--audio-quality", "5",
@@ -117,7 +122,7 @@ def study_creator(
         tmp_path = Path(tmp)
         print(f"  [study] downloading {platform}/@{username} (up to {max_videos} videos)…")
         try:
-            audio_files = _download_videos(url, tmp_path, max_videos)
+            audio_files = _download_videos(url, tmp_path, max_videos, use_cookies=(platform == "tiktok"))
         except RuntimeError as e:
             return f"Download failed: {e}"
 
@@ -155,6 +160,78 @@ def study_creator(
             "## What Gets Engagement\n## How to Write Like Them (style guide)\n"
             "## Direct Quote Examples\n\n"
             f"End with: *Studied by {studied_by} on {datetime.now().strftime('%Y-%m-%d')}*"
+        ),
+    }
+    return json.dumps(summary, indent=2)
+
+
+def tiktok_search(
+    hashtag: str,
+    max_videos: int = 8,
+    studied_by: str = "Amy",
+) -> str:
+    """
+    Search TikTok by hashtag, download top videos, transcribe, and save to
+    ~/ai-knowledge/creators/tiktok/{hashtag}/.
+    Uses Safari cookies so results match the logged-in For You feed.
+    """
+    tag = hashtag.lstrip("#")
+    url = f"https://www.tiktok.com/tag/{tag}"
+    creator_dir = _creator_dir("tiktok", f"tag_{tag}")
+    transcript_dir = creator_dir / "transcripts"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        print(f"  [study] searching TikTok #{tag} (up to {max_videos} videos)…")
+        cmd = [
+            "yt-dlp",
+            *TIKTOK_COOKIE_ARGS,
+            f"--playlist-end={max_videos}",
+            "-x", "--audio-format", "mp3",
+            "--audio-quality", "5",
+            "--write-info-json",
+            "--no-warnings",
+            "-o", str(tmp_path / "%(id)s.%(ext)s"),
+            url,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            return f"TikTok search failed for #{tag}: {result.stderr[:400]}"
+
+        audio_files = sorted(tmp_path.glob("*.mp3"))
+        if not audio_files:
+            return f"No videos found for #{tag} — TikTok may require login or the tag is empty."
+
+        metas = _load_metadata(tmp_path)
+        transcripts = []
+        for af in audio_files:
+            print(f"  [study] transcribing {af.name}…")
+            try:
+                text = _transcribe(af)
+                tid = af.stem
+                (transcript_dir / f"{tid}.txt").write_text(text)
+                transcripts.append({"id": tid, "text": text[:2000]})
+            except Exception as e:
+                transcripts.append({"id": af.stem, "error": str(e)})
+
+    _update_index("tiktok", f"#{tag}", len(audio_files), studied_by)
+
+    summary = {
+        "hashtag": tag,
+        "url": url,
+        "videos_studied": len(audio_files),
+        "metadata": metas[:10],
+        "transcripts": transcripts,
+        "profile_path": str(creator_dir / "profile.md"),
+        "instruction": (
+            f"Analyze the top TikTok videos for #{tag}. Write a trend report to "
+            f"{creator_dir / 'profile.md'} with:\n"
+            "## What's Working (hooks, formats, tone)\n"
+            "## Recurring Ideas & Angles\n"
+            "## Income Opportunities Mentioned\n"
+            "## How to Create Content in This Space\n"
+            "## Top Takeaways for Amy\n\n"
+            f"*Studied by {studied_by} on {datetime.now().strftime('%Y-%m-%d')}*"
         ),
     }
     return json.dumps(summary, indent=2)

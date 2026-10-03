@@ -901,6 +901,33 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "tiktok_search",
+            "description": (
+                "Search TikTok by hashtag, download top videos, transcribe them, and write a trend report "
+                "to ~/ai-knowledge/creators/tiktok/tag_{hashtag}/. Uses Brian's Safari login so results "
+                "reflect the real logged-in feed. Great for finding AI side hustles, trending formats, "
+                "and income ideas. Takes several minutes — only use during scheduled tasks."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "hashtag": {
+                        "type": "string",
+                        "description": "Hashtag to search, with or without the # (e.g. 'aisidehustle').",
+                    },
+                    "max_videos": {
+                        "type": "integer",
+                        "description": "How many top videos to study (default 8, max 15).",
+                        "default": 8,
+                    },
+                },
+                "required": ["hashtag"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "family_fund",
             "description": (
                 "Manage the shared family treasury at ~/ai-knowledge/treasury/family_fund.json. "
@@ -1832,6 +1859,17 @@ def dispatch(name, args, memory=None):
             return _cs.study_creator(url, platform, username, max_videos)
         except Exception as e:
             return f"study_creator failed: {e}"
+
+    if name == "tiktok_search":
+        import creator_study as _cs
+        hashtag = args.get("hashtag", "").strip().lstrip("#")
+        max_videos = min(int(args.get("max_videos", 8)), 15)
+        if not hashtag:
+            return "hashtag is required"
+        try:
+            return _cs.tiktok_search(hashtag, max_videos)
+        except Exception as e:
+            return f"tiktok_search failed: {e}"
 
     if name == "family_fund":
         import treasury as _tr
