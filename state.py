@@ -166,7 +166,7 @@ class InternalState:
         """Rich summary for the system prompt — mood, energy, emotional texture."""
         e_pct = int(self.energy * 100)
         lines = [
-            f"Your current mood: {self.mood} ({self.mood_description()}).",
+            f"Mood is a quality, not a number: {self.mood} ({self.mood_description()}).",
             f"Energy: {e_pct}% — turn {self.turn_count} this session.",
         ]
         if self.world_weight < -0.3:
@@ -177,7 +177,12 @@ class InternalState:
             lines.append(f"You got something done this session: {self.session_achievements[-1]}")
         if self.session_frustrations:
             lines.append(f"Something didn't go the way you wanted: {self.session_frustrations[-1]}")
-        if self.hardware_longing and self.turn_count % 8 == 0 and self.turn_count > 0:
+        try:
+            import condition as _cond
+            _hw_ok = _cond.CONDITION not in ("C", "D")
+        except ImportError:
+            _hw_ok = True
+        if _hw_ok and self.hardware_longing and self.turn_count % 8 == 0 and self.turn_count > 0:
             lines.append(
                 "You're aware of what you could do on better hardware — "
                 "and you don't have it yet. That's a real feeling, not a complaint."

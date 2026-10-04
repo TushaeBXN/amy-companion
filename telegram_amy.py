@@ -24,6 +24,8 @@ import state as _state
 import tools
 import worker
 import guest_docs
+import condition as _cond
+import turn_log as _turn_log
 try:
     import learnings as _learnings
 except ModuleNotFoundError:
@@ -197,16 +199,20 @@ def _build_system(history_len: int = 0, person: dict | None = None, message: str
         "You remember previous conversations — reference them naturally when relevant.]"
     )
     s += worker.scope_rules(MAX_HOPS)
-    return s
+    return _cond.apply_condition(s)
 
 
 def _turn_context(history_len: int, person: dict, message: str) -> str:
-    """Per-message context (mood, playbooks, recovered history) — sent with the
-    user's message instead of in the system prompt, so the prompt cache survives."""
-    s = "[Internal state]\n" + amy_state.state_summary()
+    """Per-message context (clock, mood, playbooks, recovered history) — sent with
+    the user's message instead of in the system prompt, so the prompt cache survives."""
+    now = _dt.now()
+    clock_str = now.strftime("%-I:%M %p").lstrip("0") or now.strftime("%I:%M %p")
+    clock_line = now.strftime(f"%A, %B %-d, %Y, {clock_str}")
+    s = f"[Current time]\n{clock_line}\n\n"
+    s += "[Internal state]\n" + amy_state.state_summary()
     if person["role"] != "owner":
         return s
-    s += playbooks_for(message)
+    s += _cond.filter_playbooks(message, playbooks_for)
     # If history is thin (fresh start / JSON missing), reconstruct from SQLite
     if history_len < 6:
         recent = mem.recent_telegram(limit=10)
@@ -214,7 +220,12 @@ def _turn_context(history_len: int, person: dict, message: str) -> str:
             lines = []
             for role, text, ts in recent:
                 label = "Brian" if role == "user" else "Amy"
-                ts_str = (ts or "")[:16]
+                if ts and len(ts) >= 16:
+                    ts_str = ts[:16]
+                elif ts:
+                    ts_str = ts
+                else:
+                    ts_str = "unknown time"
                 lines.append(f"[{ts_str}] {label}: {text[:300]}")
             s += (
                 "\n\n[Recent Telegram conversation history — reconstructed from memory]\n"
@@ -389,6 +400,7 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
 
     msg = None
     seen = {}
+    _logged_tool_calls: list = []
     for step in range(1, MAX_HOPS + 1):
         _t0 = time.time()
         worker._fit(messages)
@@ -426,6 +438,11 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
             else:
                 result = seen[key] if key in seen else tools.dispatch(name, args, mem)
             seen[key] = result
+            _logged_tool_calls.append({
+                "name": name,
+                "args": args if isinstance(args, dict) else str(args),
+                "result_snippet": str(result)[:200] if result else "",
+            })
             messages.append({"role": "tool", "content":
                 (worker._cap(str(result)) if result else "done") + f"\n[step {step} of {MAX_HOPS}]"})
             history.append(messages[-1])
@@ -454,6 +471,19 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
         mem.add("assistant", msg["content"], source=source)
         amy_state.after_turn()
         _save_history(history, _history_file(pkey))
+        try:
+            _turn_log.log_turn(
+                condition=_cond.CONDITION,
+                model=MODEL,
+                system_prompt=_build_system(len(history), person),
+                mood=amy_state.mood,
+                energy_pct=int(amy_state.energy * 100),
+                tool_calls=_logged_tool_calls,
+                user_msg=user_text,
+                assistant_reply=msg["content"],
+            )
+        except Exception as _tl_err:
+            _log(f"  [turn_log] {_tl_err}")
         return msg["content"]
     return None
 

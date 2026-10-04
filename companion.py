@@ -25,6 +25,8 @@ from thoughts import ThoughtBuffer
 from amy_persona import CORE_PROMPT, playbooks_for
 import learnings as _learnings
 from task_queue import get_queue as _get_task_queue
+from datetime import datetime as _dt
+import condition as _cond
 _session_learnings: str = ""
 _calendar_context: str = ""
 
@@ -180,6 +182,10 @@ def build_context(mem, user_text, amy_state=None, absence=None,
     """System turn = persona + her self-layer (L0/L1) + state + recalled memories."""
     # Lean prompt like telegram_amy.py: core persona always, playbooks only when
     # the message calls for them (full SYSTEM_PROMPT is ~12k tokens).
+    now = _dt.now()
+    _clock_str = now.strftime("%-I:%M %p").lstrip("0") or now.strftime("%I:%M %p")
+    _clock_line = now.strftime(f"%A, %B %-d, %Y, {_clock_str}")
+
     system = CORE_PROMPT + "\n\n" + mem.wake_up()
     if channel == "browser":
         system += ("\n\n[Interface: browser — Brian is messaging you through the web UI. "
@@ -191,8 +197,10 @@ def build_context(mem, user_text, amy_state=None, absence=None,
         system += "\n\n" + _session_learnings[:MAX_LEARNINGS_CHARS]
     if _calendar_context:
         system += "\n\n" + _calendar_context
+    system += f"\n\n[Current time]\n{_clock_line}"
     if amy_state:
         system += "\n\n[Internal state]\n" + amy_state.state_summary()
+    system = _cond.apply_condition(system)
 
     # Task queue — pin current focus to prevent context drift
     try:
@@ -213,7 +221,7 @@ def build_context(mem, user_text, amy_state=None, absence=None,
                    "Only assert things you are confident are true. "
                    "Never mention a specific URL, video title, or source you did not actually retrieve.")
 
-    system += playbooks_for(user_text)
+    system += _cond.filter_playbooks(user_text, playbooks_for)
 
     # Time estimation for absence
     if absence:
