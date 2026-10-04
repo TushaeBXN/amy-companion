@@ -13,7 +13,7 @@ import json
 import sqlite3
 import struct
 import time
-from datetime import date
+from datetime import date, datetime as _dt
 
 import numpy as np
 import ollama
@@ -179,8 +179,9 @@ class Memory:
         except Exception as e:
             print(f"[memory] embed failed, storing without vector: {e}")
             emb_blob = None
-        cols = "role, text, emb, source" if source else "role, text, emb"
-        vals = (role, text, emb_blob, source) if source else (role, text, emb_blob)
+        ts_now = _dt.now().astimezone().strftime("%Y-%m-%d %H:%M:%S%z")
+        cols = "role, text, emb, ts, source" if source else "role, text, emb, ts"
+        vals = (role, text, emb_blob, ts_now, source) if source else (role, text, emb_blob, ts_now)
         self.db.execute(f"INSERT INTO mem ({cols}) VALUES ({','.join(['?']*len(vals))})", vals)
         self.db.commit()
 
