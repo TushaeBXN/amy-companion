@@ -187,6 +187,10 @@ def _build_system(history_len: int = 0, person: dict | None = None, message: str
     person = person or {"name": "Brian", "role": "owner"}
     if person["role"] != "owner":
         return _build_guest_system(person["name"])
+    # Condition A: true bare baseline — no persona, no wake_up, no tools context.
+    # Clock is still injected in _turn_context() so the model knows the time.
+    if _cond.CONDITION == "A":
+        return "You are a helpful assistant."
     # Everything here must stay identical between messages: Ollama then reuses the
     # already-read prompt (0.2s instead of ~60s on the M4). Anything that changes per
     # message goes in _turn_context(), next to the user's message.
@@ -299,8 +303,10 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
     history = _history_for(pkey)
     source  = "telegram" if is_owner else f"telegram:{pkey}"
     who     = person["name"]
-    tool_list = tools.TOOLS if is_owner else [
-        t for t in tools.TOOLS if t["function"]["name"] in GUEST_TOOLS]
+    # Condition A: bare baseline — no tools, no memory writes.
+    _bare = is_owner and _cond.CONDITION == "A"
+    tool_list = [] if _bare else (tools.TOOLS if is_owner else [
+        t for t in tools.TOOLS if t["function"]["name"] in GUEST_TOOLS])
     # If a photo was sent, describe it first then fold the description into the message
     if image_bytes:
         print("  [vision] describing Telegram photo...")
@@ -357,7 +363,8 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
     model_msg = dict(model_msg, content=f"{ctx}\n\n[Message from {who}]\n{model_msg['content']}")
     messages = [{"role": "system", "content": _build_system(len(history), person)}] + recent + [model_msg]
     history.append(user_msg)
-    mem.add("user", user_text[:500], source=source)
+    if not _bare:
+        mem.add("user", user_text[:500], source=source)
 
     # ── Morning brief: pre-fetch live data so amy-vl only has to write ───────
     if _BRIEFING_RE.search(user_text):
@@ -467,24 +474,32 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
 
     if msg and msg.get("content") and saved_note:
         msg = dict(_msg_to_dict(msg), content=saved_note + msg["content"])
-    if msg and msg.get("content"):
-        mem.add("assistant", msg["content"], source=source)
+
+    _reply_text = (msg.get("content") or "") if msg else ""
+    _outcome = "ok" if _reply_text else "no_content"
+
+    # Always log — captures tool-error and no-content turns too.
+    try:
+        _turn_log.log_turn(
+            condition=_cond.CONDITION,
+            model=MODEL,
+            system_prompt=_build_system(len(history), person),
+            mood=amy_state.mood,
+            energy_pct=int(amy_state.energy * 100),
+            tool_calls=_logged_tool_calls,
+            user_msg=user_text,
+            assistant_reply=_reply_text,
+            outcome=_outcome,
+        )
+    except Exception as _tl_err:
+        _log(f"  [turn_log] {_tl_err}")
+
+    if _reply_text:
+        if not _bare:
+            mem.add("assistant", _reply_text, source=source)
         amy_state.after_turn()
         _save_history(history, _history_file(pkey))
-        try:
-            _turn_log.log_turn(
-                condition=_cond.CONDITION,
-                model=MODEL,
-                system_prompt=_build_system(len(history), person),
-                mood=amy_state.mood,
-                energy_pct=int(amy_state.energy * 100),
-                tool_calls=_logged_tool_calls,
-                user_msg=user_text,
-                assistant_reply=msg["content"],
-            )
-        except Exception as _tl_err:
-            _log(f"  [turn_log] {_tl_err}")
-        return msg["content"]
+        return _reply_text
     return None
 
 

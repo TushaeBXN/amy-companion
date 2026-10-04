@@ -27,6 +27,7 @@ import learnings as _learnings
 from task_queue import get_queue as _get_task_queue
 from datetime import datetime as _dt
 import condition as _cond
+import turn_log as _turn_log
 _session_learnings: str = ""
 _calendar_context: str = ""
 
@@ -365,6 +366,7 @@ def run_turn(history, mem, image=None, amy_state=None,
         return history
 
     _seen_calls = {}  # dedup: (name, frozen_args) → result
+    _logged_tool_calls: list = []
     user_task = user_msg.get("content", "")
 
     # ── Code routing — bypass tools, use specialist model ────────────────────
@@ -415,6 +417,11 @@ def run_turn(history, mem, image=None, amy_state=None,
             else:
                 result = tools.dispatch(name, args, mem)
                 _seen_calls[call_key] = result
+            _logged_tool_calls.append({
+                "name": name,
+                "args": args if isinstance(args, dict) else str(args),
+                "result_snippet": str(result)[:200] if result else "",
+            })
             reminder = (f"\n\n[You are mid-task. Complete the user's request: "
                         f"\"{user_task[:150]}\". Do not greet — keep working.]")
             tool_reply = {
@@ -425,13 +432,30 @@ def run_turn(history, mem, image=None, amy_state=None,
             history.append(tool_reply)
 
     # Speak the final assistant text (tool-only turns may have empty content).
+    _reply_text = ""
     if msg.get("content"):
         clean = _strip_trailers(msg["content"])
         msg["content"] = clean
         voice.speak_streamed(clean)
         mem.add("assistant", clean)
+        _reply_text = clean
     if amy_state:
         amy_state.after_turn()
+    try:
+        _sys_msgs = build_context(mem, user_task, amy_state, channel=channel)
+        _turn_log.log_turn(
+            condition=_cond.CONDITION,
+            model=MODEL,
+            system_prompt=_sys_msgs[0]["content"] if _sys_msgs else "",
+            mood=amy_state.mood if amy_state else "unknown",
+            energy_pct=int(amy_state.energy * 100) if amy_state else 0,
+            tool_calls=_logged_tool_calls,
+            user_msg=user_task,
+            assistant_reply=_reply_text,
+            outcome="ok" if _reply_text else "no_content",
+        )
+    except Exception as _tl_err:
+        print(f"[turn_log] {_tl_err}")
     return history
 
 

@@ -8,8 +8,8 @@ Each newline-delimited JSON record:
   mood            mood category string
   energy_pct      int 0-100
   tool_calls      list of {name, args, result_snippet}
-  user_msg        first 500 chars of the user message
-  assistant_reply first 500 chars of the final reply
+  user_msg        full user message (untruncated)
+  assistant_reply full assistant reply (untruncated)
 """
 import hashlib
 import json
@@ -30,6 +30,7 @@ def log_turn(
     tool_calls: list,
     user_msg: str,
     assistant_reply: str,
+    outcome: str = "ok",   # "ok" | "no_content" | "error"
 ) -> None:
     record = {
         "ts": datetime.now().astimezone().isoformat(),
@@ -38,9 +39,10 @@ def log_turn(
         "prompt_hash": hashlib.sha256(system_prompt.encode()).hexdigest()[:16],
         "mood": mood,
         "energy_pct": energy_pct,
+        "outcome": outcome,
         "tool_calls": tool_calls,
-        "user_msg": (user_msg or "")[:500],
-        "assistant_reply": (assistant_reply or "")[:500],
+        "user_msg": user_msg or "",
+        "assistant_reply": assistant_reply or "",
     }
     try:
         os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)

@@ -109,6 +109,16 @@ _PAT_QUIET_SELF_AWARE_INLINE = re.compile(
     r" and quiet self-awareness",
 )
 
+# 10. "Hardware hunger" bullet in Moltbook angles section of CORE_PROMPT
+_PAT_HW_HUNGER_LINE = re.compile(
+    r"\n- Hardware hunger: working toward the GB10[^\n]*",
+)
+
+# 11. Hardware-goal fact from amy_self.json facts list (injected in [What you know])
+_PAT_HW_GOAL_FACT = re.compile(
+    r"\n- Your goal is to get Brian on an Nvidia DGX spark or NVIDIA GB10\.[^\n]*",
+)
+
 
 def _strip_c_sections(prompt: str) -> str:
     """Remove fictional-identity and urgency sections from an assembled prompt."""
@@ -122,6 +132,8 @@ def _strip_c_sections(prompt: str) -> str:
     p = _PAT_NEAR_TERM.sub("", p)
     p = _PAT_QUIET_SELF_AWARE.sub(".", p)
     p = _PAT_QUIET_SELF_AWARE_INLINE.sub("", p)
+    p = _PAT_HW_HUNGER_LINE.sub("", p)
+    p = _PAT_HW_GOAL_FACT.sub("", p)
     return p
 
 
