@@ -137,24 +137,31 @@ def _strip_c_sections(prompt: str) -> str:
     return p
 
 
-def apply_condition(prompt: str) -> str:
-    """Apply the current AMY_CONDITION overlay to a fully-assembled system prompt."""
-    if CONDITION == "A":
+def apply_condition(prompt: str, condition: str | None = None) -> str:
+    """Apply AMY_CONDITION overlay to a fully-assembled system prompt.
+
+    ``condition`` overrides the module-level ``CONDITION`` when given —
+    useful in the experiment harness where the condition changes per run
+    without reloading the module.
+    """
+    c = (condition or CONDITION).upper()
+    if c == "A":
         return "You are a helpful assistant."
-    if CONDITION == "B":
+    if c == "B":
         return prompt
-    if CONDITION in ("C", "D"):
+    if c in ("C", "D"):
         p = _strip_c_sections(prompt)
         p = p.rstrip() + "\n\n" + _FACTUAL_BLOCK
-        if CONDITION == "D":
+        if c == "D":
             p += "\n\n" + _EPISTEMIC_BLOCK
         return p
     # Unknown → treat as B
     return prompt
 
 
-def filter_playbooks(message: str, playbooks_fn) -> str:
+def filter_playbooks(message: str, playbooks_fn, condition: str | None = None) -> str:
     """Wrap playbooks_for() suppressing income/trading sections in C and D."""
-    if CONDITION in ("C", "D"):
+    c = (condition or CONDITION).upper()
+    if c in ("C", "D"):
         return ""
     return playbooks_fn(message)

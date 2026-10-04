@@ -203,7 +203,7 @@ def _build_system(history_len: int = 0, person: dict | None = None, message: str
         "You remember previous conversations — reference them naturally when relevant.]"
     )
     s += worker.scope_rules(MAX_HOPS)
-    return _cond.apply_condition(s)
+    return _cond.apply_condition(s, condition=_cond.CONDITION)
 
 
 def _turn_context(history_len: int, person: dict, message: str) -> str:
@@ -216,7 +216,7 @@ def _turn_context(history_len: int, person: dict, message: str) -> str:
     s += "[Internal state]\n" + amy_state.state_summary()
     if person["role"] != "owner":
         return s
-    s += _cond.filter_playbooks(message, playbooks_for)
+    s += _cond.filter_playbooks(message, playbooks_for, condition=_cond.CONDITION)
     # If history is thin (fresh start / JSON missing), reconstruct from SQLite
     if history_len < 6:
         recent = mem.recent_telegram(limit=10)
