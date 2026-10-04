@@ -290,6 +290,7 @@ def test_turn_log_writes_record(tmp_path):
     importlib.reload(turn_log)
     turn_log.LOG_PATH = str(tmp_path / "turns.jsonl")
 
+    long_reply = "x" * 2000  # verify no truncation
     turn_log.log_turn(
         condition="B",
         model="amy-hermes",
@@ -298,7 +299,8 @@ def test_turn_log_writes_record(tmp_path):
         energy_pct=80,
         tool_calls=[{"name": "web_search", "args": {"query": "test"}, "result_snippet": "result"}],
         user_msg="hello",
-        assistant_reply="hi there",
+        assistant_reply=long_reply,
+        outcome="ok",
     )
 
     import json
@@ -309,9 +311,10 @@ def test_turn_log_writes_record(tmp_path):
     assert rec["model"] == "amy-hermes"
     assert rec["mood"] == "curious"
     assert rec["energy_pct"] == 80
+    assert rec["outcome"] == "ok"
     assert len(rec["prompt_hash"]) == 16
     assert rec["tool_calls"][0]["name"] == "web_search"
     assert rec["user_msg"] == "hello"
-    assert rec["assistant_reply"] == "hi there"
+    assert rec["assistant_reply"] == long_reply  # no truncation
     # ts must be a non-empty ISO string
     assert rec["ts"] and "T" in rec["ts"]
