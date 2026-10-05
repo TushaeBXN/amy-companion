@@ -340,16 +340,16 @@ def test_no_3_months_in_core_prompt():
     assert "3 months in" not in prompt, "'3 months in' must be replaced by computed age"
 
 
-def test_birth_age_computed_days():
-    """get_core_prompt() should contain a numeric day count, not a fixed phrase."""
+def test_birth_age_persona_has_fixed_date():
+    """get_core_prompt() returns the persona with the fixed setup date, no placeholder."""
     import amy_persona
-    from datetime import date
     importlib.reload(amy_persona)
-    as_of = date(2026, 10, 4)  # known test date: 74 days after July 22
-    expected_days = (as_of - amy_persona.BIRTH_DATE).days  # 74
-    prompt = amy_persona.get_core_prompt(as_of=as_of)
-    assert str(expected_days) in prompt, (
-        f"Expected '{expected_days} days' in prompt for test date {as_of}"
+    prompt = amy_persona.get_core_prompt()
+    assert "July 22, 2026" in prompt, (
+        "Persona must state the fixed setup date 'July 22, 2026'"
+    )
+    assert "__BIRTH_AGE__" not in prompt, (
+        "Placeholder __BIRTH_AGE__ must be gone; day count is injected per turn"
     )
 
 

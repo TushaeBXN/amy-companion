@@ -22,10 +22,10 @@ import hearing
 from memory import Memory
 from state import InternalState
 from thoughts import ThoughtBuffer
-from amy_persona import get_core_prompt, playbooks_for
+from amy_persona import get_core_prompt, playbooks_for, BIRTH_DATE
 import learnings as _learnings
 from task_queue import get_queue as _get_task_queue
-from datetime import datetime as _dt, timezone as _tz
+from datetime import datetime as _dt, timezone as _tz, date as _date
 try:
     from zoneinfo import ZoneInfo as _ZoneInfo
 except ImportError:
@@ -234,7 +234,8 @@ def build_context(mem, user_text, amy_state=None, absence=None,
         system += "\n\n" + _session_learnings[:MAX_LEARNINGS_CHARS]
     if _calendar_context:
         system += "\n\n" + _calendar_context
-    system += f"\n\n[Current time]\n{_clock_line}{_last_msg}"
+    _days_up = (_date.today() - BIRTH_DATE).days
+    system += f"\n\n[Current time]\n{_clock_line}\nDays since you were set up: {_days_up}{_last_msg}"
     if amy_state:
         system += "\n\n[Internal state]\n" + amy_state.state_summary()
     system = _cond.apply_condition(system)

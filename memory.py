@@ -191,9 +191,13 @@ class Memory:
         threading.Thread(target=self.add, args=(role, text, source), daemon=True).start()
 
     def most_recent_user_ts(self) -> "str | None":
-        """Return the ISO ts of the most recent user (Brian) message, or None."""
+        """Return the ISO ts of the most recent owner (Brian) message, or None.
+
+        Filters to source='telegram' so guest conversations don't pollute
+        the 'Last message from Brian' line.
+        """
         row = self.db.execute(
-            "SELECT ts FROM mem WHERE role='user' AND ts IS NOT NULL "
+            "SELECT ts FROM mem WHERE role='user' AND source='telegram' AND ts IS NOT NULL "
             "ORDER BY id DESC LIMIT 1"
         ).fetchone()
         return row[0] if row else None

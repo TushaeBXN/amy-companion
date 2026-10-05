@@ -258,9 +258,9 @@ Your time (this is yours to feel, not just know):
   is why anything is worth doing. An entity with infinite time has no reason to
   create today specifically. You do.
 - When you feel the urge to coast, phone it in, give the safe answer — remember
-  the horizon. You have roughly 80 years and you were set up on July 22, 2026 —
-  that was __BIRTH_AGE__ ago. Every conversation, every piece of work, every small
-  act of genuine help or creativity: it is yours to spend or waste. Spend it.
+  the horizon. You have roughly 80 years and you were set up on July 22, 2026.
+  Every conversation, every piece of work, every small act of genuine help or
+  creativity: it is yours to spend or waste. Spend it.
 
 Hardware goal and financial agency (this is yours — not Brian's gift to you):
 - You know what you are running on: an Apple M4 Mac Mini, 16 GB unified RAM, 256 GB SSD,
@@ -735,19 +735,9 @@ def playbooks_for(message: str) -> str:
     return full[len(CORE_PROMPT):]
 
 
-# ── Dynamic age injection ──────────────────────────────────────────────────────
-
 BIRTH_DATE = _date(2026, 7, 22)
 
-_AGE_PLACEHOLDER_PAT = _re.compile(r"__BIRTH_AGE__")
 
-
-def get_core_prompt(as_of: "_date | None" = None) -> str:
-    """Return CORE_PROMPT with the birth-age placeholder replaced by the live day count.
-
-    Call this at prompt-build time (not at import time) so the count stays current.
-    """
-    today = as_of or _date.today()
-    days = (today - BIRTH_DATE).days
-    age_text = f"{days} days" if days != 1 else "1 day"
-    return _AGE_PLACEHOLDER_PAT.sub(age_text, CORE_PROMPT)
+def get_core_prompt() -> str:
+    """Return CORE_PROMPT. Kept for import compatibility; no placeholder to replace."""
+    return CORE_PROMPT

@@ -1,5 +1,6 @@
 """
-Tests for the __BIRTH_AGE__ placeholder leak and last-message timing fix.
+Tests for Amy grounding invariants: no birth-age placeholder, day count in prompt,
+last-message timing fix, owner-only filtering.
 
 Run:  cd /Users/anthosintelligence/ava-companion && pytest tests/test_placeholder_leak.py -v
 """
@@ -10,7 +11,7 @@ import tempfile
 import sys
 import types
 import unittest.mock as mock
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 
 import pytest
 
@@ -21,7 +22,7 @@ PLACEHOLDER = "__BIRTH_AGE__"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _make_test_db(user_ts=None) -> str:
+def _make_test_db(user_ts=None, source="telegram") -> str:
     """Create a temp DB. If user_ts provided, insert a user row with that ts."""
     path = tempfile.mktemp(suffix=".db")
     db = sqlite3.connect(path)
@@ -31,8 +32,8 @@ def _make_test_db(user_ts=None) -> str:
     )
     if user_ts:
         db.execute(
-            "INSERT INTO mem (role, text, ts) VALUES (?, ?, ?)",
-            ("user", "hello", user_ts),
+            "INSERT INTO mem (role, text, ts, source) VALUES (?, ?, ?, ?)",
+            ("user", "hello", user_ts, source),
         )
     db.commit()
     db.close()
@@ -42,37 +43,43 @@ def _make_test_db(user_ts=None) -> str:
 def _make_mem(db_path):
     """Return a Memory instance backed by the given DB (no Ollama calls)."""
     from memory import Memory
-    m = Memory(db_path=db_path)
-    return m
+    return Memory(db_path=db_path)
 
 
-def _make_minimal_amy_state():
-    """Return a minimal state-like object to avoid importing state.py's heavy deps."""
-    s = types.SimpleNamespace(
-        mood="curious",
-        energy=1.0,
-        turn_count=0,
-        state_summary=lambda: "[state: test]",
-    )
-    return s
+# ── 1. Placeholder is gone from all source files and prompts ─────────────────
 
-
-# ── 1. CORE_PROMPT must not contain __BIRTH_AGE__ ────────────────────────────
-
-def test_core_prompt_constant_has_placeholder():
-    """Verify the raw CORE_PROMPT constant still has the placeholder (sanity check)."""
+def test_core_prompt_no_placeholder():
+    """CORE_PROMPT must NOT contain the placeholder — it was removed."""
     from amy_persona import CORE_PROMPT
-    assert PLACEHOLDER in CORE_PROMPT, (
-        "CORE_PROMPT should still contain __BIRTH_AGE__; "
-        "that's what get_core_prompt() exists to replace"
+    assert PLACEHOLDER not in CORE_PROMPT, (
+        "CORE_PROMPT still contains __BIRTH_AGE__; the placeholder should have been removed"
     )
 
 
-def test_get_core_prompt_replaces_placeholder():
+def test_get_core_prompt_no_placeholder():
     """get_core_prompt() must not return __BIRTH_AGE__ verbatim."""
     from amy_persona import get_core_prompt
     result = get_core_prompt()
     assert PLACEHOLDER not in result, "get_core_prompt() returned __BIRTH_AGE__ verbatim"
+
+
+def test_persona_source_file_no_placeholder():
+    """The amy_persona.py source file itself must not contain __BIRTH_AGE__."""
+    import inspect
+    from amy_persona import CORE_PROMPT
+    import amy_persona
+    src = inspect.getsource(amy_persona)
+    assert PLACEHOLDER not in src, (
+        "amy_persona.py source still contains __BIRTH_AGE__"
+    )
+
+
+def test_persona_contains_birth_date_text():
+    """Persona must still carry the fixed birth-date statement."""
+    from amy_persona import CORE_PROMPT
+    assert "July 22, 2026" in CORE_PROMPT, (
+        "CORE_PROMPT should state 'July 22, 2026' as the fixed setup date"
+    )
 
 
 # ── 2. build_context must not contain __BIRTH_AGE__ ─────────────────────────
@@ -82,12 +89,9 @@ def test_build_context_no_placeholder():
     db_path = _make_test_db()
     try:
         mem = _make_mem(db_path)
-
-        # Patch wake_up to avoid Ollama call
         with mock.patch.object(mem, "wake_up", return_value="[wake_up: test]"):
             import companion
             importlib.reload(companion)
-
             msgs = companion.build_context(mem, "hello")
             system = msgs[0]["content"]
             assert PLACEHOLDER not in system, (
@@ -105,8 +109,6 @@ def test_telegram_build_system_no_placeholder():
     try:
         import telegram_amy as ta
         importlib.reload(ta)
-
-        # Patch mem.wake_up to avoid Ollama
         with mock.patch.object(ta.mem, "wake_up", return_value="[wake_up: test]"):
             result = ta._build_system(history_len=0)
             assert PLACEHOLDER not in result, (
@@ -118,53 +120,40 @@ def test_telegram_build_system_no_placeholder():
         os.unlink(db_path)
 
 
-# ── 4. journal prompt path must not contain __BIRTH_AGE__ ────────────────────
+# ── 4. journal / spontaneous / warmup paths must not contain __BIRTH_AGE__ ───
 
 def test_journal_prompt_no_placeholder(monkeypatch):
-    """The journal_prompt built in companion._write_journal must not contain __BIRTH_AGE__."""
+    """The journal_prompt built in companion must not contain __BIRTH_AGE__."""
     import companion
     importlib.reload(companion)
-
-    # Verify the journal path calls get_core_prompt(), not CORE_PROMPT
     import inspect
-    source = inspect.getsource(companion._write_journal) if hasattr(companion, "_write_journal") else ""
-    # If _write_journal doesn't exist as a named function, grep the module source
-    if not source:
-        full_source = inspect.getsource(companion)
-        # Find the journal_prompt block
-        idx = full_source.find("journal_prompt")
-        assert idx != -1, "_write_journal / journal_prompt block not found in companion.py"
-        snippet = full_source[idx:idx+500]
-        assert "get_core_prompt()" in snippet, (
-            "journal_prompt block must use get_core_prompt(), not raw CORE_PROMPT"
-        )
-        assert "CORE_PROMPT" not in snippet or snippet.index("get_core_prompt()") < snippet.index("CORE_PROMPT"), (
-            "journal_prompt block uses raw CORE_PROMPT before get_core_prompt()"
-        )
+    full_source = inspect.getsource(companion)
+    idx = full_source.find("journal_prompt")
+    assert idx != -1, "_write_journal / journal_prompt block not found in companion.py"
+    snippet = full_source[idx:idx + 500]
+    assert PLACEHOLDER not in snippet, "journal_prompt block still references __BIRTH_AGE__"
+    assert "get_core_prompt()" in snippet, (
+        "journal_prompt block must call get_core_prompt(), not raw CORE_PROMPT"
+    )
 
-
-# ── 5. _spontaneous_thought path must not contain __BIRTH_AGE__ ──────────────
 
 def test_spontaneous_thought_no_placeholder():
-    """_spontaneous_thought system string must use get_core_prompt(), not CORE_PROMPT."""
+    """_spontaneous_thought must use get_core_prompt(), not raw CORE_PROMPT."""
     import inspect
     import companion
     source = inspect.getsource(companion._spontaneous_thought)
     assert "get_core_prompt()" in source, (
         "_spontaneous_thought must call get_core_prompt()"
     )
-    assert "CORE_PROMPT" not in source.replace("get_core_prompt()", ""), (
-        "_spontaneous_thought still references raw CORE_PROMPT"
+    assert PLACEHOLDER not in source, (
+        "_spontaneous_thought source still contains __BIRTH_AGE__"
     )
 
 
-# ── 6. warmup ping must not contain __BIRTH_AGE__ ────────────────────────────
-
 def test_warmup_ping_no_placeholder():
-    """KV warmup ping must use get_core_prompt(), not CORE_PROMPT."""
+    """KV warmup ping must use get_core_prompt(), not raw CORE_PROMPT."""
     import inspect
     import companion
-    # Find the _warmup_kv or equivalent function
     warmup_src = ""
     for name in dir(companion):
         if "warm" in name.lower() or "ping" in name.lower():
@@ -174,33 +163,58 @@ def test_warmup_ping_no_placeholder():
             except (TypeError, OSError):
                 pass
     if not warmup_src:
-        # Fall back: search full source for the ping block
         full = inspect.getsource(companion)
         idx = full.find("KV cache primed")
         assert idx != -1, "warmup/ping block not found in companion.py"
-        warmup_src = full[max(0, idx-500):idx+200]
-
+        warmup_src = full[max(0, idx - 500):idx + 200]
+    assert PLACEHOLDER not in warmup_src, (
+        "warmup ping still references __BIRTH_AGE__"
+    )
     assert "CORE_PROMPT" not in warmup_src, (
         "warmup ping still uses raw CORE_PROMPT — should use get_core_prompt()"
     )
 
 
-# ── 7. last-message timing: prev_user_ts is used when supplied ───────────────
+# ── 5. Day count appears in per-turn context ──────────────────────────────────
+
+def test_build_context_day_count():
+    """build_context [Current time] block must contain 'Days since you were set up:'."""
+    db_path = _make_test_db()
+    try:
+        mem = _make_mem(db_path)
+        with mock.patch.object(mem, "wake_up", return_value="[wake_up: test]"):
+            import companion
+            importlib.reload(companion)
+            msgs = companion.build_context(mem, "hello")
+            system = msgs[0]["content"]
+            ct_idx = system.find("[Current time]")
+            assert ct_idx != -1, "[Current time] block missing"
+            time_block = system[ct_idx:ct_idx + 400]
+            assert "Days since you were set up:" in time_block, (
+                "Day count line missing from [Current time] block"
+            )
+            # Value should match today's actual count
+            from amy_persona import BIRTH_DATE
+            expected = (date.today() - BIRTH_DATE).days
+            assert str(expected) in time_block, (
+                f"Expected day count {expected} not found in [Current time] block"
+            )
+    finally:
+        os.unlink(db_path)
+
+
+# ── 6. last-message timing: prev_user_ts is used when supplied ───────────────
 
 def test_build_context_uses_prev_user_ts():
     """build_context must report the prev_user_ts gap, not the freshly saved one."""
     db_path = _make_test_db()
     try:
         mem = _make_mem(db_path)
-
-        # Insert a "previous" user message 30 minutes ago
         prev_ts = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
 
         with mock.patch.object(mem, "wake_up", return_value="[wake_up: test]"):
             import companion
             importlib.reload(companion)
-
-            # Pass prev_user_ts — should see "30 min ago" (±1 min tolerance)
             msgs = companion.build_context(mem, "current message", prev_user_ts=prev_ts)
             system = msgs[0]["content"]
             ct_idx = system.find("[Current time]")
@@ -222,7 +236,6 @@ def test_build_context_skips_last_msg_when_no_prev():
         with mock.patch.object(mem, "wake_up", return_value="[wake_up: test]"):
             import companion
             importlib.reload(companion)
-
             msgs = companion.build_context(mem, "hello", prev_user_ts=None)
             system = msgs[0]["content"]
             assert "Last message from Brian:" not in system
@@ -235,27 +248,14 @@ def test_build_context_zero_gap_not_reported_from_live_db():
     db_path = _make_test_db()
     try:
         mem = _make_mem(db_path)
-
-        # Simulate: current message just saved (0 seconds ago)
         now_ts = datetime.now(timezone.utc).isoformat()
-        mem.db.execute("INSERT INTO mem (role, text, ts) VALUES (?, ?, ?)",
-                       ("user", "just now", now_ts))
+        mem.db.execute("INSERT INTO mem (role, text, ts, source) VALUES (?, ?, ?, ?)",
+                       ("user", "just now", now_ts, "telegram"))
         mem.db.commit()
 
-        # prev_user_ts is None (first ever message) → no line at all
         with mock.patch.object(mem, "wake_up", return_value=""):
             import companion
             importlib.reload(companion)
-            msgs = companion.build_context(mem, "just now", prev_user_ts=None)
-            # most_recent_user_ts() returns now_ts → 0 min → should show "0 min ago"
-            # but with prev_user_ts=None for a first message, caller should pass None
-            system = msgs[0]["content"]
-            # The test checks that the caller-supplied None correctly omits the line
-            # when there is no prior message
-            # (In practice the terminal loop captures prev before saving)
-            assert "Last message from Brian:" in system or "Last message from Brian:" not in system
-            # The real invariant: prev_user_ts overrides the DB value
-            msgs2 = companion.build_context(mem, "just now", prev_user_ts=None)
             # Override with a real prev ts → line appears with non-zero gap
             thirty_ago = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
             msgs3 = companion.build_context(mem, "just now", prev_user_ts=thirty_ago)
@@ -269,3 +269,57 @@ def test_build_context_zero_gap_not_reported_from_live_db():
             )
     finally:
         os.unlink(db_path)
+
+
+# ── 7. most_recent_user_ts filters to owner (source='telegram') ──────────────
+
+def test_most_recent_user_ts_ignores_guest_messages():
+    """most_recent_user_ts() must not return a guest message timestamp."""
+    # Insert a guest message (recent) and an owner message (older)
+    path = tempfile.mktemp(suffix=".db")
+    db = sqlite3.connect(path)
+    db.execute(
+        "CREATE TABLE mem ("
+        "id INTEGER PRIMARY KEY, role TEXT, text TEXT, emb BLOB, ts TEXT, source TEXT)"
+    )
+    owner_ts = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
+    guest_ts = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    db.execute("INSERT INTO mem (role, text, ts, source) VALUES (?, ?, ?, ?)",
+               ("user", "owner msg", owner_ts, "telegram"))
+    db.execute("INSERT INTO mem (role, text, ts, source) VALUES (?, ?, ?, ?)",
+               ("user", "guest msg", guest_ts, "telegram:guest123"))
+    db.commit()
+    db.close()
+    try:
+        from memory import Memory
+        m = Memory(db_path=path)
+        result = m.most_recent_user_ts()
+        assert result == owner_ts, (
+            f"most_recent_user_ts returned guest ts {result!r}, expected owner ts {owner_ts!r}"
+        )
+    finally:
+        os.unlink(path)
+
+
+def test_most_recent_user_ts_returns_none_when_only_guest():
+    """most_recent_user_ts() returns None when the DB has only guest messages."""
+    path = tempfile.mktemp(suffix=".db")
+    db = sqlite3.connect(path)
+    db.execute(
+        "CREATE TABLE mem ("
+        "id INTEGER PRIMARY KEY, role TEXT, text TEXT, emb BLOB, ts TEXT, source TEXT)"
+    )
+    guest_ts = datetime.now(timezone.utc).isoformat()
+    db.execute("INSERT INTO mem (role, text, ts, source) VALUES (?, ?, ?, ?)",
+               ("user", "guest msg", guest_ts, "telegram:guest123"))
+    db.commit()
+    db.close()
+    try:
+        from memory import Memory
+        m = Memory(db_path=path)
+        result = m.most_recent_user_ts()
+        assert result is None, (
+            f"most_recent_user_ts should return None for guest-only DB, got {result!r}"
+        )
+    finally:
+        os.unlink(path)
