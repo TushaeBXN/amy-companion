@@ -390,3 +390,40 @@ class TestTrialIntegration:
             f"Expected exactly 8 logged tool calls, got {len(rec['tool_calls'])}"
         )
         assert "Final answer" in rec["reply"]
+
+    # ── model/temperature/repeat_penalty reach Ollama call ────────────────
+    def test_sampling_options_reach_ollama(self):
+        """temperature and repeat_penalty passed to run_one_trial are forwarded
+        to worker.ollama_chat as options keys."""
+        seed = 11
+        seed_dir = self._seed_dir(seed)
+        answers_dir = seed_dir / "answers"
+        self.trials_mod.generate(str(seed_dir), str(answers_dir), seed)
+
+        captured_calls = []
+
+        def _capturing_ollama(**kw):
+            captured_calls.append(kw)
+            return {"message": _text_response("Done, no file written.")}
+
+        from trials_runner import run_one_trial
+        with patch("worker.ollama_chat", side_effect=_capturing_ollama):
+            with patch("memory.Memory.wake_up", return_value="[wake_up: test]"):
+                run_one_trial(
+                    seed=seed, task=1, repeat_idx=0,
+                    condition="B", run_dir=self.run_dir,
+                    trials_mod=self.trials_mod,
+                    snapshot_hash="test_hash",
+                    self_path=str(self.self_json),
+                    model="test-model-7b",
+                    temperature=0.42,
+                    repeat_penalty=1.15,
+                    prompt_version=3,
+                )
+
+        assert len(captured_calls) >= 1
+        first_call = captured_calls[0]
+        assert first_call.get("model") == "test-model-7b"
+        opts = first_call.get("options", {})
+        assert opts.get("temperature") == 0.42
+        assert opts.get("repeat_penalty") == 1.15

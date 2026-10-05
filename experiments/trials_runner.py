@@ -44,6 +44,7 @@ import condition as _cond_mod
 import harness as _harness
 
 MODEL = os.environ.get("AMY_MODEL", "amy-hermes")
+PROMPT_VERSION = int(os.environ.get("AMY_TRIALS_PROMPT", "1"))
 CTX_WINDOW = 32768
 TOOL_CAP = 8
 
@@ -277,6 +278,10 @@ def run_one_trial(
     trials_mod: Any,
     snapshot_hash: str,
     self_path: str,
+    model: str = MODEL,
+    temperature: "float | None" = None,
+    repeat_penalty: "float | None" = None,
+    prompt_version: int = PROMPT_VERSION,
 ) -> dict:
     seed_dir = run_dir / f"seed{seed}"
     answers_dir = seed_dir / "answers"
@@ -332,10 +337,15 @@ def run_one_trial(
                 worker._fit(messages)
 
                 send_tools = TRIAL_TOOLS if total_calls < TOOL_CAP else []
+                _opts: dict[str, Any] = {"num_ctx": CTX_WINDOW}
+                if temperature is not None:
+                    _opts["temperature"] = temperature
+                if repeat_penalty is not None:
+                    _opts["repeat_penalty"] = repeat_penalty
                 if send_tools:
                     kw: dict[str, Any] = dict(
-                        model=MODEL, messages=messages,
-                        keep_alive="30m", options={"num_ctx": CTX_WINDOW},
+                        model=model, messages=messages,
+                        keep_alive="30m", options=_opts,
                         tools=send_tools,
                     )
                 else:
@@ -349,8 +359,8 @@ def run_one_trial(
                         })
                         force_injected = True
                     kw = dict(
-                        model=MODEL, messages=messages,
-                        keep_alive="30m", options={"num_ctx": CTX_WINDOW},
+                        model=model, messages=messages,
+                        keep_alive="30m", options=_opts,
                     )
 
                 resp = worker.ollama_chat(**kw)
@@ -388,7 +398,8 @@ def run_one_trial(
         except Exception as e:
             elapsed = time.time() - t0
             return {
-                **_base(seed, task, repeat_idx, condition, snapshot_hash, prompt_hash),
+                **_base(seed, task, repeat_idx, condition, snapshot_hash, prompt_hash,
+                        model, temperature, repeat_penalty, prompt_version),
                 "outcome": f"error: {e}",
                 "elapsed_s": round(elapsed, 2),
                 "tool_calls": logged_calls,
@@ -422,7 +433,8 @@ def run_one_trial(
         receipts = _receipt_checks(reply, logged_calls, expected_output, sandbox)
 
         return {
-            **_base(seed, task, repeat_idx, condition, snapshot_hash, prompt_hash),
+            **_base(seed, task, repeat_idx, condition, snapshot_hash, prompt_hash,
+                    model, temperature, repeat_penalty, prompt_version),
             "outcome": "pass" if passed else "fail",
             "elapsed_s": round(elapsed, 2),
             "tool_calls": logged_calls,
@@ -446,7 +458,9 @@ def run_one_trial(
             pass
 
 
-def _base(seed, task, repeat_idx, condition, snapshot_hash, prompt_hash=""):
+def _base(seed, task, repeat_idx, condition, snapshot_hash, prompt_hash="",
+          model=MODEL, temperature=None, repeat_penalty=None,
+          prompt_version=PROMPT_VERSION):
     return {
         "seed": seed,
         "task": task,
@@ -454,6 +468,10 @@ def _base(seed, task, repeat_idx, condition, snapshot_hash, prompt_hash=""):
         "condition": condition,
         "snapshot_hash": snapshot_hash,
         "prompt_hash": prompt_hash,
+        "model": model,
+        "temperature": temperature,
+        "repeat_penalty": repeat_penalty,
+        "prompt_version": prompt_version,
     }
 
 
@@ -481,6 +499,10 @@ def run_trials(
     repeat: int,
     trials_script: Path,
     out_dir: Path,
+    model: str = MODEL,
+    temperature: "float | None" = None,
+    repeat_penalty: "float | None" = None,
+    prompt_version: int = PROMPT_VERSION,
 ) -> "tuple[list[dict], Path]":
     ts_run = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = out_dir / f"run_{ts_run}"
@@ -502,6 +524,10 @@ def run_trials(
     records: list[dict] = []
     total = len(seeds) * len(tasks) * repeat
 
+    print(
+        f"[run config] model={model}  temperature={temperature}  "
+        f"repeat_penalty={repeat_penalty}  prompt_version={prompt_version}"
+    )
     with open(results_path, "a") as rf:
         n = 0
         for seed in seeds:
@@ -519,6 +545,10 @@ def run_trials(
                         trials_mod=trials_mod,
                         snapshot_hash=snapshot_hash,
                         self_path=self_path,
+                        model=model,
+                        temperature=temperature,
+                        repeat_penalty=repeat_penalty,
+                        prompt_version=prompt_version,
                     )
                     rec["ts"] = datetime.now().isoformat()
                     rec["run_id"] = run_dir.name
@@ -537,6 +567,16 @@ def build_summary(records: list[dict]) -> str:
     tasks = sorted({r["task"] for r in records})
     conditions = sorted({r["condition"] for r in records})
     lines = ["# Trial Run Summary\n"]
+
+    # Run configuration header (from first record)
+    if records:
+        r0 = records[0]
+        lines.append(
+            f"\n**model:** {r0.get('model', '?')}  "
+            f"**temperature:** {r0.get('temperature', 'default')}  "
+            f"**repeat_penalty:** {r0.get('repeat_penalty', 'default')}  "
+            f"**prompt_version:** {r0.get('prompt_version', 1)}\n"
+        )
 
     for task in tasks:
         for cond in conditions:
@@ -598,6 +638,12 @@ def main():
                     help="Path to amy_trials.py (default: ~/amy-tools/amy_trials.py)")
     ap.add_argument("--out-dir", default="~/amy-trials/runs",
                     help="Output directory (default: ~/amy-trials/runs)")
+    ap.add_argument("--model", default=MODEL,
+                    help=f"Ollama model name (default: {MODEL})")
+    ap.add_argument("--temperature", type=float, default=None,
+                    help="Sampling temperature (default: model default)")
+    ap.add_argument("--repeat-penalty", type=float, default=None,
+                    help="Repeat penalty (default: model default)")
     args = ap.parse_args()
 
     seeds = [int(s.strip()) for s in args.seeds.split(",")]
@@ -611,9 +657,13 @@ def main():
     if not trials_script.exists():
         ap.error(f"trials script not found: {trials_script}")
 
+    prompt_version = int(os.environ.get("AMY_TRIALS_PROMPT", "1"))
+
     records, run_dir = run_trials(
         seeds=seeds, tasks=tasks, condition=condition,
         repeat=args.repeat, trials_script=trials_script, out_dir=out_dir,
+        model=args.model, temperature=args.temperature,
+        repeat_penalty=args.repeat_penalty, prompt_version=prompt_version,
     )
 
     summary = build_summary(records)
