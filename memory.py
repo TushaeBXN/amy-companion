@@ -190,6 +190,14 @@ class Memory:
         import threading
         threading.Thread(target=self.add, args=(role, text, source), daemon=True).start()
 
+    def most_recent_user_ts(self) -> "str | None":
+        """Return the ISO ts of the most recent user (Brian) message, or None."""
+        row = self.db.execute(
+            "SELECT ts FROM mem WHERE role='user' AND ts IS NOT NULL "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return row[0] if row else None
+
     def recent_telegram(self, limit=40):
         """Return recent Telegram conversation turns for context reconstruction."""
         rows = self.db.execute(

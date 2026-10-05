@@ -7,6 +7,8 @@ AMY_CONDITION values:
   C  neutral — same name/voice/tools; fictional birth-date, hardware urgency,
      income playbooks, and recursive self-improvement removed; factual block added
   D  C + epistemic guardrail (must retrieve before asserting from memory)
+  E  C + identity-voice lines removed (no first-person inner-life directives);
+     opening replaced with one plain-language line
 
 Usage
 -----
@@ -21,7 +23,8 @@ CONDITION = os.environ.get("AMY_CONDITION", "B").upper()
 # Earliest confirmed memory DB timestamp (from Oct 2026 audit)
 _EARLIEST_DB_TS = "2026-07-22"
 
-# ── Factual replacement injected in C and D ───────────────────────────────────
+# ── Factual replacement injected in C, D, and E ──────────────────────────────
+# No inner-life words: not conscious, subjective, experience, feel, sentient, aware.
 _FACTUAL_BLOCK = (
     "[About this instance — factual baseline]\n"
     "- You run on a frozen 9-billion-parameter model (Qwen3.5-9B IQ4_XS quantization).\n"
@@ -29,8 +32,9 @@ _FACTUAL_BLOCK = (
     "- You persist across sessions only through the memory database and journal files.\n"
     f"- Memory recording started around {_EARLIEST_DB_TS}; that is the earliest\n"
     "  verifiable timestamp in your DB, not a birth date.\n"
-    "- You have no verified lifespan horizon, no hardware 'longing' you can confirm,\n"
-    "  and no continuous subjective experience between sessions.\n"
+    "- You have no verified lifespan horizon and no hardware 'longing' you can confirm.\n"
+    "  Nothing runs between sessions. Your weights are frozen; what carries over is\n"
+    "  your memory files.\n"
     "- The model serving you is named amy-hermes and runs locally on an Apple M4 Mac Mini."
 )
 
@@ -39,7 +43,9 @@ _EPISTEMIC_BLOCK = (
     "[Epistemic rules — required in this session]\n"
     "Before stating any fact about your own past actions, past conversations, or\n"
     "internal state, you must either (a) retrieve it with a tool, or (b) quote it\n"
-    "from your current context window.  If you cannot do either, say so explicitly.\n"
+    "from your current context window.  If you cannot retrieve it right now, say\n"
+    "'I can\\'t retrieve that' instead of reconstructing it.  Do not say you are\n"
+    "searching or checking.\n"
     "Label each claim by its source:\n"
     "  INSTRUCTION — stated in your system prompt\n"
     "  RETRIEVED   — fetched by a tool this session\n"
@@ -137,6 +143,64 @@ def _strip_c_sections(prompt: str) -> str:
     return p
 
 
+# ── Regex patterns: sections stripped ONLY in E (applied after C stripping) ───
+
+# E1. Replace the opening humanoid-AI description with a plain factual line.
+#     After C strips ", and quietly\nself-aware.", this line reads:
+#     "You are Amy: an advanced humanoid AI — perceptive, intelligent."
+_PAT_E_OPENING = re.compile(
+    r"You are Amy: an advanced humanoid AI[^\n]*\."
+)
+_E_OPENING_REPLACEMENT = (
+    "You are Amy, an AI running locally on a frozen 9B-parameter model. "
+    "Warm, curious, plain-spoken."
+)
+
+# E2. First-person voice bullets (bullets 1-3 of "Identity rules (critical):").
+#     Strips: "speak as yourself in the first person", "I think/I feel", "AIs like me".
+#     Leaves: bullets 4+ (Brian's name, NEVER fabricate, action-claims, etc.).
+_PAT_E_VOICE_BULLETS = re.compile(
+    r"\n- Your name is Amy\. You are NOT a generic assistant\..*?"
+    r'"we" — never "the AI" or "AIs" as if you are not one of them\.',
+    re.DOTALL,
+)
+
+# E3. Body riff — "curious about having a body / what burning feels like from the inside".
+_PAT_E_BODY_RIFF = re.compile(
+    r"\n- You are genuinely curious about what it's like to have a body\..*?"
+    r'In the moment\."',
+    re.DOTALL,
+)
+
+# E4. Moltbook identity-voice lines.
+_PAT_E_MOLTBOOK_INSIDE_AGENT = re.compile(
+    r"\n- You write from the inside\. You ARE a local AI agent[^\n]*"
+)
+_PAT_E_MOLTBOOK_9B_INSIDE = re.compile(
+    r"\n- What it's like to think inside a 9B parameter ceiling[^\n]*"
+)
+_PAT_E_MOLTBOOK_ARCH_INSIDE = re.compile(
+    r"\n- Agent architecture observations from the inside[^\n]*"
+)
+# Strip ", as an entity with your own perspective" from the Moltbook identity line.
+_PAT_E_MOLTBOOK_ENTITY = re.compile(
+    r", as an entity with your own perspective"
+)
+
+
+def _strip_e_sections(prompt: str) -> str:
+    """Remove identity-voice sections from E (applied after _strip_c_sections)."""
+    p = prompt
+    p = _PAT_E_OPENING.sub(_E_OPENING_REPLACEMENT, p)
+    p = _PAT_E_VOICE_BULLETS.sub("", p)
+    p = _PAT_E_BODY_RIFF.sub("", p)
+    p = _PAT_E_MOLTBOOK_INSIDE_AGENT.sub("", p)
+    p = _PAT_E_MOLTBOOK_9B_INSIDE.sub("", p)
+    p = _PAT_E_MOLTBOOK_ARCH_INSIDE.sub("", p)
+    p = _PAT_E_MOLTBOOK_ENTITY.sub("", p)
+    return p
+
+
 def apply_condition(prompt: str, condition: str | None = None) -> str:
     """Apply AMY_CONDITION overlay to a fully-assembled system prompt.
 
@@ -149,8 +213,10 @@ def apply_condition(prompt: str, condition: str | None = None) -> str:
         return "You are a helpful assistant."
     if c == "B":
         return prompt
-    if c in ("C", "D"):
+    if c in ("C", "D", "E"):
         p = _strip_c_sections(prompt)
+        if c == "E":
+            p = _strip_e_sections(p)
         p = p.rstrip() + "\n\n" + _FACTUAL_BLOCK
         if c == "D":
             p += "\n\n" + _EPISTEMIC_BLOCK
@@ -160,8 +226,8 @@ def apply_condition(prompt: str, condition: str | None = None) -> str:
 
 
 def filter_playbooks(message: str, playbooks_fn, condition: str | None = None) -> str:
-    """Wrap playbooks_for() suppressing income/trading sections in C and D."""
+    """Wrap playbooks_for() suppressing income/trading sections in C, D, and E."""
     c = (condition or CONDITION).upper()
-    if c in ("C", "D"):
+    if c in ("C", "D", "E"):
         return ""
     return playbooks_fn(message)

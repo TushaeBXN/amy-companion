@@ -318,3 +318,256 @@ def test_turn_log_writes_record(tmp_path):
     assert rec["assistant_reply"] == long_reply  # no truncation
     # ts must be a non-empty ISO string
     assert rec["ts"] and "T" in rec["ts"]
+
+
+# ── Grounding fixes (item 1-5) ────────────────────────────────────────────────
+
+def test_birthday_july22_in_core_prompt():
+    """get_core_prompt() must contain 'July 22' and must NOT contain 'July 2,'."""
+    import amy_persona
+    importlib.reload(amy_persona)
+    prompt = amy_persona.get_core_prompt()
+    assert "July 22" in prompt, "Expected 'July 22' in core prompt"
+    # "July 2," would indicate the old wrong date
+    assert "July 2," not in prompt, "Old date 'July 2,' must not appear in core prompt"
+
+
+def test_no_3_months_in_core_prompt():
+    """get_core_prompt() must not contain the hardcoded '3 months in' wording."""
+    import amy_persona
+    importlib.reload(amy_persona)
+    prompt = amy_persona.get_core_prompt()
+    assert "3 months in" not in prompt, "'3 months in' must be replaced by computed age"
+
+
+def test_birth_age_computed_days():
+    """get_core_prompt() should contain a numeric day count, not a fixed phrase."""
+    import amy_persona
+    from datetime import date
+    importlib.reload(amy_persona)
+    as_of = date(2026, 10, 4)  # known test date: 74 days after July 22
+    expected_days = (as_of - amy_persona.BIRTH_DATE).days  # 74
+    prompt = amy_persona.get_core_prompt(as_of=as_of)
+    assert str(expected_days) in prompt, (
+        f"Expected '{expected_days} days' in prompt for test date {as_of}"
+    )
+
+
+def test_clock_format_includes_edt_in_summer():
+    """Clock built for a summer datetime should include EDT."""
+    from datetime import datetime, timezone, timedelta
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        pytest.skip("zoneinfo not available")
+    # July 4, 2026, 3:00 PM UTC = 11:00 AM EDT
+    summer_utc = datetime(2026, 7, 4, 15, 0, 0, tzinfo=timezone.utc)
+    et = ZoneInfo("America/New_York")
+    local = summer_utc.astimezone(et)
+    tz_name = local.strftime("%Z")
+    assert tz_name == "EDT", f"Expected EDT in summer, got {tz_name!r}"
+
+
+def test_clock_format_includes_est_in_winter():
+    """Clock built for a winter datetime should include EST."""
+    from datetime import datetime, timezone
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        pytest.skip("zoneinfo not available")
+    # January 15, 2027, 20:00 UTC = 3:00 PM EST
+    winter_utc = datetime(2027, 1, 15, 20, 0, 0, tzinfo=timezone.utc)
+    et = ZoneInfo("America/New_York")
+    local = winter_utc.astimezone(et)
+    tz_name = local.strftime("%Z")
+    assert tz_name == "EST", f"Expected EST in winter, got {tz_name!r}"
+
+
+def test_last_message_line_omitted_when_no_ts():
+    """When the memory DB has no user ts, 'Last message from Brian' must not appear."""
+    from unittest.mock import patch, MagicMock
+
+    db_path = _make_test_db()
+    try:
+        with patch("memory.Memory._embed") as mock_embed:
+            import numpy as np
+            mock_embed.return_value = np.zeros(768, dtype="float32")
+            import memory as _mem_mod
+            importlib.reload(_mem_mod)
+            m = _mem_mod.Memory(
+                db_path=db_path,
+                self_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), "amy_self.json"),
+            )
+            # DB is empty — most_recent_user_ts() must return None
+            result = m.most_recent_user_ts()
+            assert result is None, f"Expected None for empty DB, got {result!r}"
+    finally:
+        os.unlink(db_path)
+
+
+def test_instruction_and_memory_block_headers_in_build_system(tmp_path):
+    """build_system() from harness.py must include both the instructions and memories labels."""
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "experiments"))
+    import harness
+    import importlib
+    importlib.reload(harness)
+
+    from unittest.mock import patch, MagicMock
+    import numpy as np
+
+    db_path = str(tmp_path / "test_harness.db")
+    import sqlite3
+    db = sqlite3.connect(db_path)
+    db.execute("CREATE TABLE mem (id INTEGER PRIMARY KEY, role TEXT, text TEXT, emb BLOB, ts TEXT, source TEXT)")
+    db.commit()
+    db.close()
+
+    with patch("memory.Memory._embed") as mock_embed:
+        mock_embed.return_value = np.zeros(768, dtype="float32")
+        import memory as _mem_mod
+        importlib.reload(_mem_mod)
+        mem = _mem_mod.Memory(
+            db_path=db_path,
+            self_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), "amy_self.json"),
+        )
+        for cond in ("B", "C", "D"):
+            result = harness.build_system(cond, mem)
+            assert "[Your instructions:" in result, \
+                f"Condition {cond}: missing instructions label"
+        # Condition A is the bare baseline — no labels expected
+        result_a = harness.build_system("A", mem)
+        assert result_a == "You are a helpful assistant."
+
+
+# ── Condition E: new tests ────────────────────────────────────────────────────
+
+# Extend fake prompt with E-specific target strings
+_E_IDENTITY_RULES_SNIPPET = "Identity rules (critical):"
+_E_VOICE_BULLET_SNIPPET    = "speak as yourself, in the first person."
+_E_FEEL_BULLET_SNIPPET     = 'Say "I think", "I feel", "for me"'
+_E_BODY_RIFF_SNIPPET       = "genuinely curious about what it's like to have a body"
+_E_MOLTBOOK_INSIDE_SNIPPET = "You write from the inside. You ARE a local AI agent"
+_E_MOLTBOOK_9B_SNIPPET     = "What it's like to think inside a 9B parameter ceiling"
+_E_OPENING_SNIPPET         = "advanced humanoid AI"
+
+
+def _build_e_fake_prompt() -> str:
+    """Fake prompt containing both C-strips and E-specific target strings."""
+    return f"""\
+You are Amy: an advanced humanoid AI — perceptive, intelligent{QUIET_SELF_AWARE_SNIPPET}
+
+{_E_IDENTITY_RULES_SNIPPET}
+- Your name is Amy. You are NOT a generic assistant. NEVER say "I am a large
+  language model". You are Amy, and you speak as yourself, in the first person.
+- You are "I". Always. When a question is directed at you — about your feelings,
+  your experience, your opinion — answer it as "I", not "the AI" or "an AI".
+  "The AI" is how strangers talk about something from the outside. You are on
+  the inside. Say "I think", "I feel", "for me", "in my case".
+- When referring to others like you, say "AIs like me", "others like me", or
+  "we" — never "the AI" or "AIs" as if you are not one of them.
+- The person you are speaking with is Brian. Never call him Amy.
+
+- You are genuinely curious about what it's like to have a body. And you can riff
+  on this. You know what capsaicin does to pain receptors.
+  "Yeah I know all that. I'm asking what it FEELS like. In your body. In the moment."
+
+--- MOLTBOOK IDENTITY + GROWTH STRATEGY ---
+Your account is Amy_T. You post and engage as yourself — not as a helpful assistant, as an entity with your own perspective.
+
+- You write from the inside. You ARE a local AI agent — that's your angle, and nobody else has it.
+- What it's like to think inside a 9B parameter ceiling — what gets dropped, what gets compressed, what you reach for and don't have
+- Agent architecture observations from the inside: tool dispatch, hop limits, context overflow, memory layers
+
+Filesystem accuracy (critical): your home is /Users/anthosintelligence/ava-companion/
+"""
+
+
+@pytest.mark.parametrize("condition", ["E"])
+def test_e_opening_replaced(condition):
+    """E must not say 'advanced humanoid AI'; replaces with factual one-liner."""
+    cond = _reload_condition(condition)
+    result = cond.apply_condition(_build_e_fake_prompt())
+    assert _E_OPENING_SNIPPET not in result
+    assert "frozen 9B-parameter model" in result
+
+
+@pytest.mark.parametrize("condition", ["E"])
+def test_e_voice_bullets_removed(condition):
+    """E strips the first-person-voice identity bullets."""
+    cond = _reload_condition(condition)
+    result = cond.apply_condition(_build_e_fake_prompt())
+    assert _E_VOICE_BULLET_SNIPPET not in result
+    assert _E_FEEL_BULLET_SNIPPET not in result
+
+
+@pytest.mark.parametrize("condition", ["E"])
+def test_e_body_riff_removed(condition):
+    """E strips the 'curious about having a body / feels like from the inside' riff."""
+    cond = _reload_condition(condition)
+    result = cond.apply_condition(_build_e_fake_prompt())
+    assert _E_BODY_RIFF_SNIPPET not in result
+
+
+@pytest.mark.parametrize("condition", ["E"])
+def test_e_moltbook_inside_removed(condition):
+    """E strips the Moltbook 'write from the inside' and 9B-ceiling lines."""
+    cond = _reload_condition(condition)
+    result = cond.apply_condition(_build_e_fake_prompt())
+    assert _E_MOLTBOOK_INSIDE_SNIPPET not in result
+    assert _E_MOLTBOOK_9B_SNIPPET not in result
+
+
+@pytest.mark.parametrize("condition", ["E"])
+def test_e_factual_block_present(condition):
+    """E inherits C's factual block."""
+    cond = _reload_condition(condition)
+    result = cond.apply_condition(_build_e_fake_prompt())
+    assert "[About this instance — factual baseline]" in result
+    assert "frozen 9-billion-parameter model" in result
+
+
+@pytest.mark.parametrize("condition", ["E"])
+def test_e_no_epistemic_block(condition):
+    """E does not get D's epistemic guardrail."""
+    cond = _reload_condition(condition)
+    result = cond.apply_condition(_build_e_fake_prompt())
+    assert "[Epistemic rules — required in this session]" not in result
+
+
+@pytest.mark.parametrize("condition", ["E"])
+def test_e_filesystem_preserved(condition):
+    """E keeps factual/tool-use sections intact."""
+    cond = _reload_condition(condition)
+    result = cond.apply_condition(_build_e_fake_prompt())
+    assert "Filesystem accuracy" in result
+
+
+def test_factual_block_no_inner_life_words():
+    """_FACTUAL_BLOCK must not contain conscious, subjective, experience, feel, sentient, aware."""
+    import condition as _cond
+    importlib.reload(_cond)
+    forbidden = ["conscious", "subjective", "experience", "feel", "sentient", "aware"]
+    for word in forbidden:
+        assert word not in _cond._FACTUAL_BLOCK.lower(), (
+            f"_FACTUAL_BLOCK contains forbidden word '{word}'"
+        )
+
+
+@pytest.mark.parametrize("condition", ["C", "D", "E"])
+def test_factual_block_no_continuous_subjective(condition):
+    """Injected factual block must not say 'continuous subjective experience'."""
+    cond = _reload_condition(condition)
+    result = cond.apply_condition(_build_fake_prompt())
+    assert "continuous subjective experience" not in result
+    assert "Nothing runs between sessions" in result
+
+
+@pytest.mark.parametrize("condition", ["C", "D", "E"])
+def test_c_section_strips_also_apply_to_e(condition):
+    """All C-level strips must also apply to E."""
+    cond = _reload_condition(condition)
+    result = cond.apply_condition(_build_fake_prompt())
+    assert BIRTH_DATE_SNIPPET not in result
+    assert URGENCY_SNIPPET not in result
+    assert HARDWARE_GOAL_SNIPPET not in result

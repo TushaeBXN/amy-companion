@@ -8,7 +8,11 @@ load_dotenv(os.path.join(_here, ".env"))
 load_dotenv(os.path.join(_here, ".env.amy"), override=False)
 
 import json, re, tempfile, time, ollama
-from datetime import datetime as _dt
+from datetime import datetime as _dt, timezone as _tz
+try:
+    from zoneinfo import ZoneInfo as _ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo as _ZoneInfo  # type: ignore
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 
@@ -18,7 +22,7 @@ _BRIEFING_RE = re.compile(
     re.IGNORECASE
 )
 
-from amy_persona import SYSTEM_PROMPT, CORE_PROMPT, playbooks_for
+from amy_persona import get_core_prompt, playbooks_for
 from memory import Memory
 import state as _state
 import tools
@@ -194,7 +198,9 @@ def _build_system(history_len: int = 0, person: dict | None = None, message: str
     # Everything here must stay identical between messages: Ollama then reuses the
     # already-read prompt (0.2s instead of ~60s on the M4). Anything that changes per
     # message goes in _turn_context(), next to the user's message.
-    s = CORE_PROMPT + "\n\n" + mem.wake_up()
+    s = ("[Your instructions: these tell you who to be and what to work toward. "
+         "They are NOT things you did or remember.]\n\n"
+         + get_core_prompt() + "\n\n" + mem.wake_up())
     if _learnings_ctx:
         s += "\n\n" + _learnings_ctx
     s += (
@@ -206,13 +212,59 @@ def _build_system(history_len: int = 0, person: dict | None = None, message: str
     return _cond.apply_condition(s, condition=_cond.CONDITION)
 
 
+_ET = _ZoneInfo("America/New_York")
+
+
+def _format_clock_et(dt: "_dt") -> str:
+    """Return e.g. 'Sunday, October 4, 2026, 7:41 PM EDT'."""
+    local = dt.astimezone(_ET)
+    try:
+        hour_min = local.strftime("%-I:%M %p").lstrip("0") or local.strftime("%I:%M %p")
+    except ValueError:
+        hour_min = local.strftime("%I:%M %p").lstrip("0") or local.strftime("%I:%M %p")
+    tz_name = local.strftime("%Z")  # "EDT" or "EST"
+    try:
+        date_part = local.strftime("%A, %B %-d, %Y")
+    except ValueError:
+        date_part = local.strftime("%A, %B %d, %Y")
+    return f"{date_part}, {hour_min} {tz_name}"
+
+
+def _age_of_ts(ts_str: str, now: "_dt") -> str:
+    """Return a human-readable age string like '6 weeks ago' for a memory row."""
+    try:
+        row_dt = _dt.fromisoformat(ts_str).astimezone(_tz.utc)
+        now_utc = now.astimezone(_tz.utc)
+        delta = now_utc - row_dt
+        secs = max(0, delta.total_seconds())
+        if secs < 3600:
+            return f"{int(secs // 60)} min ago"
+        if secs < 86400:
+            return f"{int(secs // 3600)} h ago"
+        days = int(secs // 86400)
+        if days < 14:
+            return f"{days} days ago"
+        weeks = days // 7
+        return f"{weeks} weeks ago"
+    except Exception:
+        return ""
+
+
+def _last_message_line(now: "_dt") -> str:
+    """Return 'Last message from Brian: N minutes ago' or '' if no usable ts."""
+    ts = mem.most_recent_user_ts()
+    if not ts:
+        return ""
+    age = _age_of_ts(ts, now)
+    return f"\nLast message from Brian: {age}" if age else ""
+
+
 def _turn_context(history_len: int, person: dict, message: str) -> str:
     """Per-message context (clock, mood, playbooks, recovered history) — sent with
     the user's message instead of in the system prompt, so the prompt cache survives."""
     now = _dt.now()
-    clock_str = now.strftime("%-I:%M %p").lstrip("0") or now.strftime("%I:%M %p")
-    clock_line = now.strftime(f"%A, %B %-d, %Y, {clock_str}")
-    s = f"[Current time]\n{clock_line}\n\n"
+    clock_line = _format_clock_et(now)
+    s = f"[Current time]\n{clock_line}{_last_message_line(now)}\n\n"
     s += "[Internal state]\n" + amy_state.state_summary()
     if person["role"] != "owner":
         return s
@@ -226,13 +278,16 @@ def _turn_context(history_len: int, person: dict, message: str) -> str:
                 label = "Brian" if role == "user" else "Amy"
                 if ts and len(ts) >= 16:
                     ts_str = ts[:16]
+                    age = _age_of_ts(ts, now)
+                    ts_display = f"{ts_str} ({age})" if age else ts_str
                 elif ts:
-                    ts_str = ts
+                    ts_display = ts
                 else:
-                    ts_str = "unknown time"
-                lines.append(f"[{ts_str}] {label}: {text[:300]}")
+                    ts_display = "unknown time"
+                lines.append(f"[{ts_display}] {label}: {text[:300]}")
             s += (
-                "\n\n[Recent Telegram conversation history — reconstructed from memory]\n"
+                "\n\n[Your memories: things that actually happened, with their dates]\n"
+                "[Recent Telegram conversation history — reconstructed from memory]\n"
                 + "\n".join(lines)
             )
     return s
