@@ -8,7 +8,7 @@ load_dotenv(os.path.join(_here, ".env"))
 load_dotenv(os.path.join(_here, ".env.amy"), override=False)
 
 import json, re, tempfile, time, ollama
-from datetime import datetime as _dt, timezone as _tz
+from datetime import datetime as _dt, timezone as _tz, date as _date
 try:
     from zoneinfo import ZoneInfo as _ZoneInfo
 except ImportError:
@@ -22,7 +22,7 @@ _BRIEFING_RE = re.compile(
     re.IGNORECASE
 )
 
-from amy_persona import get_core_prompt, playbooks_for
+from amy_persona import get_core_prompt, playbooks_for, BIRTH_DATE
 from memory import Memory
 import state as _state
 import tools
@@ -264,7 +264,8 @@ def _turn_context(history_len: int, person: dict, message: str) -> str:
     the user's message instead of in the system prompt, so the prompt cache survives."""
     now = _dt.now()
     clock_line = _format_clock_et(now)
-    s = f"[Current time]\n{clock_line}{_last_message_line(now)}\n\n"
+    _days_up = (_date.today() - BIRTH_DATE).days
+    s = f"[Current time]\n{clock_line}\nDays since you were set up: {_days_up}{_last_message_line(now)}\n\n"
     s += "[Internal state]\n" + amy_state.state_summary()
     if person["role"] != "owner":
         return s
