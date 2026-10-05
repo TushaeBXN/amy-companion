@@ -61,6 +61,8 @@ class Memory:
         if "ts" not in cols:
             self.db.execute("ALTER TABLE mem ADD COLUMN ts TEXT")
             self.db.execute("UPDATE mem SET ts = datetime('now') WHERE ts IS NULL")
+        if "source" not in cols:
+            self.db.execute("ALTER TABLE mem ADD COLUMN source TEXT")
         self.db.commit()
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS goals ("
