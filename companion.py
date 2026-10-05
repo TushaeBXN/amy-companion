@@ -22,10 +22,14 @@ import hearing
 from memory import Memory
 from state import InternalState
 from thoughts import ThoughtBuffer
-from amy_persona import CORE_PROMPT, playbooks_for
+from amy_persona import get_core_prompt, playbooks_for
 import learnings as _learnings
 from task_queue import get_queue as _get_task_queue
-from datetime import datetime as _dt
+from datetime import datetime as _dt, timezone as _tz
+try:
+    from zoneinfo import ZoneInfo as _ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo as _ZoneInfo  # type: ignore
 import condition as _cond
 import turn_log as _turn_log
 _session_learnings: str = ""
@@ -179,15 +183,47 @@ def _drop_images(msgs):
 
 
 def build_context(mem, user_text, amy_state=None, absence=None,
-                  pending_thoughts=None, channel="terminal"):
+                  pending_thoughts=None, channel="terminal",
+                  prev_user_ts=None):
     """System turn = persona + her self-layer (L0/L1) + state + recalled memories."""
     # Lean prompt like telegram_amy.py: core persona always, playbooks only when
     # the message calls for them (full SYSTEM_PROMPT is ~12k tokens).
     now = _dt.now()
-    _clock_str = now.strftime("%-I:%M %p").lstrip("0") or now.strftime("%I:%M %p")
-    _clock_line = now.strftime(f"%A, %B %-d, %Y, {_clock_str}")
+    _et = _ZoneInfo("America/New_York")
+    _local = now.astimezone(_et)
+    try:
+        _hour_min = _local.strftime("%-I:%M %p").lstrip("0") or _local.strftime("%I:%M %p")
+        _date_part = _local.strftime("%A, %B %-d, %Y")
+    except ValueError:
+        _hour_min = _local.strftime("%I:%M %p").lstrip("0") or _local.strftime("%I:%M %p")
+        _date_part = _local.strftime("%A, %B %d, %Y")
+    _tz_name = _local.strftime("%Z")
+    _clock_line = f"{_date_part}, {_hour_min} {_tz_name}"
 
-    system = CORE_PROMPT + "\n\n" + mem.wake_up()
+    # "Last message from Brian" — use caller-supplied prev_user_ts when available
+    # so we don't report "0 min ago" for the message currently being answered.
+    _last_user_ts = prev_user_ts if prev_user_ts is not None else mem.most_recent_user_ts()
+    if _last_user_ts:
+        try:
+            _row_dt = _dt.fromisoformat(_last_user_ts).astimezone(_tz.utc)
+            _now_utc = now.astimezone(_tz.utc)
+            _secs = max(0, (_now_utc - _row_dt).total_seconds())
+            if _secs < 3600:
+                _last_msg = f"\nLast message from Brian: {int(_secs // 60)} min ago"
+            elif _secs < 86400:
+                _last_msg = f"\nLast message from Brian: {int(_secs // 3600)} h ago"
+            else:
+                _days = int(_secs // 86400)
+                _last_msg = f"\nLast message from Brian: {_days} days ago" if _days < 14 else \
+                            f"\nLast message from Brian: {_days // 7} weeks ago"
+        except Exception:
+            _last_msg = ""
+    else:
+        _last_msg = ""
+
+    system = ("[Your instructions: these tell you who to be and what to work toward. "
+              "They are NOT things you did or remember.]\n\n"
+              + get_core_prompt() + "\n\n" + mem.wake_up())
     if channel == "browser":
         system += ("\n\n[Interface: browser — Brian is messaging you through the web UI. "
                    "Your reply goes to the browser chat, not the terminal. "
@@ -198,7 +234,7 @@ def build_context(mem, user_text, amy_state=None, absence=None,
         system += "\n\n" + _session_learnings[:MAX_LEARNINGS_CHARS]
     if _calendar_context:
         system += "\n\n" + _calendar_context
-    system += f"\n\n[Current time]\n{_clock_line}"
+    system += f"\n\n[Current time]\n{_clock_line}{_last_msg}"
     if amy_state:
         system += "\n\n[Internal state]\n" + amy_state.state_summary()
     system = _cond.apply_condition(system)
@@ -222,7 +258,10 @@ def build_context(mem, user_text, amy_state=None, absence=None,
                    "Only assert things you are confident are true. "
                    "Never mention a specific URL, video title, or source you did not actually retrieve.")
 
-    system += _cond.filter_playbooks(user_text, playbooks_for)
+    pb = _cond.filter_playbooks(user_text, playbooks_for)
+    if pb:
+        system += pb  # playbooks stay in the instructions block
+    system += ("\n\n[Your memories: things that actually happened, with their dates]")
 
     # Time estimation for absence
     if absence:
@@ -269,7 +308,8 @@ def _b64_image(path):
 
 
 def run_turn(history, mem, image=None, amy_state=None,
-             absence=None, pending_thoughts=None, channel="terminal"):
+             absence=None, pending_thoughts=None, channel="terminal",
+             prev_user_ts=None):
     user_msg = history[-1]
     if image:
         b64 = _b64_image(image)
@@ -281,7 +321,8 @@ def run_turn(history, mem, image=None, amy_state=None,
     messages = build_context(mem, user_msg["content"], amy_state,
                              absence=absence,
                              pending_thoughts=pending_thoughts,
-                             channel=channel) + _drop_images(history)
+                             channel=channel,
+                             prev_user_ts=prev_user_ts) + _drop_images(history)
 
     # Vision: the persona system prompt overrides image processing on small models.
     # Step 1 — stripped call: just describe the image with no persona overhead.
@@ -339,7 +380,8 @@ def run_turn(history, mem, image=None, amy_state=None,
                 # Non-comparison: inject description into system context normally.
                 sys_msgs = build_context(
                     mem, user_msg["content"], amy_state,
-                    absence=absence, pending_thoughts=pending_thoughts
+                    absence=absence, pending_thoughts=pending_thoughts,
+                    prev_user_ts=prev_user_ts,
                 )
                 sys_msgs[0]["content"] += (
                     f"\n\n[Vision — you just looked at an image and observed: {description}]"
@@ -460,7 +502,8 @@ def run_turn(history, mem, image=None, amy_state=None,
 
 
 def run_turn_streaming(history, mem, image=None, amy_state=None,
-                       absence=None, pending_thoughts=None, channel="browser"):
+                       absence=None, pending_thoughts=None, channel="browser",
+                       prev_user_ts=None):
     """Generator variant of run_turn. Yields event dicts for SSE encoding.
 
     Events:
@@ -491,7 +534,8 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
     messages = build_context(mem, user_msg["content"], amy_state,
                              absence=absence,
                              pending_thoughts=pending_thoughts,
-                             channel=channel) + _drop_images(history)
+                             channel=channel,
+                             prev_user_ts=prev_user_ts) + _drop_images(history)
     user_task = user_msg.get("content", "")
 
     # ── Vision case (sync, fake-stream final reply) ───────────────────────────
@@ -538,7 +582,8 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
                 content = resp["message"].get("content", "")
             else:
                 sys_msgs = build_context(mem, user_msg["content"], amy_state,
-                                         absence=absence, pending_thoughts=pending_thoughts)
+                                         absence=absence, pending_thoughts=pending_thoughts,
+                                         prev_user_ts=prev_user_ts)
                 sys_msgs[0]["content"] += (
                     f"\n\n[Vision — you just looked at an image and observed: {description}]"
                     "\nUse this when answering. Do not say you cannot see or have no form."
@@ -608,7 +653,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
         )
         journal_prompt = [
             {"role": "system", "content": (
-                CORE_PROMPT
+                get_core_prompt()
                 + ("\n\n[Internal state]\n" + _state_summary if _state_summary else "")
                 + _mem_context
                 + ("\n\n[Recent conversation]\n" + _history_text if _history_text else "")
@@ -752,7 +797,7 @@ def _spontaneous_thought(history, mem, amy_state):
     mood = amy_state.mood
     checkin_prompt = _CHECKIN_PROMPTS.get(mood, _CHECKIN_PROMPTS["curious"])
 
-    system = (CORE_PROMPT + "\n\n" + mem.wake_up() +
+    system = (get_core_prompt() + "\n\n" + mem.wake_up() +
               "\n\n[Internal state]\n" + amy_state.state_summary() +
               "\n\n[HARD RULE — spontaneous speech only]\n"
               "You are generating a spontaneous check-in, NOT a tool-calling turn. "
@@ -813,7 +858,7 @@ def _warmup_models():
             ollama.chat(
                 model=model,
                 messages=[
-                    {"role": "system", "content": CORE_PROMPT},
+                    {"role": "system", "content": get_core_prompt()},
                     {"role": "user", "content": "hi"},
                 ],
                 tools=tools.TOOLS,          # must match real requests for cache prefix to align
@@ -1038,6 +1083,7 @@ def main():
                     "Then answer this: " + q
                 )
 
+            _prev_user_ts = mem.most_recent_user_ts()
             mem.add_bg("user", user)
             history.append({"role": "user", "content": user})
             # Wait for any in-progress spontaneous thought to finish before we take the turn.
@@ -1053,7 +1099,8 @@ def main():
             print("  [Amy is thinking...]", flush=True)
             try:
                 history = run_turn(history, mem, image=image, amy_state=amy_state,
-                                   absence=absence, pending_thoughts=pending_thoughts)
+                                   absence=absence, pending_thoughts=pending_thoughts,
+                                   prev_user_ts=_prev_user_ts)
             finally:
                 amy_state.busy = False
             if len(history) > HISTORY_WINDOW:
