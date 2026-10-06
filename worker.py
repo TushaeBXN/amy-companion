@@ -453,7 +453,16 @@ def _run_task(task):
                     try:
                         args = json.loads(args)
                     except json.JSONDecodeError:
-                        args = {}
+                        # Model truncated JSON — nudge it to retry with shorter content
+                        messages.append({"role": "tool", "content":
+                            f"[ERROR] Your tool call arguments for '{name}' were cut off "
+                            "and could not be parsed. This usually means the content was "
+                            "too long. Break it into smaller pieces and try again — "
+                            "call write_file with shorter content per call if needed."})
+                        args = None
+                if args is None:
+                    used.append(name)
+                    continue
                 key = (name, json.dumps(args, sort_keys=True, default=str))
                 if key not in seen:
                     seen[key] = _guarded_dispatch(name, args)
