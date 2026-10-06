@@ -58,15 +58,31 @@ def gather():
 def write(model, name, system_prompt=""):
     """Return the finished brief text for `name`."""
     data = gather()
-    instructions = (
-        f"Write {name}'s morning brief from ONLY the data below — no outside facts, "
-        "and never invent a headline. Sections in this order: Weather, United States, "
-        "Burkina Faso, Department of Education, Arts, Literature, Technology. "
-        "2-3 short bullets per section; translate every French headline into English (never leave French text). "
-        "Only include items that truly fit their section; if a section has nothing useful, write 'Quiet today.' under it. "
-        f"Open with one warm line to {name}; end with one thing worth paying attention to today. "
-        "Plain text for Telegram, readable in about 90 seconds."
-    )
+    if name == "Brian":
+        instructions = (
+            "Write Brian's morning brief from ONLY the data below — no outside facts, "
+            "and never invent a headline. "
+            "Format: plain text for Telegram. Each section is a bold header followed by "
+            "1-2 bullet points (use • not -) with the top story only — one line per bullet, "
+            "tight and scannable. Sections in order: Weather, United States, Burkina Faso, "
+            "Department of Education, Arts, Literature, Technology. "
+            "Translate every French headline into English. "
+            "If a section has nothing useful, skip it entirely. "
+            "Open with one warm line to Brian. No closing line."
+        )
+    else:
+        instructions = (
+            f"Write {name}'s morning brief from ONLY the data below — no outside facts, "
+            "and never invent a headline. Sections in this order: Weather, United States, "
+            "Burkina Faso, Department of Education, Arts, Literature, Technology. "
+            "2-3 short bullets per section; translate every French headline into English (never leave French text). "
+            "Burkina Faso ALWAYS gets its own section — if there is no new news, write '• Quiet today.' under it. "
+            "When a story connects across sections (e.g. a protest in Burkina tied to a broader regional trend), "
+            "note the connection in one phrase so the reader sees why it matters. "
+            "Only include items that truly fit their section; if any other section has nothing useful, write '• Quiet today.' under it. "
+            f"Open with one warm line to {name}; end with one thing worth paying attention to today. "
+            "Plain text for Telegram, readable in about 90 seconds."
+        )
     msgs = [{"role": "system", "content": (system_prompt + "\n\n" if system_prompt else "") + instructions},
             {"role": "user", "content": data}]
     kw = dict(model=model, messages=msgs, keep_alive="30m",

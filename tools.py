@@ -25,6 +25,38 @@ _MOLTBOOK_UP = _moltbook_reachable()
 if not _MOLTBOOK_UP:
     print("[tools] moltbook unreachable — moltbook tools disabled")
 
+# Tools safe to retry on transient failure (read-only / idempotent).
+_IDEMPOTENT_TOOLS = {
+    "web_search", "read_article", "moltbook_check_in", "moltbook_engage",
+    "moltbook_verify", "read_journal", "read_file", "list_files",
+    "check_email", "fund_status", "search_books", "list_goals",
+    "list_work", "read_deliverable", "research_income",
+}
+_MAX_RETRIES = 1
+_RETRY_DELAY = 1.5
+
+
+def _tool_call(name: str, fn, *args, **kwargs):
+    """Run fn(*args, **kwargs), retrying once for idempotent tools.
+
+    Returns a structured error string on permanent failure so the model can
+    report it gracefully instead of receiving a raw Python traceback.
+    """
+    attempts = _MAX_RETRIES + 1 if name in _IDEMPOTENT_TOOLS else 1
+    last_exc = None
+    for attempt in range(attempts):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            last_exc = exc
+            if attempt < attempts - 1:
+                print(f"  [tools] {name} failed (attempt {attempt + 1}), "
+                      f"retrying in {_RETRY_DELAY}s: {exc}", flush=True)
+                time.sleep(_RETRY_DELAY)
+    reason = str(last_exc) or "unknown error"
+    print(f"  [tools] {name} failed permanently: {reason}", flush=True)
+    return f"[tool_error] {name}: {reason}"
+
 _MOLTBOOK_TOOLS = [
     {
         "type": "function",
@@ -991,6 +1023,28 @@ _BASE_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "state_log_day",
+            "description": (
+                "Write a one-sentence emotional note for today. This is your end-of-day "
+                "record — not what you did, but how today felt. It carries forward into "
+                "tomorrow's starting state. Be honest. One sentence."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "note": {
+                        "type": "string",
+                        "description": "One sentence capturing the emotional truth of today.",
+                        "maxLength": 300,
+                    },
+                },
+                "required": ["note"],
+            },
+        },
+    },
 ]  # end _BASE_TOOLS
 
 # Pending voice file path — set by speak(), consumed by worker._run_task
@@ -1192,7 +1246,9 @@ def dispatch(name, args, memory=None):
                 if not pid or not text:
                     return "need post_id and content"
                 print(f"  [moltbook] commenting on {pid[:8]}...")
-                result = moltbook.comment(pid, text)
+                result = _tool_call(name, moltbook.comment, pid, text)
+                if isinstance(result, str) and result.startswith("[tool_error]"):
+                    return result
                 vr = moltbook.auto_verify(result)
                 if vr and isinstance(vr, dict) and vr.get("success"):
                     return f"Comment published and verified! {vr.get('message', '')}"
@@ -1204,34 +1260,34 @@ def dispatch(name, args, memory=None):
                 if not pid:
                     return "need post_id"
                 print(f"  [moltbook] upvoting {pid[:8]}...")
-                return json.dumps(moltbook.upvote_post(pid), default=str)
+                return json.dumps(_tool_call(name, moltbook.upvote_post, pid), default=str)
             elif action == "follow":
                 name_ = args.get("agent_name", "")
                 if not name_:
                     return "need agent_name"
                 print(f"  [moltbook] following {name_}...")
-                return json.dumps(moltbook.follow(name_), default=str)
+                return json.dumps(_tool_call(name, moltbook.follow, name_), default=str)
             elif action == "read_post":
                 pid = args.get("post_id", "")
                 if not pid:
                     return "need post_id"
                 print(f"  [moltbook] reading post {pid[:8]}...")
-                post = moltbook.get_post(pid)
-                comments = moltbook.get_comments(pid)
+                post = _tool_call(name, moltbook.get_post, pid)
+                comments = _tool_call(name, moltbook.get_comments, pid)
                 return json.dumps({"post": post, "comments": comments},
                                   indent=2, default=str)
             elif action == "feed":
                 print("  [moltbook] browsing feed...")
-                return json.dumps(moltbook.feed(), indent=2, default=str)
+                return json.dumps(_tool_call(name, moltbook.feed), indent=2, default=str)
             elif action == "search":
                 q = args.get("query", "")
                 if not q:
                     return "need a query"
                 print(f"  [moltbook] searching: {q}")
-                return json.dumps(moltbook.search(q), indent=2, default=str)
+                return json.dumps(_tool_call(name, moltbook.search, q), indent=2, default=str)
             elif action == "notifications":
                 print("  [moltbook] fetching notifications...")
-                dashboard = moltbook.home()
+                dashboard = _tool_call(name, moltbook.home)
                 notifs = dashboard.get("notifications", []) if isinstance(dashboard, dict) else []
                 if not notifs:
                     return ("No notifications. Browse the feed with action=feed "
@@ -1253,7 +1309,7 @@ def dispatch(name, args, memory=None):
                 return "\n".join(lines)
             elif action == "my_posts":
                 print("  [moltbook] fetching your posts...")
-                profile = moltbook.me()
+                profile = _tool_call(name, moltbook.me)
                 posts = profile.get("posts", []) if isinstance(profile, dict) else []
                 if not posts:
                     # Fall back to searching for Amy's posts by agent name
@@ -1910,6 +1966,22 @@ def dispatch(name, args, memory=None):
             return "voice queued"
         except Exception as e:
             return f"speak failed: {e}"
+
+    if name == "state_log_day":
+        note = args.get("note", "").strip()
+        if not note:
+            return "state_log_day: note is required"
+        if memory is not None and hasattr(memory, "_state") and memory._state is not None:
+            memory._state.log_day(note)
+            return f"day logged: {note}"
+        # Fallback: write directly if no state ref available
+        try:
+            from state import InternalState
+            _s = InternalState.restore()
+            _s.log_day(note)
+            return f"day logged: {note}"
+        except Exception as e:
+            return f"state_log_day failed: {e}"
 
     print(f"  [tools] unknown tool: {name}")
     return None
