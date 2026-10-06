@@ -434,7 +434,8 @@ def run_turn(history, mem, image=None, amy_state=None,
 
     for _ in range(MAX_TOOL_HOPS):
         resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
-                           keep_alive=KEEP_ALIVE, options={"num_ctx": CTX_WINDOW})
+                           keep_alive=KEEP_ALIVE,
+                           options={"num_ctx": CTX_WINDOW, "num_predict": 2048})
         msg = resp["message"]
         # Ava's chain-of-thought stays private: log it, never speak/print it.
         if msg.get("thinking"):
@@ -730,7 +731,8 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
     for _ in range(MAX_TOOL_HOPS):
         with _log.Timer("model_call", model=MODEL):
             resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
-                               keep_alive=KEEP_ALIVE, options={"num_ctx": CTX_WINDOW})
+                               keep_alive=KEEP_ALIVE,
+                               options={"num_ctx": CTX_WINDOW, "num_predict": 2048})
         msg = resp["message"]
         if msg.get("thinking"):
             with open("amy_thoughts.log", "a") as f:

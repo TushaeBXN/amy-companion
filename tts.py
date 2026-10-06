@@ -3,8 +3,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-VOICE = "Shelley (English (US))"
-VOICE_FALLBACK = "Samantha"
+VOICES = ["Kathy", "Samantha", "Sandy (English (US))", "Shelley (English (US))"]
 
 
 def generate_ogg(text: str) -> Path:
@@ -12,15 +11,17 @@ def generate_ogg(text: str) -> Path:
     aiff = Path(tempfile.mktemp(suffix=".aiff"))
     ogg = aiff.with_suffix(".ogg")
     try:
-        result = subprocess.run(
-            ["say", "-v", VOICE, "-o", str(aiff), text],
-            capture_output=True, timeout=60
-        )
-        if result.returncode != 0:
-            subprocess.run(
-                ["say", "-v", VOICE_FALLBACK, "-o", str(aiff), text],
-                check=True, capture_output=True, timeout=60
+        spoken = False
+        for voice in VOICES:
+            result = subprocess.run(
+                ["say", "-v", voice, "-o", str(aiff), text],
+                capture_output=True, timeout=60
             )
+            if result.returncode == 0:
+                spoken = True
+                break
+        if not spoken:
+            raise RuntimeError("No available TTS voice succeeded")
         subprocess.run(
             ["ffmpeg", "-y", "-i", str(aiff),
              "-c:a", "libopus", "-b:a", "32k", str(ogg)],

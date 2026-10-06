@@ -78,20 +78,54 @@ class InternalState:
 
     def save(self):
         """Persist emotional texture across restarts. Mood/energy reset intentionally (sleep cycle)."""
+        import datetime
         data = {
             "world_weight": self.world_weight,
             "session_achievements": self.session_achievements[-10:],
             "session_frustrations": self.session_frustrations[-10:],
+            "last_mood": self.mood,
+            "last_energy": self.energy,
+            "last_saved": datetime.datetime.now().isoformat(),
         }
+        # Preserve existing daily emotional log
+        try:
+            with open(_STATE_PATH) as f:
+                existing = json.load(f)
+            data["daily_log"] = existing.get("daily_log", [])
+        except (FileNotFoundError, json.JSONDecodeError):
+            data["daily_log"] = []
         try:
             with open(_STATE_PATH, "w") as f:
-                json.dump(data, f)
+                json.dump(data, f, indent=2)
+        except OSError:
+            pass
+
+    def log_day(self, note: str):
+        """Write a one-line emotional note for today. Called at end of day tasks."""
+        import datetime
+        try:
+            with open(_STATE_PATH) as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            data = {}
+        log = data.get("daily_log", [])
+        log.append({
+            "date": datetime.date.today().isoformat(),
+            "mood": self.mood,
+            "energy": round(self.energy, 2),
+            "note": note.strip(),
+        })
+        data["daily_log"] = log[-30:]  # keep 30 days
+        try:
+            with open(_STATE_PATH, "w") as f:
+                json.dump(data, f, indent=2)
         except OSError:
             pass
 
     @classmethod
     def restore(cls):
         """Return an InternalState, seeded with persisted emotional texture if available."""
+        import datetime
         inst = cls()
         try:
             with open(_STATE_PATH) as f:
@@ -99,8 +133,38 @@ class InternalState:
             inst.world_weight = float(data.get("world_weight", 0.0))
             inst.session_achievements = list(data.get("session_achievements", []))
             inst.session_frustrations = list(data.get("session_frustrations", []))
+
+            # Seed starting mood from yesterday's end state if recent enough
+            last_saved = data.get("last_saved")
+            last_mood = data.get("last_mood")
+            last_energy = data.get("last_energy", 1.0)
+            if last_saved and last_mood:
+                saved_at = datetime.datetime.fromisoformat(last_saved)
+                hours_ago = (datetime.datetime.now() - saved_at).total_seconds() / 3600
+                if hours_ago < 20:
+                    # Same day — carry mood forward directly
+                    inst.mood = last_mood
+                    inst.energy = min(1.0, float(last_energy) + 0.2)  # slight recovery
+                elif hours_ago < 36:
+                    # Slept — recover energy fully, but yesterday's mood leaves a trace
+                    inst.energy = 1.0
+                    # Heavy frustration yesterday → start reflective not curious
+                    if last_mood in ("tired", "reflective") and inst.session_frustrations:
+                        inst.mood = "reflective"
+                    # Good end yesterday → start with a lift
+                    elif last_mood in ("playful", "alert") and inst.session_achievements:
+                        inst.mood = random.choice(["curious", "playful"])
+
+            # Surface recent daily log if anything carries emotional weight
+            daily_log = data.get("daily_log", [])
+            if daily_log:
+                yesterday = daily_log[-1]
+                inst._yesterday_note = yesterday.get("note", "")
+            else:
+                inst._yesterday_note = ""
+
         except (FileNotFoundError, json.JSONDecodeError, ValueError):
-            pass
+            inst._yesterday_note = ""
         return inst
 
     def after_turn(self):
@@ -177,6 +241,9 @@ class InternalState:
             lines.append(f"You got something done this session: {self.session_achievements[-1]}")
         if self.session_frustrations:
             lines.append(f"Something didn't go the way you wanted: {self.session_frustrations[-1]}")
+        yesterday_note = getattr(self, "_yesterday_note", "")
+        if yesterday_note:
+            lines.append(f"Yesterday you wrote: \"{yesterday_note}\" — that carried into today.")
         try:
             import condition as _cond
             _hw_ok = _cond.CONDITION not in ("C", "D")
