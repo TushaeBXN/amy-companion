@@ -14,6 +14,7 @@ try:
 except ImportError:
     from backports.zoneinfo import ZoneInfo as _ZoneInfo  # type: ignore
 from telegram import Update
+from telegram.error import NetworkError, TimedOut
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 
 _BRIEFING_RE = re.compile(
@@ -764,6 +765,14 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"I couldn't read {name}: {e}")
 
 
+async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    err = context.error
+    if isinstance(err, (NetworkError, TimedOut)):
+        print(f"  [telegram] network hiccup (auto-retry): {err}", flush=True)
+    else:
+        print(f"  [telegram] unhandled error: {err}", flush=True)
+
+
 def main():
     token = os.environ.get("TELEGRAM_TOKEN")
     if not token:
@@ -772,6 +781,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, on_document))
+    app.add_error_handler(_error_handler)
     worker.start(os.environ.get("AMY_MODEL", "amy-hermes"), mem, token)
     print("Amy is on Telegram. She can now see photos you send her.")
     app.run_polling(drop_pending_updates=True)

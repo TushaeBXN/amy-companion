@@ -323,8 +323,15 @@ class Memory:
         candidates.sort(key=lambda x: x[1], reverse=True)
         return candidates[:3]  # top 3 near-matches
 
-    def search(self, query, k=2, min_score=0.65):
-        rows = self.db.execute("SELECT text, emb FROM mem WHERE emb IS NOT NULL").fetchall()
+    def search(self, query, k=2, min_score=0.65, exclude_sources=None):
+        if exclude_sources:
+            placeholders = ",".join("?" * len(exclude_sources))
+            rows = self.db.execute(
+                f"SELECT text, emb FROM mem WHERE emb IS NOT NULL AND (source IS NULL OR source NOT IN ({placeholders}))",
+                exclude_sources,
+            ).fetchall()
+        else:
+            rows = self.db.execute("SELECT text, emb FROM mem WHERE emb IS NOT NULL").fetchall()
         if not rows:
             return []
         try:
