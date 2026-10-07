@@ -388,6 +388,68 @@ def _continue_later(task, messages, used):
     return reply
 
 
+# Tasks that are reflective by design — skip nudging them (would be recursive)
+_SKIP_NUDGE_IDS = {"self_review", "deep_learning", "end_of_day_log"}
+
+# Minimum hops before we consider a task "complex enough" to nudge
+_NUDGE_HOP_THRESHOLD = 6
+
+_SKILL_NUDGE_PROMPT = (
+    "Before you finish: did this task surface anything worth saving as a reusable pattern? "
+    "Think about:\n"
+    "- A failure you had to debug — what was the root cause and fix?\n"
+    "- A multi-step sequence that worked well — could it be a named pattern?\n"
+    "- A tool limitation you worked around — how did you solve it?\n\n"
+    "If yes: call self_improve with a clear description of the pattern, the problem it solves, "
+    "and the exact fix or approach. Be specific — vague lessons don't help future-you.\n"
+    "If no: just reply 'nothing new this time.' Don't explain why."
+)
+
+_SELF_IMPROVE_TOOL = "self_improve"
+
+
+def _maybe_skill_nudge(task, messages, allowed, steps_run, tool_errors):
+    """After a complex task, ask Amy if she learned a reusable pattern.
+
+    Fires when: steps_run >= threshold OR tool_errors > 0.
+    Skips reflective tasks (self_review, deep_learning) to avoid recursion.
+    Uses 2 hops max — quick reflection, not another full task.
+    """
+    task_id = task.get("id", "")
+    if task_id in _SKIP_NUDGE_IDS:
+        return
+    if steps_run < _NUDGE_HOP_THRESHOLD and tool_errors == 0:
+        return
+
+    # Only expose self_improve for the nudge
+    nudge_tools = [t for t in allowed if t["function"]["name"] == _SELF_IMPROVE_TOOL]
+    if not nudge_tools:
+        return
+
+    try:
+        messages = list(messages)  # don't mutate the original
+        messages.append({"role": "user", "content": _SKILL_NUDGE_PROMPT})
+        for _ in range(2):
+            resp = _chat(messages, nudge_tools)["message"]
+            messages.append(resp)
+            calls = resp.get("tool_calls") or []
+            if not calls:
+                break
+            for call in calls:
+                name = call["function"]["name"]
+                args = call["function"].get("arguments") or {}
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        break
+                result = _guarded_dispatch(name, args)
+                messages.append({"role": "tool", "content": str(result or "saved")})
+            break  # one tool call per nudge is enough
+    except Exception as exc:
+        print(f"  [worker] skill nudge failed ({task_id}): {exc}", flush=True)
+
+
 def _run_task(task):
     if not _running.acquire(blocking=False):
         return
@@ -430,7 +492,7 @@ def _run_task(task):
         messages = [{"role": "system", "content": system},
                     {"role": "user", "content": task["prompt"].replace("{date}", today)
                                                .replace("{work}", WORK_DIR)}]
-        seen, nudges = {}, 0
+        seen, nudges, tool_errors = {}, 0, 0
         for step in range(1, task_hops + 1):
             messages = _compressor.maybe_compress(messages, CTX_WINDOW)
             _fit(messages)
@@ -469,10 +531,17 @@ def _run_task(task):
                 if key not in seen:
                     seen[key] = _guarded_dispatch(name, args)
                 used.append(name)
+                result_text = _cap(str(seen[key] or "done"))
+                if str(seen[key] or "").startswith("[tool_error]"):
+                    tool_errors += 1
                 messages.append({"role": "tool", "content":
-                    _cap(str(seen[key] or "done")) + f"\n[step {step} of {MAX_HOPS}]"})
+                    result_text + f"\n[step {step} of {MAX_HOPS}]"})
         else:
             final = _continue_later(task, messages, used)  # noqa: E501 (reached task_hops)
+
+        # Skill nudge — fire after complex or error-heavy tasks
+        _maybe_skill_nudge(task, messages, allowed, step, tool_errors)
+
     except Exception as e:
         final = f"(task failed: {e})"
     finally:
