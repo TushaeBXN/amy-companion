@@ -17,6 +17,7 @@ import requests
 
 import tools
 import compressor as _compressor
+import trajectory as _trajectory
 
 HERE        = os.path.dirname(os.path.abspath(__file__))
 TASKS_FILE  = os.path.join(HERE, "tasks.json")
@@ -468,6 +469,7 @@ def _run_task(task):
         print(f"  [worker] {task['id']}: {final}")
         return
     used, final = [], ""
+    step, tool_errors, hit_limit = 0, 0, False
     task_hops = task.get("max_hops", MAX_HOPS)
     try:
         today = datetime.now().strftime("%Y-%m-%d")
@@ -492,7 +494,7 @@ def _run_task(task):
         messages = [{"role": "system", "content": system},
                     {"role": "user", "content": task["prompt"].replace("{date}", today)
                                                .replace("{work}", WORK_DIR)}]
-        seen, nudges, tool_errors = {}, 0, 0
+        seen, nudges, tool_errors, hit_limit = {}, 0, 0, False
         for step in range(1, task_hops + 1):
             messages = _compressor.maybe_compress(messages, CTX_WINDOW)
             _fit(messages)
@@ -537,6 +539,7 @@ def _run_task(task):
                 messages.append({"role": "tool", "content":
                     result_text + f"\n[step {step} of {MAX_HOPS}]"})
         else:
+            hit_limit = True
             final = _continue_later(task, messages, used)  # noqa: E501 (reached task_hops)
 
         # Skill nudge — fire after complex or error-heavy tasks
@@ -561,6 +564,20 @@ def _run_task(task):
         f.write(f"\n## {datetime.fromtimestamp(started):%Y-%m-%d %H:%M} — {task['id']} "
                 f"({mins:.1f} min)\nTools: {', '.join(used) or 'none'}\n\n{final}\n")
     print(f"  [worker] {task['id']} done in {mins:.1f} min — tools: {used}")
+    # Trajectory — capture good runs as training data (best-effort, silent on fail)
+    try:
+        _trajectory.save(
+            task_id=task["id"],
+            messages=messages,
+            tools_used=used,
+            final=final,
+            started=started,
+            steps=step,
+            tool_errors=tool_errors,
+            hit_limit=hit_limit,
+        )
+    except Exception:
+        pass
     # Write Engram diary entry for drift prevention (non-blocking, best-effort)
     if final and final.strip() and "(task failed" not in final:
         try:
