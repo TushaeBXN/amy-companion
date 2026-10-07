@@ -18,6 +18,7 @@ import ollama
 import tools
 import voice
 import vision
+import compressor
 import hearing
 from memory import Memory
 from state import InternalState
@@ -324,6 +325,7 @@ def run_turn(history, mem, image=None, amy_state=None,
                              pending_thoughts=pending_thoughts,
                              channel=channel,
                              prev_user_ts=prev_user_ts) + _drop_images(history)
+    messages = compressor.maybe_compress(messages, CTX_WINDOW)
 
     # Vision: the persona system prompt overrides image processing on small models.
     # Step 1 — stripped call: just describe the image with no persona overhead.
@@ -538,6 +540,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
                              pending_thoughts=pending_thoughts,
                              channel=channel,
                              prev_user_ts=prev_user_ts) + _drop_images(history)
+    messages = compressor.maybe_compress(messages, CTX_WINDOW)
     user_task = user_msg.get("content", "")
 
     # ── Vision case (sync, fake-stream final reply) ───────────────────────────

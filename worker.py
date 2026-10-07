@@ -16,6 +16,7 @@ import ollama
 import requests
 
 import tools
+import compressor as _compressor
 
 HERE        = os.path.dirname(os.path.abspath(__file__))
 TASKS_FILE  = os.path.join(HERE, "tasks.json")
@@ -431,6 +432,7 @@ def _run_task(task):
                                                .replace("{work}", WORK_DIR)}]
         seen, nudges = {}, 0
         for step in range(1, task_hops + 1):
+            messages = _compressor.maybe_compress(messages, CTX_WINDOW)
             _fit(messages)
             msg = _chat(messages, allowed)["message"]
             messages.append(msg)
