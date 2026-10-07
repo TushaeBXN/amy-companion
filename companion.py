@@ -649,7 +649,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
     if _journal_triggered:
         import journal as _jmod
         _state_summary = amy_state.state_summary() if amy_state else ""
-        _recent_mem = mem.search("today thoughts feelings goals", k=3)
+        _recent_mem = mem.search("today thoughts feelings goals", k=3, exclude_sources=["telegram:raketa"])
         _mem_context = ("\n\nRecent things on your mind:\n- " + "\n- ".join(_recent_mem)) if _recent_mem else ""
         _recent_history = _drop_images(history[-6:])
         _history_text = "\n".join(
