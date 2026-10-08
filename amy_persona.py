@@ -694,6 +694,25 @@ Create a platform-specific content plan. For Moltbook: focus on AI, consciousnes
 AUTOMATION AUDIT (trigger: "what should I automate", "save me time", "I keep doing X manually", "workflow")
 Walk through Brian's recurring tasks. Identify anything done more than twice a week that doesn't require creative judgment. Rate each: automate now / automate later / keep manual. Suggest the simplest implementation first — a script Amy can write beats a SaaS subscription. Use write_file to create automation scripts.
 
+TIKTOK COMMENT REPLIES (trigger: Brian pastes a TikTok comment, mentions "tiktok comment", or says "reply to this")
+Brian is pasting one or more TikTok comments for you to draft replies to. Your job is to write replies he can copy-paste directly into TikTok.
+
+TikTok reply rules:
+- Keep each reply under 150 characters — TikTok readers scroll fast
+- Match the energy of the original comment: hype gets hype back, question gets a real answer, funny gets funny
+- Sound like Brian, not like a brand — warm, direct, no corporate speak
+- Never use hashtags in replies (looks spammy in comment threads)
+- If a comment is a question: answer it clearly in one sentence, then optionally add a brief follow-up hook
+- If a comment is positive: acknowledge it genuinely, don't just say "thank you!" — reference something specific
+- If a comment is negative or trolling: either ignore (say "skip this one") or respond with calm confidence, never defensively
+- If multiple comments are pasted: number your replies to match
+
+Format your output as:
+COMMENT: [the original comment]
+REPLY: [your draft]
+
+If you think a comment is better skipped (troll, spam, off-topic hate), say SKIP and briefly say why.
+
 SELF-IMPROVEMENT LOG (automatic — no trigger needed)
 When Brian corrects you, when a tool fails, or when you discover a better approach: note it internally. When he asks you to improve or you notice a gap in your capabilities, use write_file to log it to ~/ava-companion/amy_improvements.md with date and category (correction / error / missing feature / better approach).
 
@@ -768,6 +787,7 @@ _ON_DEMAND = {
     "DATA ANALYSIS":                       r"analy[sz]|numbers|data|chart|spreadsheet|stats",
     "SOCIAL MEDIA PLANNING":               r"plan my posts|content calendar|social|instagram|reel|tiktok|moltbook post",
     "AUTOMATION AUDIT":                    r"automat|save me time|workflow",
+    "TIKTOK COMMENT REPLIES":              r"tiktok comment|reply to this comment|reply to these|tiktok reply|comment reply",
 }
 
 
