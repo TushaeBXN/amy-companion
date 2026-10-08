@@ -1370,7 +1370,7 @@ ttDraftBtn.addEventListener("click", async () => {
     const r = await fetch("/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "reply to these tiktok comments:\n\n" + raw }),
+      body: JSON.stringify({ message: "reply to these tiktok comments:\\n\\n" + raw }),
     });
     const d = await r.json();
     renderReplies(raw, d.reply);
@@ -1385,22 +1385,22 @@ ttDraftBtn.addEventListener("click", async () => {
 function renderReplies(original, replyText) {
   ttReplies.innerHTML = "";
   // Parse Amy's output — look for COMMENT: / REPLY: or SKIP blocks
-  const blocks = replyText.split(/\n(?=COMMENT:|SKIP)/i).filter(Boolean);
+  const blocks = replyText.split(/\\n(?=COMMENT:|SKIP)/i).filter(Boolean);
   if (blocks.length <= 1 && !replyText.match(/COMMENT:/i)) {
     // Plain reply — show as one card
     const card = document.createElement("div");
     card.className = "tt-reply-card";
     card.innerHTML = `<div class="tt-reply-text">${escHtml(replyText)}</div>` +
-      `<button class="tt-copy-btn" onclick="copyText(this, ${JSON.stringify(replyText)})">Copy</button>`;
+      `<button class="tt-copy-btn" onclick="copyText(this)">Copy</button>`;
     ttReplies.appendChild(card);
     return;
   }
   for (const block of blocks) {
     const card = document.createElement("div");
     card.className = "tt-reply-card";
-    const commentMatch = block.match(/COMMENT:\s*(.+?)(?=\nREPLY:|\nSKIP|$)/is);
-    const replyMatch   = block.match(/REPLY:\s*(.+?)(?=\n[A-Z]+:|$)/is);
-    const skipMatch    = block.match(/SKIP\b(.+)/i);
+    const commentMatch = block.match(/COMMENT:[\\s\\S]*?(.+?)(?=\\nREPLY:|\\nSKIP|$)/is);
+    const replyMatch   = block.match(/REPLY:[\\s\\S]*?(.+?)(?=\\n[A-Z]+:|$)/is);
+    const skipMatch    = block.match(/SKIP\\b(.+)/i);
     const commentText  = commentMatch ? commentMatch[1].trim() : "";
     const replyDraft   = replyMatch   ? replyMatch[1].trim()   : "";
     if (skipMatch) {
@@ -1410,7 +1410,7 @@ function renderReplies(original, replyText) {
       card.innerHTML =
         (commentText ? `<div class="tt-reply-comment">${escHtml(commentText)}</div>` : "") +
         `<div class="tt-reply-text">${escHtml(replyDraft || block.trim())}</div>` +
-        `<button class="tt-copy-btn" onclick="copyText(this, ${JSON.stringify(replyDraft || block.trim())})">Copy</button>`;
+        `<button class="tt-copy-btn" onclick="copyText(this)">Copy</button>`;
     }
     ttReplies.appendChild(card);
   }
@@ -1420,7 +1420,8 @@ function escHtml(s) {
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
 
-function copyText(btn, text) {
+function copyText(btn) {
+  const text = btn.previousElementSibling.textContent;
   navigator.clipboard.writeText(text).then(() => {
     btn.textContent = "Copied ✓";
     setTimeout(() => btn.textContent = "Copy", 1500);
