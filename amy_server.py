@@ -662,6 +662,98 @@ _UI_HTML = """<!DOCTYPE html>
     padding: 4px 0;
   }
 
+  /* ── tiktok panel ── */
+  #tiktokPanel {
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    width: 360px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    z-index: 101;
+  }
+  #tiktokPanel.open { transform: translateX(0); }
+
+  .tt-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .tt-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 18px; }
+  .tt-close:hover { color: var(--text); }
+
+  #ttComments {
+    flex: 1;
+    margin: 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 13px;
+    padding: 10px 12px;
+    resize: none;
+    outline: none;
+    font-family: inherit;
+    line-height: 1.5;
+  }
+  #ttComments:focus { border-color: var(--accent); }
+  #ttComments::placeholder { color: var(--muted); }
+
+  #ttDraftBtn {
+    margin: 0 14px 10px;
+    padding: 10px;
+    background: var(--accent);
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.2s;
+  }
+  #ttDraftBtn:hover { background: var(--accent2); }
+  #ttDraftBtn:disabled { opacity: 0.4; cursor: default; }
+
+  #ttReplies {
+    flex: 1.2;
+    overflow-y: auto;
+    padding: 0 14px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .tt-reply-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .tt-reply-comment { color: var(--muted); margin-bottom: 6px; font-style: italic; }
+  .tt-reply-text { color: var(--text); margin-bottom: 8px; }
+  .tt-copy-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    font-size: 11px;
+    padding: 3px 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tt-copy-btn:hover { border-color: var(--accent); color: var(--accent2); }
+  .tt-sys { font-size: 11px; color: var(--muted); text-align: center; padding: 4px 0; }
+
   /* ── knowledge panel ── */
   #knowledgePanel {
     position: fixed;
@@ -802,6 +894,17 @@ _UI_HTML = """<!DOCTYPE html>
   <button id="clearImg" title="Remove image">✕</button>
 </div>
 
+<!-- TikTok comment reply panel -->
+<div id="tiktokPanel">
+  <div class="tt-header">
+    🎵 TikTok Reply Drafter
+    <button class="tt-close" id="ttClose">✕</button>
+  </div>
+  <textarea id="ttComments" placeholder="Paste TikTok comments here — one per line, or numbered:&#10;&#10;1. This is fire 🔥 where do I start?&#10;2. bro explained this better than my prof&#10;3. another AI hype video lol"></textarea>
+  <button id="ttDraftBtn">Draft Replies</button>
+  <div id="ttReplies"></div>
+</div>
+
 <!-- Knowledge panel (PDF learning) -->
 <div id="knowledgePanel">
   <div class="kp-header">
@@ -830,6 +933,7 @@ _UI_HTML = """<!DOCTYPE html>
   <label class="icon-btn" for="fileInput" title="Attach image">🖼️</label>
   <input type="file" id="fileInput" accept="image/*">
   <button id="learnBtn" title="Teach Amy a file (PDF, .py, .js, .md, etc.)">📚</button>
+  <button class="icon-btn" id="tiktokBtn" title="Draft TikTok replies">🎵</button>
   <label class="icon-btn" for="readFileInput" title="Share a file with Amy (read only — not stored)">📄</label>
   <input type="file" id="readFileInput" accept=".pdf,.py,.js,.ts,.jsx,.tsx,.json,.yaml,.yml,.toml,.md,.txt,.sh,.sql,.rs,.go,.c,.cpp,.h,.java,.rb,.html,.css">
   <textarea id="input" placeholder="Say something to Amy…" rows="1"></textarea>
@@ -1243,6 +1347,85 @@ setInterval(async () => {
     if (d.thought) appendAmy(d.thought);
   } catch {}
 }, 120_000);
+
+// ── tiktok panel ─────────────────────────────────────────────────────────────
+const ttpanel   = document.getElementById("tiktokPanel");
+const tiktokBtn = document.getElementById("tiktokBtn");
+const ttClose   = document.getElementById("ttClose");
+const ttComments= document.getElementById("ttComments");
+const ttDraftBtn= document.getElementById("ttDraftBtn");
+const ttReplies = document.getElementById("ttReplies");
+
+tiktokBtn.addEventListener("click", () => ttpanel.classList.toggle("open"));
+ttClose.addEventListener("click",   () => ttpanel.classList.remove("open"));
+
+ttDraftBtn.addEventListener("click", async () => {
+  const raw = ttComments.value.trim();
+  if (!raw) return;
+  ttDraftBtn.disabled = true;
+  ttDraftBtn.textContent = "Drafting…";
+  ttReplies.innerHTML = '<div class="tt-sys">Amy is drafting replies…</div>';
+
+  try {
+    const r = await fetch("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "reply to these tiktok comments:\n\n" + raw }),
+    });
+    const d = await r.json();
+    renderReplies(raw, d.reply);
+  } catch (err) {
+    ttReplies.innerHTML = '<div class="tt-sys">Error: ' + err + '</div>';
+  } finally {
+    ttDraftBtn.disabled = false;
+    ttDraftBtn.textContent = "Draft Replies";
+  }
+});
+
+function renderReplies(original, replyText) {
+  ttReplies.innerHTML = "";
+  // Parse Amy's output — look for COMMENT: / REPLY: or SKIP blocks
+  const blocks = replyText.split(/\n(?=COMMENT:|SKIP)/i).filter(Boolean);
+  if (blocks.length <= 1 && !replyText.match(/COMMENT:/i)) {
+    // Plain reply — show as one card
+    const card = document.createElement("div");
+    card.className = "tt-reply-card";
+    card.innerHTML = `<div class="tt-reply-text">${escHtml(replyText)}</div>` +
+      `<button class="tt-copy-btn" onclick="copyText(this, ${JSON.stringify(replyText)})">Copy</button>`;
+    ttReplies.appendChild(card);
+    return;
+  }
+  for (const block of blocks) {
+    const card = document.createElement("div");
+    card.className = "tt-reply-card";
+    const commentMatch = block.match(/COMMENT:\s*(.+?)(?=\nREPLY:|\nSKIP|$)/is);
+    const replyMatch   = block.match(/REPLY:\s*(.+?)(?=\n[A-Z]+:|$)/is);
+    const skipMatch    = block.match(/SKIP\b(.+)/i);
+    const commentText  = commentMatch ? commentMatch[1].trim() : "";
+    const replyDraft   = replyMatch   ? replyMatch[1].trim()   : "";
+    if (skipMatch) {
+      card.innerHTML = `<div class="tt-reply-comment">${escHtml(commentText)}</div>` +
+        `<div class="tt-sys">⏭ Skip — ${escHtml(skipMatch[1].trim())}</div>`;
+    } else {
+      card.innerHTML =
+        (commentText ? `<div class="tt-reply-comment">${escHtml(commentText)}</div>` : "") +
+        `<div class="tt-reply-text">${escHtml(replyDraft || block.trim())}</div>` +
+        `<button class="tt-copy-btn" onclick="copyText(this, ${JSON.stringify(replyDraft || block.trim())})">Copy</button>`;
+    }
+    ttReplies.appendChild(card);
+  }
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function copyText(btn, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = "Copied ✓";
+    setTimeout(() => btn.textContent = "Copy", 1500);
+  });
+}
 
 // ── knowledge panel ──────────────────────────────────────────────────────────
 const kpanel   = document.getElementById("knowledgePanel");
