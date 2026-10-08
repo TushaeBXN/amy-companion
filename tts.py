@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-VOICES = ["Kathy", "Samantha", "Sandy (English (US))", "Shelley (English (US))"]
+VOICES = ["Samantha", "Kathy", "Sandy (English (US))", "Shelley (English (US))"]
 
 
 def generate_ogg(text: str) -> Path:
