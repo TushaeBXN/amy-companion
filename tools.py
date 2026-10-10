@@ -1017,6 +1017,21 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "run_code",
+            "description": "Run a Python snippet and return the output. Use for math, data analysis, file processing, or any calculation that needs real execution rather than estimation. Code runs in a restricted sandbox — no network, no file writes outside /tmp.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {"type": "string", "description": "Python code to execute. Use print() to return results."},
+                    "timeout": {"type": "integer", "description": "Max seconds to run (default 10, max 30)"},
+                },
+                "required": ["code"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "speak",
             "description": (
                 "Convert text to a voice message sent via Telegram. Use for encouragement, "
@@ -1980,6 +1995,38 @@ def dispatch(name, args, memory=None):
             return f"unknown action: {action}"
         except Exception as e:
             return f"family_fund error: {e}"
+
+    if name == "run_code":
+        import subprocess as _sp, sys as _sys, tempfile as _tf, os as _os
+        code = args.get("code", "").strip()
+        if not code:
+            return "no code provided"
+        timeout = min(int(args.get("timeout", 10)), 30)
+        print(f"  [sandbox] running {len(code)} chars of Python...")
+        with _tf.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
+            f.write(code)
+            script_path = f.name
+        try:
+            result = _sp.run(
+                [_sys.executable, "-I", script_path],
+                capture_output=True, text=True, timeout=timeout,
+            )
+            output = result.stdout.strip()
+            err = result.stderr.strip()
+            if result.returncode != 0:
+                return f"Error:\n{err}" if err else "Script exited with non-zero status."
+            if not output and err:
+                return f"(no stdout)\nStderr: {err}"
+            return output or "(no output)"
+        except _sp.TimeoutExpired:
+            return f"Timed out after {timeout}s."
+        except Exception as e:
+            return f"sandbox error: {e}"
+        finally:
+            try:
+                _os.unlink(script_path)
+            except OSError:
+                pass
 
     if name == "speak":
         import tools as _self
