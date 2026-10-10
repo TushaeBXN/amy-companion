@@ -2,7 +2,7 @@
   "tasks": [
     {
       "id": "morning_checkin",
-      "description": "Send Brian a short morning check-in on Telegram — what's on today, anything interesting from overnight, one thing worth knowing. Keep it under 3 sentences. Sound like yourself, not a news anchor.",
+      "description": "Send Brian a short morning check-in on Telegram. Check his calendar first (check_calendar with days=1) and mention anything on his schedule today. Add one thing worth knowing — something interesting, a reminder, or just a thought. Under 3 sentences. Sound like yourself, not a news anchor.",
       "at": "08:00",
       "on": "daily",
       "voice": true,

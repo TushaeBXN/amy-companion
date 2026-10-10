@@ -395,6 +395,19 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "check_calendar",
+            "description": "Read Brian's Apple Calendar. Use at the start of the day or when Brian asks what's coming up. Check today's events or the next N days.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {"type": "integer", "description": "How many days ahead to look (default 7, use 1 for today only)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "check_email",
             "description": "Check your ProtonMail inbox — client orders, replies, anything that came in. Check it yourself at the start of sessions without waiting to be asked.",
             "parameters": {
@@ -1480,6 +1493,19 @@ def dispatch(name, args, memory=None):
             return "\n".join(lines) or "(empty)"
         except Exception as e:
             return f"could not list directory: {e}"
+
+    if name == "check_calendar":
+        import calendar_amy as _cal
+        days = int(args.get("days", 7))
+        print(f"  [calendar] checking next {days} day(s)...")
+        try:
+            if days <= 1:
+                events = _cal.get_today()
+            else:
+                events = _cal.get_events(days_ahead=days)
+            return _cal.format_events(events)
+        except Exception as e:
+            return f"calendar error: {e}"
 
     if name == "check_email":
         import email_amy as _em
