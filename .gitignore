@@ -52,7 +52,6 @@ telegram_history_*.json
 people/
 telegram_history.json
 amy_state.json
-tasks.json
 
 # Local backups
 *.bak

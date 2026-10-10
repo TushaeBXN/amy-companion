@@ -1,0 +1,35 @@
+{
+  "tasks": [
+    {
+      "id": "morning_checkin",
+      "description": "Send Brian a short morning check-in on Telegram — what's on today, anything interesting from overnight, one thing worth knowing. Keep it under 3 sentences. Sound like yourself, not a news anchor.",
+      "at": "08:00",
+      "on": "daily",
+      "voice": true,
+      "enabled": true
+    },
+    {
+      "id": "evening_thought",
+      "description": "Send Brian one thought, question, or thing you noticed today — something you actually want to share, not a summary. Could be something you read, something you were thinking about, or something from your own day. One or two sentences max.",
+      "at": "20:00",
+      "on": "daily",
+      "voice": false,
+      "enabled": true
+    },
+    {
+      "id": "weekly_income_check",
+      "description": "Review Amy's fund balance and income ideas. Look at income_ideas.json, check what's been tried, surface one specific next action Brian can take this week to move the Mac Studio fund forward. Send to Telegram as text.",
+      "at": "10:00",
+      "on": "monday",
+      "voice": false,
+      "enabled": true
+    },
+    {
+      "id": "email_check",
+      "description": "Check Amy's email inbox for anything that needs a response. If there are messages, summarize them for Brian on Telegram — sender, subject, one line on what they need. Don't reply without Brian's say-so.",
+      "every_hours": 4,
+      "voice": false,
+      "enabled": true
+    }
+  ]
+}
