@@ -1017,6 +1017,20 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "prune_memory",
+            "description": "Clean up old memories to keep recall fast. Run this once a week. Keeps the most recent 2000 memories and anything from the last 90 days; removes stale noise beyond that.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keep_days": {"type": "integer", "description": "Days of history to keep (default 90)"},
+                    "keep_recent": {"type": "integer", "description": "Always keep this many most-recent rows (default 2000)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "run_code",
             "description": "Run a Python snippet and return the output. Use for math, data analysis, file processing, or any calculation that needs real execution rather than estimation. Code runs in a restricted sandbox — no network, no file writes outside /tmp.",
             "parameters": {
@@ -1995,6 +2009,18 @@ def dispatch(name, args, memory=None):
             return f"unknown action: {action}"
         except Exception as e:
             return f"family_fund error: {e}"
+
+    if name == "prune_memory":
+        keep_days = int(args.get("keep_days", 90))
+        keep_recent = int(args.get("keep_recent", 2000))
+        if memory is None:
+            return "no memory instance available"
+        try:
+            result = memory.prune(keep_days=keep_days, keep_recent=keep_recent)
+            print(f"  [memory] pruned: {result['before']} → {result['after']} ({result['removed']} removed)")
+            return f"Pruned memory: {result['before']:,} → {result['after']:,} rows ({result['removed']:,} removed)."
+        except Exception as e:
+            return f"prune failed: {e}"
 
     if name == "run_code":
         import subprocess as _sp, sys as _sys, tempfile as _tf, os as _os
