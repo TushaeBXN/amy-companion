@@ -323,6 +323,40 @@ class Memory:
         candidates.sort(key=lambda x: x[1], reverse=True)
         return candidates[:3]  # top 3 near-matches
 
+    def prune(self, keep_days: int = 90, keep_recent: int = 2000) -> dict:
+        """Remove old low-value memories to keep the DB fast.
+
+        Strategy:
+        - Always keep the most recent `keep_recent` rows
+        - Always keep rows with no timestamp (founding facts / identity layer)
+        - Delete timestamped rows older than `keep_days` beyond the keep_recent floor
+        Returns a dict with before/after counts.
+        """
+        before = self.db.execute("SELECT COUNT(*) FROM mem").fetchone()[0]
+
+        # Delete old timestamped rows that fall outside keep_recent
+        self.db.execute(
+            """
+            DELETE FROM mem
+            WHERE ts IS NOT NULL
+              AND id NOT IN (
+                SELECT id FROM mem ORDER BY ts DESC LIMIT ?
+              )
+              AND ts < datetime('now', ? || ' days')
+            """,
+            (keep_recent, f"-{keep_days}"),
+        )
+        self.db.commit()
+
+        # Also delete rows with no embedding (never searchable, pure noise)
+        self.db.execute(
+            "DELETE FROM mem WHERE emb IS NULL AND ts IS NOT NULL AND ts < datetime('now', '-30 days')"
+        )
+        self.db.commit()
+
+        after = self.db.execute("SELECT COUNT(*) FROM mem").fetchone()[0]
+        return {"before": before, "after": after, "removed": before - after}
+
     def search(self, query, k=2, min_score=0.65, exclude_sources=None):
         if exclude_sources:
             placeholders = ",".join("?" * len(exclude_sources))

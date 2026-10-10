@@ -25,6 +25,14 @@
       "enabled": true
     },
     {
+      "id": "memory_prune",
+      "description": "Run prune_memory to clean out old low-value memories. Keep it quiet — no need to message Brian unless something unexpected happened. Just run it and log the result.",
+      "at": "03:00",
+      "on": "sunday",
+      "voice": false,
+      "enabled": true
+    },
+    {
       "id": "email_check",
       "description": "Check Amy's email inbox for anything that needs a response. If there are messages, summarize them for Brian on Telegram — sender, subject, one line on what they need. Don't reply without Brian's say-so.",
       "every_hours": 4,
