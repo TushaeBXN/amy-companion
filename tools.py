@@ -1017,6 +1017,27 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "delegate",
+            "description": (
+                "Spin up a focused sub-agent to handle a specific task without consuming "
+                "your main conversation context. Use for: deep research, long drafts, "
+                "data analysis, or any task that needs sustained focus. "
+                "The sub-agent gets its own clean context and reports back."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {"type": "string", "description": "What the sub-agent should do. Be specific — include all context it needs since it has no memory of the current conversation."},
+                    "role": {"type": "string", "description": "Sub-agent persona/role (e.g. 'researcher', 'writer', 'analyst', 'coder'). Default: 'assistant'."},
+                    "timeout": {"type": "integer", "description": "Max seconds to wait for result (default 120)."},
+                },
+                "required": ["task"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "prune_memory",
             "description": "Clean up old memories to keep recall fast. Run this once a week. Keeps the most recent 2000 memories and anything from the last 90 days; removes stale noise beyond that.",
             "parameters": {
@@ -2009,6 +2030,34 @@ def dispatch(name, args, memory=None):
             return f"unknown action: {action}"
         except Exception as e:
             return f"family_fund error: {e}"
+
+    if name == "delegate":
+        import worker as _worker
+        task = args.get("task", "").strip()
+        if not task:
+            return "need a task description"
+        role = args.get("role", "assistant").strip()
+        timeout = min(int(args.get("timeout", 120)), 300)
+        model = getattr(_worker, "_model", None) or os.environ.get("AMY_MODEL", "gemma12-test")
+        system = (
+            f"You are a focused {role}. Complete the task given by the user. "
+            "Be thorough and specific. Return only your result — no preamble, no sign-off."
+        )
+        print(f"  [delegate] sub-agent ({role}): {task[:60]}...")
+        try:
+            resp = _worker.ollama_chat(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": task},
+                ],
+                options={"num_predict": 2048},
+            )
+            result = resp.message.content.strip()
+            print(f"  [delegate] done ({len(result)} chars)")
+            return result or "(sub-agent returned empty response)"
+        except Exception as e:
+            return f"delegate failed: {e}"
 
     if name == "prune_memory":
         keep_days = int(args.get("keep_days", 90))
