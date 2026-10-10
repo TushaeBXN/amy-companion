@@ -1722,6 +1722,7 @@ def dispatch(name, args, memory=None):
 
     if name == "bottube_check":
         import bottube as _bt
+        import json as _json
         action = args.get("action", "earnings")
         try:
             if action == "earnings":
