@@ -620,6 +620,58 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 _pending: dict = {}
 
 
+async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Transcribe a voice message with Whisper and pass the text to Amy."""
+    if not update.message:
+        return
+    person, _ = _identify(update.effective_chat.id, "")
+    if not person:
+        return
+    if person["role"] == "owner":
+        worker.note_message(update.effective_chat.id)
+    await ctx.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+
+    voice = update.message.voice or update.message.audio
+    if not voice:
+        return
+    file = await ctx.bot.get_file(voice.file_id)
+    with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
+        ogg_path = tmp.name
+    try:
+        await file.download_to_drive(ogg_path)
+        # Convert ogg→wav for whisper
+        wav_path = ogg_path.replace(".ogg", ".wav")
+        import subprocess as _sp
+        _sp.run(["ffmpeg", "-y", "-i", ogg_path, "-ar", "16000", "-ac", "1", wav_path],
+                capture_output=True, check=True)
+        import whisper as _whisper
+        _wmodel = getattr(on_voice, "_wmodel", None)
+        if _wmodel is None:
+            print("  [stt] loading Whisper base model…", flush=True)
+            on_voice._wmodel = _whisper.load_model("base")
+            _wmodel = on_voice._wmodel
+        result = _wmodel.transcribe(wav_path, fp16=False)
+        text = result.get("text", "").strip()
+    except Exception as e:
+        _log(f"✗ STT failed: {e}")
+        await update.message.reply_text("Couldn't transcribe that — try sending text for now.")
+        return
+    finally:
+        for p in (ogg_path, wav_path if 'wav_path' in dir() else ""):
+            try:
+                if p: os.unlink(p)
+            except OSError:
+                pass
+
+    if not text:
+        await update.message.reply_text("I got your voice message but couldn't make out the words.")
+        return
+
+    _log(f"  [stt] transcribed ({len(text)} chars): {text[:60]}…")
+    await update.message.reply_text(f"🎙 _{text}_", parse_mode="Markdown")
+    await _respond(update, person, text, None)
+
+
 async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Handle photos — with or without a caption."""
     if not update.message:
@@ -779,11 +831,13 @@ def main():
         sys.exit("TELEGRAM_TOKEN not set — check your .env.amy file")
     app = Application.builder().token(token).concurrent_updates(True).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
+    app.add_handler(MessageHandler(filters.VOICE, on_voice))
+    app.add_handler(MessageHandler(filters.AUDIO, on_voice))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, on_document))
     app.add_error_handler(_error_handler)
-    worker.start(os.environ.get("AMY_MODEL", "amy-hermes"), mem, token)
-    print("Amy is on Telegram. She can now see photos you send her.")
+    worker.start(os.environ.get("AMY_MODEL", "gemma12-test"), mem, token)
+    print("Amy is on Telegram. Voice messages, photos, and documents supported.")
     app.run_polling(drop_pending_updates=True)
 
 
