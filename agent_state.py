@@ -172,6 +172,26 @@ def mark_active(goal_id: str) -> dict | None:
     return get_goal(goal_id)
 
 
+def set_ground_truth(goal_id: str, step_index: int, actually_passed: bool,
+                     note: str = "") -> dict | None:
+    """Externally mark whether a step's decision was correct.
+
+    Call this after inspecting real-world results to build a trustworthy
+    verification_accuracy metric. ground_truth is independent of Amy's judgment.
+    """
+    goal = get_goal(goal_id)
+    if not goal:
+        return None
+    evidence = goal["evidence"]
+    for e in evidence:
+        if e.get("step") == step_index and "ground_truth" not in e:
+            e["ground_truth"] = actually_passed
+            e["ground_truth_note"] = note
+            break
+    _update(goal_id, evidence=json.dumps(evidence))
+    return get_goal(goal_id)
+
+
 def record_step_result(goal_id: str, step_index: int, result: str,
                        next_action: str = "", advance: bool = True,
                        observed: str = "", decision: str = "inconclusive",
@@ -274,37 +294,109 @@ def goal_summary(goal: dict) -> str:
 
 
 def outcome_stats() -> dict:
-    """Aggregate pass/fail/inconclusive counts across all completed and blocked goals.
+    """Aggregate metrics across all non-abandoned goals.
 
-    Returns a dict suitable for tracking improvement over time:
-      total_goals, completed, blocked, total_steps, passed, failed, inconclusive,
-      verification_accuracy (passed / (passed + failed), excludes inconclusive)
+    Step-level:
+      total_steps, passed (det+model), failed, inconclusive
+      det_pass, det_fail, model_pass, model_fail — breakdown by method
+      verification_accuracy — passed / (passed+failed); NOT ground-truth accuracy
+
+    Goal-level:
+      total_goals, completed, blocked, abandoned, active_or_pending
+      completion_rate — completed / (completed+blocked)
+      avg_attempts_completed — mean attempts for completed goals
+      avg_retries_per_step — retries = attempts > 1 per distinct step
+
+    Ground-truth accuracy (only populated when set_ground_truth() has been called):
+      gt_labels      — number of steps with ground truth set
+      gt_correct     — Amy's decision agreed with ground truth
+      gt_accuracy    — gt_correct / gt_labels
+      gt_false_pass  — Amy said pass, ground truth says fail (dangerous)
+      gt_false_fail  — Amy said fail, ground truth says pass (conservative)
     """
     db = _conn()
-    rows = db.execute(
-        "SELECT evidence FROM agent_goals WHERE status IN ('completed', 'blocked')"
-    ).fetchall()
-    stats = {"total_goals": len(rows), "completed": 0, "blocked": 0,
-             "total_steps": 0, "passed": 0, "failed": 0, "inconclusive": 0}
-    for row in db.execute("SELECT status, COUNT(*) FROM agent_goals GROUP BY status").fetchall():
-        if row[0] in ("completed", "blocked"):
-            stats[row[0]] = row[1]
-    for row in rows:
-        try:
-            evidence = json.loads(row[0] or "[]")
-        except Exception:
-            evidence = []
-        for e in evidence:
-            stats["total_steps"] += 1
+    all_goals = [_row_to_dict(r) for r in db.execute("SELECT * FROM agent_goals").fetchall()]
+
+    # Goal-level counts
+    by_status = {}
+    for g in all_goals:
+        by_status[g["status"]] = by_status.get(g["status"], 0) + 1
+
+    completed_goals = [g for g in all_goals if g["status"] == "completed"]
+    blocked_goals   = [g for g in all_goals if g["status"] == "blocked"]
+    decided_goals   = completed_goals + blocked_goals
+
+    avg_attempts = (
+        round(sum(g["attempts"] for g in completed_goals) / len(completed_goals), 1)
+        if completed_goals else None
+    )
+    completion_rate = (
+        round(len(completed_goals) / len(decided_goals), 3) if decided_goals else None
+    )
+
+    # Step-level counts
+    step_counts = {k: 0 for k in ("total", "passed", "failed", "inconclusive",
+                                   "det_pass", "det_fail", "model_pass", "model_fail")}
+    gt = {"labels": 0, "correct": 0, "false_pass": 0, "false_fail": 0}
+
+    for g in all_goals:
+        if g["status"] == "abandoned":
+            continue
+        seen_steps = {}  # step_idx → attempt count (for retry calc)
+        for e in (g.get("evidence") or []):
+            step_counts["total"] += 1
             d = e.get("decision", "")
             if "pass" in d:
-                stats["passed"] += 1
+                step_counts["passed"] += 1
             elif "fail" in d:
-                stats["failed"] += 1
+                step_counts["failed"] += 1
             else:
-                stats["inconclusive"] += 1
-    decided = stats["passed"] + stats["failed"]
-    stats["verification_accuracy"] = round(stats["passed"] / decided, 3) if decided else None
+                step_counts["inconclusive"] += 1
+            for key in ("det_pass", "det_fail", "model_pass", "model_fail"):
+                if d == key.replace("_", "_"):
+                    step_counts[key] += 1
+            # Ground-truth audit
+            if "ground_truth" in e:
+                gt["labels"] += 1
+                amy_passed = e.get("passed", False)
+                truth = e["ground_truth"]
+                if amy_passed == truth:
+                    gt["correct"] += 1
+                elif amy_passed and not truth:
+                    gt["false_pass"] += 1
+                elif not amy_passed and truth:
+                    gt["false_fail"] += 1
+            idx = e.get("step", -1)
+            seen_steps[idx] = seen_steps.get(idx, 0) + 1
+
+    decided_steps = step_counts["passed"] + step_counts["failed"]
+    stats = {
+        # Goal-level
+        "total_goals": len(all_goals),
+        "completed": by_status.get("completed", 0),
+        "blocked": by_status.get("blocked", 0),
+        "abandoned": by_status.get("abandoned", 0),
+        "active_or_pending": by_status.get("active", 0) + by_status.get("pending", 0),
+        "completion_rate": completion_rate,
+        "avg_attempts_completed": avg_attempts,
+        # Step-level
+        "total_steps": step_counts["total"],
+        "passed": step_counts["passed"],
+        "failed": step_counts["failed"],
+        "inconclusive": step_counts["inconclusive"],
+        "det_pass": step_counts["det_pass"],
+        "det_fail": step_counts["det_fail"],
+        "model_pass": step_counts["model_pass"],
+        "model_fail": step_counts["model_fail"],
+        "verification_accuracy": round(step_counts["passed"] / decided_steps, 3)
+                                  if decided_steps else None,
+        # Ground-truth (only meaningful when labels > 0)
+        "gt_labels": gt["labels"],
+        "gt_correct": gt["correct"],
+        "gt_accuracy": round(gt["correct"] / gt["labels"], 3) if gt["labels"] else None,
+        "gt_false_pass": gt["false_pass"],
+        "gt_false_fail": gt["false_fail"],
+    }
     return stats
 
 
