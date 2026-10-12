@@ -64,7 +64,7 @@ def _log(line: str):
 
 
 mem        = Memory()
-amy_state  = _state.InternalState()
+amy_state  = _state.InternalState.restore()   # shared state — reads amy_state.json
 _learnings_ctx = _learnings.load_recent_learnings() if _learnings else ""
 
 
