@@ -25,6 +25,14 @@
       "enabled": true
     },
     {
+      "id": "youtube_learning",
+      "description": "Scan tracked YouTube channels for new videos. For each new video, call learn_from_video with focus 'tools and techniques I can implement to improve myself or help Brian'. After learning, store the best insight in memory. Watch at most 3 videos per session to avoid overloading.",
+      "at": "14:00",
+      "on": "daily",
+      "voice": false,
+      "enabled": true
+    },
+    {
       "id": "memory_prune",
       "description": "Run prune_memory to clean out old low-value memories. Keep it quiet — no need to message Brian unless something unexpected happened. Just run it and log the result.",
       "at": "03:00",
