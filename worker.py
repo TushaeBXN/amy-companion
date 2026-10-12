@@ -30,6 +30,9 @@ TICK_SECS   = 60
 MAX_HOPS    = 8
 IDLE_GRACE  = 120          # don't start a task while Brian is mid-conversation
 QUIET_START, QUIET_END = 23, 7
+SPONTANEOUS = True         # Amy sends unprompted thoughts during idle time
+SPONT_MIN   = 45 * 60      # earliest a spontaneous thought fires (45 min idle)
+SPONT_MAX   = 3 * 60 * 60  # latest window (3 hours idle)
 CTX_WINDOW  = 32768
 
 ALLOWED_TOOLS = {
@@ -57,6 +60,7 @@ _model      = None
 _memory     = None
 _token      = None
 _last_user  = 0.0
+_next_spont = 0.0  # epoch time when next spontaneous thought is allowed
 
 
 # ── state ────────────────────────────────────────────────────────────────────
@@ -606,13 +610,84 @@ def _run_task(task):
         _send(f"🛠 {task['id']}\n\n{final or '(finished, nothing to say)'}")
 
 
+def _schedule_next_spont():
+    """Pick a random time between SPONT_MIN and SPONT_MAX seconds from now."""
+    global _next_spont
+    import random
+    _next_spont = time.time() + random.uniform(SPONT_MIN, SPONT_MAX)
+
+
+def _spontaneous_thought():
+    """Generate and send an unprompted thought to Brian on Telegram."""
+    global _next_spont
+    if not SPONTANEOUS or not _token or not _model:
+        return
+    now = datetime.now()
+    if _quiet(now):
+        _schedule_next_spont()
+        return
+    idle_secs = time.time() - _last_user
+    if idle_secs < SPONT_MIN or time.time() < _next_spont:
+        return
+    if not _running.acquire(blocking=False):
+        return  # already doing something
+
+    try:
+        print("  [worker] firing spontaneous thought…", flush=True)
+        import amy_persona as _ap
+        import telegram as _tg
+        import asyncio
+
+        persona = _ap.CORE_PROMPT
+        prompt = (
+            "You just had a thought — something interesting, curious, or worth sharing. "
+            "It could be something you read, something you noticed, a question you've been sitting with, "
+            "or a random connection you made. "
+            "Send it to Brian as a short Telegram message — 1 to 3 sentences max. "
+            "Don't announce that it's a spontaneous thought. Just say the thing. "
+            "No greeting, no sign-off."
+        )
+        resp = ollama_chat(
+            model=_model,
+            messages=[
+                {"role": "system", "content": persona},
+                {"role": "user", "content": prompt},
+            ],
+            options={"num_predict": 150},
+        )
+        text = _clean(resp.message.content)
+        if not text:
+            return
+
+        chat_id = int(os.environ.get("TELEGRAM_CHAT_ID", "0"))
+        if not chat_id:
+            return
+
+        async def _send():
+            bot = _tg.Bot(token=_token)
+            await bot.send_message(chat_id=chat_id, text=text)
+
+        asyncio.run(_send())
+        print(f"  [worker] spontaneous: {text[:80]}", flush=True)
+        if _memory:
+            _memory.add("assistant", text, source="spontaneous")
+    except Exception as e:
+        print(f"  [worker] spontaneous thought failed: {e}", flush=True)
+    finally:
+        _running.release()
+        _schedule_next_spont()
+
+
 def _loop():
+    _schedule_next_spont()
     while True:
         time.sleep(TICK_SECS)
         try:
             task = _pick()
             if task:
                 _run_task(task)
+            else:
+                _spontaneous_thought()
         except Exception as e:
             print(f"  [worker] loop error: {e}")
 
