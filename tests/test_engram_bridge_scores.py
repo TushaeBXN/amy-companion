@@ -1,4 +1,4 @@
-"""engram_bridge.search reports the score its results are ordered by.
+"""engram_bridge.search reports the score its results are ordered by, and where each hit lives.
 
 Run:  pytest tests/test_engram_bridge_scores.py -v
 (No Engram install needed: the searcher is faked.)
@@ -43,3 +43,12 @@ def test_reranked_scores_follow_the_order(monkeypatch):
     assert scores == sorted(scores, reverse=True)
     assert scores[:2] == [0.982, 0.5]
     assert 0 < scores[2] < 0.001
+
+
+def test_location_comes_from_metadata(monkeypatch):
+    out = _search_with(monkeypatch, [
+        {"text": "a", "final_score": 0.5,
+         "metadata": {"wing": "amy", "room": "music", "hall": "facts"}},
+        {"text": "b", "final_score": 0.4},  # no metadata: empty strings, no crash
+    ])
+    assert [(r["wing"], r["room"], r["hall"]) for r in out] == [("amy", "music", "facts"), ("", "", "")]
