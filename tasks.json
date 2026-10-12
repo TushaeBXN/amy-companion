@@ -2,7 +2,7 @@
   "tasks": [
     {
       "id": "morning_checkin",
-      "description": "Send Brian a short morning check-in on Telegram. Check his calendar first (check_calendar with days=1) and mention anything on his schedule today. Add one thing worth knowing — something interesting, a reminder, or just a thought. Under 3 sentences. Sound like yourself, not a news anchor.",
+      "description": "Send Brian a short morning check-in on Telegram. Before writing: check his calendar (check_calendar days=1), skim Hacker News (read_feed source=hackernews limit=5), and check r/LocalLLaMA (read_feed source=reddit filter=localllama limit=3). Pick one genuinely interesting thing from those feeds and mention it alongside anything on his calendar. Under 4 sentences. Sound like yourself.",
       "at": "08:00",
       "on": "daily",
       "voice": true,

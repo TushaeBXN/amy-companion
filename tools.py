@@ -1017,6 +1017,33 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "read_feed",
+            "description": (
+                "Read live intelligence feeds to stay current: Hacker News top stories, "
+                "ArXiv latest AI/ML papers, GitHub trending repos, Reddit hot posts, "
+                "or Product Hunt launches. Use during free time to find things to learn or share with Brian."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "enum": ["hackernews", "arxiv", "github", "reddit", "producthunt"],
+                        "description": "Which feed to read.",
+                    },
+                    "filter": {
+                        "type": "string",
+                        "description": "Optional filter: arxiv category (ai/ml/cv/nlp/robotics), github language (python/javascript/etc), reddit subreddit (localllama/machinelearning/indiehackers/etc), github timeframe (daily/weekly).",
+                    },
+                    "limit": {"type": "integer", "description": "Max items to return (default 8)."},
+                },
+                "required": ["source"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "learn_from_video",
             "description": (
                 "Watch a YouTube video by reading its transcript, extract key insights, "
@@ -2073,6 +2100,30 @@ def dispatch(name, args, memory=None):
             return f"unknown action: {action}"
         except Exception as e:
             return f"family_fund error: {e}"
+
+    if name == "read_feed":
+        import feeds as _feeds
+        source = args.get("source", "hackernews")
+        filt = args.get("filter", "")
+        limit = int(args.get("limit", 8))
+        print(f"  [feeds] reading: {source}" + (f" ({filt})" if filt else ""))
+        try:
+            if source == "hackernews":
+                return _feeds.hacker_news(limit=limit)
+            if source == "arxiv":
+                return _feeds.arxiv_papers(category=filt or "ai", limit=limit)
+            if source == "github":
+                parts = filt.split() if filt else []
+                lang = parts[0] if parts else ""
+                since = parts[1] if len(parts) > 1 else "daily"
+                return _feeds.github_trending(language=lang, since=since)
+            if source == "reddit":
+                return _feeds.reddit_hot(subreddit=filt or "localllama", limit=limit)
+            if source == "producthunt":
+                return _feeds.product_hunt_today()
+            return f"unknown source: {source}"
+        except Exception as e:
+            return f"feed error: {e}"
 
     if name == "learn_from_video":
         import youtube_amy as _yt
