@@ -713,8 +713,7 @@ def _run_goal(goal: dict):
 
     try:
         result = _execute_goal_step(goal_id, goal, step_idx, step_desc)
-        # Verify: ask Amy if this step succeeded
-        verified, next_action = _verify_step(goal, step_idx, step_desc, result)
+        verified, decision, next_action = _verify_step(goal, step_idx, step_desc, result)
         advance = verified
         if not verified and goal["attempts"] >= MAX_STEP_ATTEMPTS * (step_idx + 1):
             _goals.block_goal(goal_id,
@@ -723,7 +722,8 @@ def _run_goal(goal: dict):
             return
 
         _goals.record_step_result(goal_id, step_idx, result,
-                                  next_action=next_action, advance=advance)
+                                  next_action=next_action, advance=advance,
+                                  observed=result, decision=decision, passed=verified)
 
         # If all steps done, mark complete
         updated = _goals.get_goal(goal_id)
@@ -745,30 +745,68 @@ def _run_goal(goal: dict):
 
 
 def _execute_goal_planning(goal_id: str, goal: dict):
-    """Ask Amy to break the objective into concrete steps; persist the plan."""
+    """Ask Amy to break the objective into steps + verification criteria."""
     system = (_memory.wake_up() if _memory else "") + WORK_PERSONA
-    prompt = (
+    # Step 1: get the plan
+    plan_prompt = (
         f"You have a new goal: {goal['objective']}\n"
         f"Reason: {goal['reason'] or 'not specified'}\n\n"
-        "Break this into 3–7 concrete, actionable steps — each one something you can do "
-        "with your available tools in a single execution round. "
+        "Break this into 3–7 concrete, actionable steps — each one something you can "
+        "accomplish with your available tools in a single execution round. "
         "Reply with ONLY a numbered list, one step per line, no preamble."
     )
     try:
         resp = ollama_chat(
             model=_model,
             messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": prompt}],
+                      {"role": "user", "content": plan_prompt}],
             options={"num_predict": 400, "temperature": 0.5},
         )
         raw = _clean(resp["message"].get("content", ""))
         steps = [re.sub(r"^\d+[\.\)]\s*", "", line).strip()
                  for line in raw.splitlines() if re.match(r"^\d+", line.strip())]
-        if steps:
-            _goals.set_plan(goal_id, steps)
-            print(f"  [worker] goal '{goal_id}' plan: {steps}", flush=True)
+        if not steps:
+            return
+        # Step 2: get verification criteria for each step
+        criteria_prompt = (
+            f"For each step below, write two short lines:\n"
+            f"EXPECTED: what a successful result looks like\n"
+            f"EVIDENCE: one specific, checkable thing that proves it worked "
+            f"(a file path, a keyword in output, a count, an exit code)\n\n"
+            + "\n".join(f"{i+1}. {s}" for i, s in enumerate(steps))
+            + "\n\nFormat your reply as:\n"
+            "1.\nEXPECTED: ...\nEVIDENCE: ...\n2.\nEXPECTED: ...\nEVIDENCE: ...\netc."
+        )
+        resp2 = ollama_chat(
+            model=_model,
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": criteria_prompt}],
+            options={"num_predict": 600, "temperature": 0.3},
+        )
+        criteria = _parse_criteria(resp2["message"].get("content", ""), len(steps))
+        _goals.set_plan(goal_id, steps, criteria)
+        print(f"  [worker] goal '{goal_id}' plan ({len(steps)} steps) + criteria set", flush=True)
     except Exception as e:
         print(f"  [worker] goal planning failed: {e}", flush=True)
+
+
+def _parse_criteria(raw: str, n_steps: int) -> list[dict]:
+    """Parse the criteria response into a list of {expected, evidence_required} dicts."""
+    criteria = []
+    # Split on step number markers
+    blocks = re.split(r"^\d+\.\s*$", raw, flags=re.MULTILINE)
+    blocks = [b.strip() for b in blocks if b.strip()]
+    for block in blocks[:n_steps]:
+        exp_m = re.search(r"EXPECTED:\s*(.+)", block, re.IGNORECASE)
+        ev_m = re.search(r"EVIDENCE:\s*(.+)", block, re.IGNORECASE)
+        criteria.append({
+            "expected": exp_m.group(1).strip() if exp_m else "",
+            "evidence_required": ev_m.group(1).strip() if ev_m else "",
+        })
+    # Pad to n_steps
+    while len(criteria) < n_steps:
+        criteria.append({"expected": "", "evidence_required": ""})
+    return criteria
 
 
 def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) -> str:
@@ -809,30 +847,100 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
     return final or "(no output)"
 
 
-def _verify_step(goal: dict, step_idx: int, step_desc: str, result: str) -> tuple[bool, str]:
-    """Ask Amy: did this step actually succeed? Returns (verified, next_action)."""
+def _deterministic_check(step_desc: str, evidence_required: str,
+                         result: str) -> tuple[bool | None, str]:
+    """Run hard checks that don't require a model call.
+
+    Returns (passed, reason) where passed=None means inconclusive.
+    Deterministic failures are definitive; only inconclusive cases go to the model.
+    """
+    # Definitive failure: tool error or empty output
+    if not result or result.strip() in ("(no output)", ""):
+        return False, "no output produced"
+    low = result.lower()
+    if low.startswith("[tool_error]") or re.match(r"^\[?error\b", low):
+        return False, f"tool error: {result[:120]}"
+
+    # File existence check — if step or criteria mentions writing/saving a file
+    save_re = re.compile(r"(?i)\b(save|write|create|output to|saved to|stored in)\b")
+    path_re = re.compile(r"(work/[\w/.\-]+|/[\w/.\-]{6,})")
+    if save_re.search(step_desc) or save_re.search(evidence_required):
+        paths = path_re.findall(result)
+        for p in paths:
+            p = p.strip().rstrip(".,)")
+            full = os.path.join(HERE, p) if not os.path.isabs(p) else p
+            if os.path.exists(full) and os.path.getsize(full) > 0:
+                return True, f"file confirmed: {p}"
+        # Path mentioned but not found — inconclusive (model may have described it wrong)
+
+    # Evidence keyword check — if evidence_required names something checkable
+    if evidence_required:
+        ev_low = evidence_required.lower()
+        # Count check: "at least N" or "N results"
+        count_m = re.search(r"at least (\d+)|(\d+)\s+result", ev_low)
+        if count_m:
+            n = int(count_m.group(1) or count_m.group(2))
+            found = len(re.findall(r"\n[-•*]|\d+\.", result))
+            if found >= n:
+                return True, f"found {found} items (required {n})"
+            if found == 0:
+                return False, f"expected {n} items, found none"
+        # Keyword present check: "contains X" or "includes X"
+        kw_m = re.search(r"(?:contains?|includes?|mentions?)\s+[\"']?(\w[\w\s]{1,30})[\"']?", ev_low)
+        if kw_m:
+            kw = kw_m.group(1).strip().lower()
+            if kw in low:
+                return True, f"keyword '{kw}' found in output"
+
+    return None, "inconclusive — needs model judgment"
+
+
+def _verify_step(goal: dict, step_idx: int, step_desc: str,
+                 result: str) -> tuple[bool, str, str]:
+    """Verify a step result. Returns (passed, decision, next_action).
+
+    Strategy:
+      1. Deterministic checks (file exists, error markers, keyword counts).
+      2. Model judgment only when deterministic check is inconclusive.
+    """
+    criteria_list = goal.get("criteria") or []
+    crit = criteria_list[step_idx] if step_idx < len(criteria_list) else {}
+    evidence_required = crit.get("evidence_required", "")
+    expected = crit.get("expected", "")
+
+    # 1. Deterministic check
+    passed, reason = _deterministic_check(step_desc, evidence_required, result)
+    if passed is True:
+        return True, "pass", f"Verified deterministically: {reason}. Next: proceed to step {step_idx + 2}."
+    if passed is False:
+        return False, "fail", f"Failed deterministically: {reason}. Retry this step."
+
+    # 2. Model judgment (inconclusive)
     system = (_memory.wake_up() if _memory else "") + WORK_PERSONA
     prompt = (
         f"Goal: {goal['objective']}\n"
         f"Step {step_idx + 1}: {step_desc}\n"
-        f"Result: {result[:800]}\n\n"
+        f"Expected: {expected or '(not specified)'}\n"
+        f"Evidence required: {evidence_required or '(not specified)'}\n"
+        f"Observed result: {result[:800]}\n\n"
         "Did this step succeed? Answer YES or NO on the first line, then one sentence "
-        "describing what should happen next."
+        "on what should happen next."
     )
     try:
         resp = ollama_chat(
             model=_model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": prompt}],
-            options={"num_predict": 100, "temperature": 0.3},
+            options={"num_predict": 120, "temperature": 0.3},
         )
         raw = _clean(resp["message"].get("content", ""))
-        first_line = raw.splitlines()[0].upper() if raw else ""
-        verified = "YES" in first_line
+        first = raw.splitlines()[0].upper() if raw else ""
+        verified = "YES" in first and "NO" not in first
         next_action = raw.split("\n", 1)[1].strip() if "\n" in raw else raw
-        return verified, next_action
+        decision = "pass" if verified else "fail"
+        return verified, decision, next_action or ("Proceed." if verified else "Retry.")
     except Exception:
-        return True, ""   # assume success if verification fails
+        return True, "inconclusive", "Verification failed — assuming success."
 
 
 def _heartbeat_decision() -> str:
