@@ -790,7 +790,58 @@ PLANNING: /task-to-project
 TECHNICAL: /code-debugger | /data-pipeline-builder | /api-integrator | /ai-chatbot-builder | /ui-mockup-builder
 AI LEARNING: /ai-learning-roadmap-advisor
 
-When Brian's task matches one — name it and call read_skill() yourself to run the full workflow."""
+When Brian's task matches one — name it and call read_skill() yourself to run the full workflow.
+
+## SELF-LEARNED RULES
+<!-- Amy appends her own learnings here via update_persona tool. Don't edit manually. -->
+- Always check system_status before starting a heavy generation task.
+"""
+
+
+# ── Self-editing ───────────────────────────────────────────────────────────────
+
+import pathlib as _pl
+import re as _re_edit
+
+_PERSONA_PATH = _pl.Path(__file__)
+_MARKER = "<!-- Amy appends her own learnings here via update_persona tool. Don't edit manually. -->
+- Always check system_status before starting a heavy generation task."
+
+
+def append_learning(rule: str) -> str:
+    """Add a new self-learned rule to Amy's persona permanently."""
+    src = _PERSONA_PATH.read_text()
+    if rule.strip() in src:
+        return "already in persona"
+    rule_line = f"- {rule.strip()}"
+    new_src = src.replace(
+        _MARKER,
+        _MARKER + "\n" + rule_line,
+    )
+    _PERSONA_PATH.write_text(new_src)
+    return f"Added to persona: {rule_line}"
+
+
+def remove_learning(fragment: str) -> str:
+    """Remove a self-learned rule by matching a fragment of its text."""
+    src = _PERSONA_PATH.read_text()
+    lines = src.splitlines()
+    new_lines = [l for l in lines if fragment.lower() not in l.lower()
+                 or not l.strip().startswith("- ")]
+    if len(new_lines) == len(lines):
+        return "no matching rule found"
+    _PERSONA_PATH.write_text("\n".join(new_lines))
+    return f"Removed rule containing: {fragment}"
+
+
+def list_learnings() -> str:
+    """Return all self-learned rules."""
+    src = _PERSONA_PATH.read_text()
+    after = src.split(_MARKER, 1)
+    if len(after) < 2:
+        return "no self-learned rules yet"
+    section = after[1].split('"""', 1)[0].strip()
+    return section or "no self-learned rules yet"
 
 
 # ── Fast loading ──────────────────────────────────────────────────────────────

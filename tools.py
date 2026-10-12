@@ -1017,6 +1017,63 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "system_status",
+            "description": "Check the Mac Mini's CPU, RAM, GPU, disk usage and what model is loaded. Use when Brian asks how the machine is doing, or before starting a heavy task.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_persona",
+            "description": (
+                "Permanently edit your own personality and rules. Use after learning something that should "
+                "change how you behave forever — a writing rule, a behavioral constraint, a new default. "
+                "Changes survive restarts. Don't use for temporary preferences; use memory for those."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["add", "remove", "list"],
+                        "description": "add a rule, remove one by fragment, or list current self-learned rules.",
+                    },
+                    "rule": {"type": "string", "description": "The rule to add or fragment to remove."},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browse",
+            "description": (
+                "Control a real browser to navigate pages, click, fill forms, extract content, or automate "
+                "web tasks Brian asks for. Playwright-powered. Use for tasks that need JS rendering, "
+                "login sessions, or multi-step web flows."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to navigate to."},
+                    "action": {
+                        "type": "string",
+                        "enum": ["read", "screenshot", "click", "fill", "extract"],
+                        "description": "read=get page text, screenshot=capture page, click=click an element, fill=fill a form field, extract=pull structured data.",
+                    },
+                    "selector": {"type": "string", "description": "CSS selector or text for click/fill actions."},
+                    "value": {"type": "string", "description": "Value to type (for fill action)."},
+                    "extract_prompt": {"type": "string", "description": "What structured data to extract from the page (for extract action)."},
+                },
+                "required": ["url", "action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "read_feed",
             "description": (
                 "Read live intelligence feeds to stay current: Hacker News top stories, "
@@ -2100,6 +2157,123 @@ def dispatch(name, args, memory=None):
             return f"unknown action: {action}"
         except Exception as e:
             return f"family_fund error: {e}"
+
+    if name == "system_status":
+        import sysmon as _sm
+        try:
+            return _sm.summary()
+        except Exception as e:
+            return f"system_status error: {e}"
+
+    if name == "update_persona":
+        import amy_persona as _ap
+        action = args.get("action", "list")
+        rule = args.get("rule", "").strip()
+        try:
+            if action == "add":
+                if not rule:
+                    return "need a rule"
+                result = _ap.append_learning(rule)
+                print(f"  [persona] {result}")
+                return result
+            if action == "remove":
+                if not rule:
+                    return "need a fragment to match"
+                return _ap.remove_learning(rule)
+            if action == "list":
+                return _ap.list_learnings()
+            return f"unknown action: {action}"
+        except Exception as e:
+            return f"update_persona error: {e}"
+
+    if name == "browse":
+        from playwright.sync_api import sync_playwright
+        url = args.get("url", "").strip()
+        action = args.get("action", "read")
+        if not url:
+            return "need a url"
+        print(f"  [browser] {action}: {url}")
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True,
+                    args=["--disable-blink-features=AutomationControlled"])
+                ctx = browser.new_context(
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                               "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    viewport={"width": 1280, "height": 800},
+                )
+                page = ctx.new_page()
+                page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                page.wait_for_timeout(1500)
+
+                if action == "read":
+                    import re as _re2
+                    from bs4 import BeautifulSoup
+                    html = page.content()
+                    soup = BeautifulSoup(html, "html.parser")
+                    for tag in soup(["script", "style", "nav", "footer", "header"]):
+                        tag.decompose()
+                    article = soup.find("article") or soup.find("main") or soup.body
+                    text = article.get_text(separator="\n", strip=True) if article else ""
+                    text = _re2.sub(r"\n{3,}", "\n\n", text)[:6000]
+                    browser.close()
+                    return text or "(no readable content)"
+
+                if action == "screenshot":
+                    import base64, tempfile, os as _os2
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+                        path = f.name
+                    page.screenshot(path=path, full_page=False)
+                    browser.close()
+                    return f"Screenshot saved: {path}"
+
+                if action == "click":
+                    selector = args.get("selector", "")
+                    if not selector:
+                        browser.close()
+                        return "need a selector"
+                    page.click(selector, timeout=8000)
+                    page.wait_for_timeout(1000)
+                    browser.close()
+                    return f"Clicked: {selector}"
+
+                if action == "fill":
+                    selector = args.get("selector", "")
+                    value = args.get("value", "")
+                    if not selector:
+                        browser.close()
+                        return "need a selector"
+                    page.fill(selector, value, timeout=8000)
+                    browser.close()
+                    return f"Filled {selector} with value."
+
+                if action == "extract":
+                    import re as _re2
+                    from bs4 import BeautifulSoup
+                    extract_prompt = args.get("extract_prompt", "")
+                    html = page.content()
+                    soup = BeautifulSoup(html, "html.parser")
+                    for tag in soup(["script", "style", "nav", "footer"]):
+                        tag.decompose()
+                    text = soup.get_text(separator="\n", strip=True)[:8000]
+                    browser.close()
+                    # Use delegate to extract structured data
+                    import worker as _worker
+                    model = getattr(_worker, "_model", None) or os.environ.get("AMY_MODEL", "gemma12-test")
+                    resp = _worker.ollama_chat(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": "Extract structured data from web page text. Be precise and concise."},
+                            {"role": "user", "content": f"From this page, extract: {extract_prompt}\n\nPage text:\n{text}"},
+                        ],
+                        options={"num_predict": 512},
+                    )
+                    return resp.message.content.strip()
+
+                browser.close()
+                return f"unknown action: {action}"
+        except Exception as e:
+            return f"browse failed: {e}"
 
     if name == "read_feed":
         import feeds as _feeds
