@@ -12,6 +12,7 @@ Security rules enforced here:
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 from typing import Optional
@@ -114,6 +115,18 @@ def add_memory(
 
 # ── semantic search ───────────────────────────────────────────────────────────
 
+def _score(result: dict) -> float:
+    """The score the results are ordered by.
+
+    With Engram's local reranker on (`engram setup-reranker`), results come back
+    in reranker order, so report its 0-1 relevance; otherwise Engram's own score.
+    """
+    rerank = result.get("rerank_score")
+    if rerank is not None:
+        return round(1 / (1 + math.exp(-rerank)), 4)
+    return round(result.get("final_score", 0), 3)
+
+
 def search(query: str, n: int = 8, wing: Optional[str] = None) -> str:
     """Semantic search across all memories. Returns ranked results."""
     _init()
@@ -122,7 +135,7 @@ def search(query: str, n: int = 8, wing: Optional[str] = None) -> str:
     for r in results:
         out.append({
             "text": r["text"][:400],
-            "score": round(r.get("final_score", 0), 3),
+            "score": _score(r),
             "wing": r.get("wing", ""),
             "room": r.get("room", ""),
             "hall": r.get("hall", ""),
