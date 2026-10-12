@@ -15,7 +15,7 @@ WORK_DIR = os.path.join(HERE, "work")
 WORK_LOG = os.path.join(HERE, "work_log.json")
 
 # Model for content generation
-WORK_MODEL = "amy-vl"
+WORK_MODEL = os.environ.get("AMY_MODEL", "gemma12-test")
 
 os.makedirs(WORK_DIR, exist_ok=True)
 
