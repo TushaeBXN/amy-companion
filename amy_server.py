@@ -62,7 +62,37 @@ _PRIMER = {
     "role": "assistant",
     "content": random.choice(_OPENERS),
 }
-_history = [_PRIMER]
+
+_HISTORY_FILE = os.path.join(HERE, "telegram_history.json")
+
+
+def _load_shared_history() -> list:
+    """Load persisted history from the shared Telegram history file."""
+    if not os.path.exists(_HISTORY_FILE):
+        return [_PRIMER]
+    try:
+        with open(_HISTORY_FILE) as f:
+            hist = json.load(f)
+        if not hist:
+            return [_PRIMER]
+        # Ensure list of dicts with role/content
+        if not isinstance(hist, list) or not isinstance(hist[0], dict):
+            return [_PRIMER]
+        return hist[-HISTORY_WINDOW:]
+    except Exception:
+        return [_PRIMER]
+
+
+def _save_shared_history(history: list):
+    """Persist history to the shared file (same file Telegram uses)."""
+    try:
+        with open(_HISTORY_FILE, "w") as f:
+            json.dump(history, f, indent=2)
+    except Exception:
+        pass
+
+
+_history = _load_shared_history()
 
 # Inject learnings into companion's module-level var so build_context picks it up
 companion._session_learnings = _learnings.load_recent_learnings()
@@ -142,6 +172,7 @@ async def chat(req: ChatRequest):
 
         if len(_history) > HISTORY_WINDOW:
             _history[:] = _history[-HISTORY_WINDOW:]
+        _save_shared_history(_history)
 
         # ── find Amy's most recent reply ─────────────────────────────────────
         reply = ""
@@ -220,6 +251,7 @@ async def chat_stream(req: ChatRequest):
             _mem.add_bg("user", _user_msg)  # write after model done — no concurrent embeds
             if len(_history) > HISTORY_WINDOW:
                 _history[:] = _history[-HISTORY_WINDOW:]
+            _save_shared_history(_history)
             if image_path:
                 try:
                     os.unlink(image_path)
