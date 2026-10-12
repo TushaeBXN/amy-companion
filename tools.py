@@ -1017,6 +1017,51 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "git_status",
+            "description": "Check what files have changed in the project. Use before committing to see what's staged/modified/untracked.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_commit",
+            "description": "Stage specific files and commit them with a message. Only commit files you've verified work correctly. Never commit .env files or credentials.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "files": {"type": "array", "items": {"type": "string"}, "description": "List of file paths to stage (relative to project root)."},
+                    "message": {"type": "string", "description": "Commit message — short summary on first line, details below."},
+                },
+                "required": ["files", "message"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_push",
+            "description": "Push committed changes to GitHub. Only run after a successful commit.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_syntax",
+            "description": "Verify a Python file has no syntax errors before committing. Always run this after writing or editing a .py file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "Path to the Python file to check."},
+                },
+                "required": ["file_path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "system_status",
             "description": "Check the Mac Mini's CPU, RAM, GPU, disk usage and what model is loaded. Use when Brian asks how the machine is doing, or before starting a heavy task.",
             "parameters": {"type": "object", "properties": {}},
@@ -2157,6 +2202,50 @@ def dispatch(name, args, memory=None):
             return f"unknown action: {action}"
         except Exception as e:
             return f"family_fund error: {e}"
+
+    if name == "git_status":
+        import subprocess as _sp
+        r = _sp.run(["git", "status", "--short"], capture_output=True, text=True,
+                    cwd=os.path.dirname(__file__))
+        return r.stdout.strip() or "clean — nothing to commit"
+
+    if name == "git_commit":
+        import subprocess as _sp
+        files = args.get("files", [])
+        message = args.get("message", "").strip()
+        if not files or not message:
+            return "need files and message"
+        # Safety: never commit .env or credential files
+        blocked = [f for f in files if ".env" in f or "credentials" in f.lower() or "secret" in f.lower()]
+        if blocked:
+            return f"Blocked — will not commit credential files: {blocked}"
+        cwd = os.path.dirname(__file__)
+        add = _sp.run(["git", "add", "--"] + files, capture_output=True, text=True, cwd=cwd)
+        if add.returncode != 0:
+            return f"git add failed: {add.stderr.strip()}"
+        commit = _sp.run(["git", "commit", "-m", message], capture_output=True, text=True, cwd=cwd)
+        if commit.returncode != 0:
+            return f"git commit failed: {commit.stderr.strip()}"
+        print(f"  [git] committed: {message[:60]}")
+        return commit.stdout.strip()
+
+    if name == "git_push":
+        import subprocess as _sp
+        r = _sp.run(["git", "push"], capture_output=True, text=True, cwd=os.path.dirname(__file__))
+        if r.returncode != 0:
+            return f"git push failed: {r.stderr.strip()}"
+        return r.stdout.strip() or "pushed successfully"
+
+    if name == "check_syntax":
+        import subprocess as _sp, sys as _sys
+        path = args.get("file_path", "").strip()
+        if not path:
+            return "need a file_path"
+        full_path = path if os.path.isabs(path) else os.path.join(os.path.dirname(__file__), path)
+        r = _sp.run([_sys.executable, "-m", "py_compile", full_path], capture_output=True, text=True)
+        if r.returncode == 0:
+            return f"✓ No syntax errors in {path}"
+        return f"✗ Syntax error in {path}:\n{r.stderr.strip()}"
 
     if name == "system_status":
         import sysmon as _sm
