@@ -136,9 +136,10 @@ def search(query: str, n: int = 8, wing: Optional[str] = None) -> str:
         out.append({
             "text": r["text"][:400],
             "score": _score(r),
-            "wing": r.get("wing", ""),
-            "room": r.get("room", ""),
-            "hall": r.get("hall", ""),
+            # Engram puts a hit's location under "metadata".
+            "wing": (r.get("metadata") or {}).get("wing", ""),
+            "room": (r.get("metadata") or {}).get("room", ""),
+            "hall": (r.get("metadata") or {}).get("hall", ""),
         })
     return json.dumps(out, indent=2)
 
