@@ -1017,6 +1017,49 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "learn_from_video",
+            "description": (
+                "Watch a YouTube video by reading its transcript, extract key insights, "
+                "and store what's useful in memory. Use for tech tutorials, AI news, "
+                "or any video that could help Amy improve. Marks the video as watched."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "YouTube video URL or video ID."},
+                    "focus": {"type": "string", "description": "What to look for (e.g. 'tools I can implement', 'AI techniques', 'income ideas'). Default: general tech insights."},
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "scan_channels",
+            "description": "Check all tracked YouTube channels for new videos Amy hasn't watched yet. Returns a list of unwatched videos. Use this during free time to stay current.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_channels",
+            "description": "Add, remove, or list YouTube channels Amy tracks for learning.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["add", "remove", "list"], "description": "What to do."},
+                    "url": {"type": "string", "description": "Channel URL (for add/remove)."},
+                    "name": {"type": "string", "description": "Friendly name for the channel (for add)."},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "delegate",
             "description": (
                 "Spin up a focused sub-agent to handle a specific task without consuming "
@@ -2030,6 +2073,72 @@ def dispatch(name, args, memory=None):
             return f"unknown action: {action}"
         except Exception as e:
             return f"family_fund error: {e}"
+
+    if name == "learn_from_video":
+        import youtube_amy as _yt
+        import worker as _worker
+        url = args.get("url", "").strip()
+        focus = args.get("focus", "general tech insights and anything I can implement or act on").strip()
+        if not url:
+            return "need a video URL"
+        try:
+            vid_id = _yt._video_id(url)
+            title = _yt.get_video_title(url)
+            print(f"  [youtube] fetching transcript: {title}")
+            transcript = _yt.get_transcript(url)
+            if not transcript:
+                return "No transcript available for this video."
+            model = getattr(_worker, "_model", None) or os.environ.get("AMY_MODEL", "gemma12-test")
+            prompt = (
+                f"Video: \"{title}\"\n\nTranscript:\n{transcript}\n\n"
+                f"Extract insights focused on: {focus}\n\n"
+                "Format your response as:\n"
+                "KEY INSIGHTS:\n- (bullet points of what's most useful)\n\n"
+                "ACTIONABLE FOR AMY:\n- (specific things I can implement or try)\n\n"
+                "WORTH REMEMBERING:\n- (facts, tools, or techniques to store in memory)"
+            )
+            resp = _worker.ollama_chat(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "You are Amy's learning assistant. Extract practical, actionable insights from video transcripts."},
+                    {"role": "user", "content": prompt},
+                ],
+                options={"num_predict": 1024},
+            )
+            analysis = resp.message.content.strip()
+            _yt.mark_watched(url)
+            if memory:
+                memory.add("assistant", f"Learned from YouTube '{title}': {analysis[:500]}", source="youtube")
+            print(f"  [youtube] learned from: {title}")
+            return f"Watched: {title}\n\n{analysis}"
+        except Exception as e:
+            return f"learn_from_video failed: {e}"
+
+    if name == "scan_channels":
+        import youtube_amy as _yt
+        try:
+            new = _yt.new_videos_from_channels()
+            if not new:
+                return "No new videos from tracked channels."
+            lines = [f"- [{v['channel']}] {v['title']} (https://youtu.be/{v['id']})" for v in new]
+            return f"{len(new)} new video(s) to watch:\n" + "\n".join(lines)
+        except Exception as e:
+            return f"scan_channels failed: {e}"
+
+    if name == "manage_channels":
+        import youtube_amy as _yt
+        action = args.get("action", "list")
+        if action == "list":
+            return _yt.list_channels()
+        if action == "add":
+            url = args.get("url", "").strip()
+            name_label = args.get("name", "").strip()
+            if not url:
+                return "need a url"
+            return _yt.add_channel(url, name_label)
+        if action == "remove":
+            return _yt.remove_channel(args.get("url", args.get("name", "")))
+        return f"unknown action: {action}"
 
     if name == "delegate":
         import worker as _worker
