@@ -273,6 +273,41 @@ def goal_summary(goal: dict) -> str:
     return "\n".join(lines)
 
 
+def outcome_stats() -> dict:
+    """Aggregate pass/fail/inconclusive counts across all completed and blocked goals.
+
+    Returns a dict suitable for tracking improvement over time:
+      total_goals, completed, blocked, total_steps, passed, failed, inconclusive,
+      verification_accuracy (passed / (passed + failed), excludes inconclusive)
+    """
+    db = _conn()
+    rows = db.execute(
+        "SELECT evidence FROM agent_goals WHERE status IN ('completed', 'blocked')"
+    ).fetchall()
+    stats = {"total_goals": len(rows), "completed": 0, "blocked": 0,
+             "total_steps": 0, "passed": 0, "failed": 0, "inconclusive": 0}
+    for row in db.execute("SELECT status, COUNT(*) FROM agent_goals GROUP BY status").fetchall():
+        if row[0] in ("completed", "blocked"):
+            stats[row[0]] = row[1]
+    for row in rows:
+        try:
+            evidence = json.loads(row[0] or "[]")
+        except Exception:
+            evidence = []
+        for e in evidence:
+            stats["total_steps"] += 1
+            d = e.get("decision", "")
+            if "pass" in d:
+                stats["passed"] += 1
+            elif "fail" in d:
+                stats["failed"] += 1
+            else:
+                stats["inconclusive"] += 1
+    decided = stats["passed"] + stats["failed"]
+    stats["verification_accuracy"] = round(stats["passed"] / decided, 3) if decided else None
+    return stats
+
+
 def all_goals_summary() -> str:
     """Compact view of all non-abandoned goals for Amy's heartbeat decision."""
     goals = [g for g in list_goals() if g["status"] != "abandoned"]

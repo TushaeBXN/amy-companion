@@ -711,6 +711,7 @@ def _run_goal(goal: dict):
         _running.release()
         return
 
+    goal_finished = False
     try:
         result = _execute_goal_step(goal_id, goal, step_idx, step_desc)
         verified, decision, next_action = _verify_step(goal, step_idx, step_desc, result)
@@ -719,6 +720,8 @@ def _run_goal(goal: dict):
             _goals.block_goal(goal_id,
                 f"Step {step_idx + 1} failed {MAX_STEP_ATTEMPTS} times: {result[:200]}")
             _send(f"Goal blocked: {goal['objective']}\nStep {step_idx + 1} failed — {result[:150]}")
+            _classify_and_learn(goal_id)
+            goal_finished = True
             return
 
         _goals.record_step_result(goal_id, step_idx, result,
@@ -730,17 +733,21 @@ def _run_goal(goal: dict):
         if updated and updated["current_step"] >= len(plan):
             _goals.complete_goal(goal_id, "All steps verified complete.")
             _send(f"Goal done: {goal['objective']}\n{next_action}")
+            _classify_and_learn(goal_id)
+            goal_finished = True
         elif advance:
             print(f"  [worker] goal '{goal_id}' step {step_idx + 1} done → step {step_idx + 2}",
                   flush=True)
 
     except Exception as e:
         _goals.record_step_result(goal_id, step_idx, f"Exception: {e}",
-                                  next_action=f"Retry step {step_idx + 1}", advance=False)
+                                  next_action=f"Retry step {step_idx + 1}", advance=False,
+                                  decision="deterministic_fail", passed=False)
         print(f"  [worker] goal '{goal_id}' step failed: {e}", flush=True)
     finally:
         elapsed = (time.time() - started) / 60
-        print(f"  [worker] goal '{goal_id}' round done in {elapsed:.1f} min", flush=True)
+        print(f"  [worker] goal '{goal_id}' round done in {elapsed:.1f} min "
+              f"({'finished' if goal_finished else 'continuing'})", flush=True)
         _running.release()
 
 
@@ -847,6 +854,28 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
     return final or "(no output)"
 
 
+MAX_INCONCLUSIVE = 2   # max consecutive inconclusive judgments before blocking a step
+
+
+def _check_file(path: str) -> tuple[bool, str]:
+    """Verify a file is non-empty and doesn't look like an error dump."""
+    full = os.path.join(HERE, path) if not os.path.isabs(path) else path
+    if not os.path.exists(full):
+        return False, f"file not found: {path}"
+    size = os.path.getsize(full)
+    if size == 0:
+        return False, f"file is empty: {path}"
+    try:
+        with open(full, "rb") as f:
+            head = f.read(512).decode("utf-8", errors="replace").lower()
+        error_signals = ("[tool_error]", "traceback (most recent", "error:", "exception:")
+        if any(s in head for s in error_signals):
+            return False, f"file contains error content: {path}"
+    except Exception:
+        pass
+    return True, f"file ok ({size} bytes): {path}"
+
+
 def _deterministic_check(step_desc: str, evidence_required: str,
                          result: str) -> tuple[bool | None, str]:
     """Run hard checks that don't require a model call.
@@ -858,39 +887,47 @@ def _deterministic_check(step_desc: str, evidence_required: str,
     if not result or result.strip() in ("(no output)", ""):
         return False, "no output produced"
     low = result.lower()
-    if low.startswith("[tool_error]") or re.match(r"^\[?error\b", low):
+    # Only fail on error if it's not inside a quoted/reported string
+    result_first_line = result.splitlines()[0].lower() if result else ""
+    if result_first_line.startswith("[tool_error]") or re.match(r"^\[?error\b", result_first_line):
         return False, f"tool error: {result[:120]}"
 
-    # File existence check — if step or criteria mentions writing/saving a file
+    # File existence + content check
     save_re = re.compile(r"(?i)\b(save|write|create|output to|saved to|stored in)\b")
-    path_re = re.compile(r"(work/[\w/.\-]+|/[\w/.\-]{6,})")
+    path_re = re.compile(r"(work/[\w/.\-]+\.\w+|/[\w/.\-]{8,}\.\w+)")
     if save_re.search(step_desc) or save_re.search(evidence_required):
         paths = path_re.findall(result)
         for p in paths:
             p = p.strip().rstrip(".,)")
-            full = os.path.join(HERE, p) if not os.path.isabs(p) else p
-            if os.path.exists(full) and os.path.getsize(full) > 0:
-                return True, f"file confirmed: {p}"
-        # Path mentioned but not found — inconclusive (model may have described it wrong)
+            ok, reason = _check_file(p)
+            if ok:
+                return True, reason
+            if "not found" not in reason:
+                # File exists but bad — definitive fail
+                return False, reason
+        # No valid path found — inconclusive (Amy may have described path wrong)
 
-    # Evidence keyword check — if evidence_required names something checkable
+    # Evidence keyword check — ensure keyword is NOT inside an error context
     if evidence_required:
         ev_low = evidence_required.lower()
-        # Count check: "at least N" or "N results"
+        # Count check: "at least N" or "N results" — require unique items
         count_m = re.search(r"at least (\d+)|(\d+)\s+result", ev_low)
         if count_m:
             n = int(count_m.group(1) or count_m.group(2))
-            found = len(re.findall(r"\n[-•*]|\d+\.", result))
-            if found >= n:
-                return True, f"found {found} items (required {n})"
-            if found == 0:
+            items = re.findall(r"\n[-•*]\s+\S|\d+\.\s+\S", result)
+            unique_items = len(set(items))
+            if unique_items >= n:
+                return True, f"found {unique_items} unique items (required {n})"
+            if unique_items == 0:
                 return False, f"expected {n} items, found none"
-        # Keyword present check: "contains X" or "includes X"
+        # Keyword check: must appear outside error lines
         kw_m = re.search(r"(?:contains?|includes?|mentions?)\s+[\"']?(\w[\w\s]{1,30})[\"']?", ev_low)
         if kw_m:
             kw = kw_m.group(1).strip().lower()
-            if kw in low:
-                return True, f"keyword '{kw}' found in output"
+            non_error_lines = [l for l in result.lower().splitlines()
+                               if not re.match(r"\[?error|traceback|exception", l)]
+            if any(kw in line for line in non_error_lines):
+                return True, f"keyword '{kw}' found in non-error output"
 
     return None, "inconclusive — needs model judgment"
 
@@ -900,8 +937,12 @@ def _verify_step(goal: dict, step_idx: int, step_desc: str,
     """Verify a step result. Returns (passed, decision, next_action).
 
     Strategy:
-      1. Deterministic checks (file exists, error markers, keyword counts).
-      2. Model judgment only when deterministic check is inconclusive.
+      1. Deterministic checks — file content, error markers, unique item counts,
+         keyword context. Definitive pass/fail requires no model call.
+      2. Model judgment only when deterministic is inconclusive.
+      3. Inconclusive is recorded as-is — never silently promoted to pass.
+         After MAX_INCONCLUSIVE consecutive inconclusive judgments on the same
+         step, the step is blocked rather than retried forever.
     """
     criteria_list = goal.get("criteria") or []
     crit = criteria_list[step_idx] if step_idx < len(criteria_list) else {}
@@ -909,13 +950,27 @@ def _verify_step(goal: dict, step_idx: int, step_desc: str,
     expected = crit.get("expected", "")
 
     # 1. Deterministic check
-    passed, reason = _deterministic_check(step_desc, evidence_required, result)
-    if passed is True:
-        return True, "pass", f"Verified deterministically: {reason}. Next: proceed to step {step_idx + 2}."
-    if passed is False:
-        return False, "fail", f"Failed deterministically: {reason}. Retry this step."
+    det_passed, det_reason = _deterministic_check(step_desc, evidence_required, result)
+    if det_passed is True:
+        return True, "deterministic_pass", (
+            f"Verified: {det_reason}. Proceed to step {step_idx + 2}."
+        )
+    if det_passed is False:
+        return False, "deterministic_fail", f"Failed: {det_reason}. Retry this step."
 
-    # 2. Model judgment (inconclusive)
+    # 2. Model judgment — inconclusive path
+    # Count how many recent inconclusive judgments exist for this step
+    evidence = goal.get("evidence") or []
+    recent_inconclusive = sum(
+        1 for e in evidence
+        if e.get("step") == step_idx and e.get("decision") == "inconclusive"
+    )
+    if recent_inconclusive >= MAX_INCONCLUSIVE:
+        return False, "inconclusive", (
+            f"Step {step_idx + 1} has been inconclusive {recent_inconclusive} times. "
+            "Marking as failed — needs a different approach."
+        )
+
     system = (_memory.wake_up() if _memory else "") + WORK_PERSONA
     prompt = (
         f"Goal: {goal['objective']}\n"
@@ -923,8 +978,11 @@ def _verify_step(goal: dict, step_idx: int, step_desc: str,
         f"Expected: {expected or '(not specified)'}\n"
         f"Evidence required: {evidence_required or '(not specified)'}\n"
         f"Observed result: {result[:800]}\n\n"
-        "Did this step succeed? Answer YES or NO on the first line, then one sentence "
-        "on what should happen next."
+        "Did this step succeed based on the evidence required? "
+        "Answer YES or NO on the first line. "
+        "If YES, say specifically what in the result confirms success. "
+        "If NO, say what is missing or wrong. "
+        "One sentence only."
     )
     try:
         resp = ollama_chat(
@@ -937,10 +995,84 @@ def _verify_step(goal: dict, step_idx: int, step_desc: str,
         first = raw.splitlines()[0].upper() if raw else ""
         verified = "YES" in first and "NO" not in first
         next_action = raw.split("\n", 1)[1].strip() if "\n" in raw else raw
-        decision = "pass" if verified else "fail"
+        # Model judgment: use distinct decision values so they're traceable
+        decision = "model_pass" if verified else "model_fail"
         return verified, decision, next_action or ("Proceed." if verified else "Retry.")
-    except Exception:
-        return True, "inconclusive", "Verification failed — assuming success."
+    except Exception as exc:
+        # Verification infrastructure failure — do NOT promote to pass
+        print(f"  [worker] verify call failed: {exc}", flush=True)
+        return False, "inconclusive", f"Verification error: {exc}. Will retry the step."
+
+
+_FAILURE_CATEGORIES = {
+    "planning": "The plan steps were too vague, wrong order, or impossible with available tools.",
+    "tool_choice": "Amy chose the wrong tool or called it with bad arguments.",
+    "execution": "The tool call ran but produced wrong or incomplete output.",
+    "verification": "The step result was genuinely ambiguous or the criteria were unmeasurable.",
+}
+
+
+def _classify_and_learn(goal_id: str):
+    """After a goal finishes or blocks, classify what failed and propose a reusable pattern.
+
+    This feeds into the skill-nudge system: patterns go to work/proposals/ for review,
+    not directly into Amy's persona.
+    """
+    goal = _goals.get_goal(goal_id)
+    if not goal:
+        return
+    evidence = goal.get("evidence") or []
+    failures = [e for e in evidence if not e.get("passed", True)]
+    if not failures:
+        return   # no failures — nothing to learn from
+
+    system = (_memory.wake_up() if _memory else "") + WORK_PERSONA
+    failure_summary = "\n".join(
+        f"Step {f['step'] + 1} ({f.get('decision', '?')}): {f.get('observed', '')[:200]}"
+        for f in failures[:5]
+    )
+    categories = "\n".join(f"- {k}: {v}" for k, v in _FAILURE_CATEGORIES.items())
+
+    prompt = (
+        f"Goal: {goal['objective']}\n"
+        f"Final status: {goal['status']}\n\n"
+        f"Failed steps:\n{failure_summary}\n\n"
+        f"Classify each failure into ONE of these categories:\n{categories}\n\n"
+        "Then propose ONE reusable pattern that would prevent this class of failure in future goals. "
+        "Format:\nCATEGORY: <category>\nPATTERN: <one concrete, specific rule Amy should follow>\n"
+        "APPLIES WHEN: <situation where this pattern should activate>"
+    )
+    try:
+        resp = ollama_chat(
+            model=_model,
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": prompt}],
+            options={"num_predict": 250, "temperature": 0.4},
+        )
+        raw = _clean(resp["message"].get("content", ""))
+        cat_m = re.search(r"CATEGORY:\s*(\w+)", raw, re.IGNORECASE)
+        pat_m = re.search(r"PATTERN:\s*(.+)", raw, re.IGNORECASE)
+        when_m = re.search(r"APPLIES WHEN:\s*(.+)", raw, re.IGNORECASE)
+
+        if pat_m:
+            category = cat_m.group(1).strip().lower() if cat_m else "execution"
+            pattern = pat_m.group(1).strip()
+            applies_when = when_m.group(1).strip() if when_m else "always"
+            os.makedirs(PROPOSALS, exist_ok=True)
+            fname = f"{datetime.now():%Y-%m-%d_%H%M}_goal_{goal_id}_{category}.json"
+            _save(os.path.join(PROPOSALS, fname), {
+                "type": "learned_pattern",
+                "goal_id": goal_id,
+                "category": category,
+                "pattern": pattern,
+                "applies_when": applies_when,
+                "failures": len(failures),
+                "ts": datetime.now().isoformat(),
+            })
+            print(f"  [learn] classified '{goal_id}' as {category} — pattern saved to proposals/",
+                  flush=True)
+    except Exception as e:
+        print(f"  [learn] classify_and_learn failed: {e}", flush=True)
 
 
 def _heartbeat_decision() -> str:
