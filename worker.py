@@ -18,6 +18,7 @@ import requests
 import tools
 import compressor as _compressor
 import trajectory as _trajectory
+import agent_state as _goals
 
 HERE        = os.path.dirname(os.path.abspath(__file__))
 TASKS_FILE  = os.path.join(HERE, "tasks.json")
@@ -41,6 +42,7 @@ ALLOWED_TOOLS = {
     "list_work", "read_deliverable",
     "journal_entry", "read_journal", "remember_fact",
     "add_goal", "complete_goal",
+    "create_autonomous_goal", "list_autonomous_goals", "update_autonomous_goal",
     "research_income", "log_income_idea",
     "fund_status", "search_books",
     "moltbook_check_in", "moltbook_post", "moltbook_engage", "moltbook_verify",
@@ -678,16 +680,207 @@ def _spontaneous_thought():
         _schedule_next_spont()
 
 
+def _run_goal(goal: dict):
+    """Execute one round of an autonomous goal (plan → step → verify → persist)."""
+    if not _running.acquire(blocking=False):
+        return
+    started = time.time()
+    goal_id = goal["goal_id"]
+    _goals.mark_active(goal_id)
+    print(f"  [worker] goal '{goal_id}' — step {goal['current_step'] + 1}", flush=True)
+
+    step_idx = goal["current_step"]
+    plan = goal.get("plan") or []
+
+    # If there's no plan yet, let Amy build one before acting
+    needs_plan = not plan
+    if needs_plan:
+        _execute_goal_planning(goal_id, goal)
+        goal = _goals.get_goal(goal_id)
+        plan = goal.get("plan") or []
+        step_idx = 0
+        if not plan:
+            _goals.block_goal(goal_id, "Could not generate a plan.")
+            _running.release()
+            return
+
+    step_desc = plan[step_idx] if step_idx < len(plan) else None
+    if step_desc is None:
+        _goals.complete_goal(goal_id, "All planned steps are done.")
+        _send(f"Goal complete: {goal['objective']}")
+        _running.release()
+        return
+
+    try:
+        result = _execute_goal_step(goal_id, goal, step_idx, step_desc)
+        # Verify: ask Amy if this step succeeded
+        verified, next_action = _verify_step(goal, step_idx, step_desc, result)
+        advance = verified
+        if not verified and goal["attempts"] >= MAX_STEP_ATTEMPTS * (step_idx + 1):
+            _goals.block_goal(goal_id,
+                f"Step {step_idx + 1} failed {MAX_STEP_ATTEMPTS} times: {result[:200]}")
+            _send(f"Goal blocked: {goal['objective']}\nStep {step_idx + 1} failed — {result[:150]}")
+            return
+
+        _goals.record_step_result(goal_id, step_idx, result,
+                                  next_action=next_action, advance=advance)
+
+        # If all steps done, mark complete
+        updated = _goals.get_goal(goal_id)
+        if updated and updated["current_step"] >= len(plan):
+            _goals.complete_goal(goal_id, "All steps verified complete.")
+            _send(f"Goal done: {goal['objective']}\n{next_action}")
+        elif advance:
+            print(f"  [worker] goal '{goal_id}' step {step_idx + 1} done → step {step_idx + 2}",
+                  flush=True)
+
+    except Exception as e:
+        _goals.record_step_result(goal_id, step_idx, f"Exception: {e}",
+                                  next_action=f"Retry step {step_idx + 1}", advance=False)
+        print(f"  [worker] goal '{goal_id}' step failed: {e}", flush=True)
+    finally:
+        elapsed = (time.time() - started) / 60
+        print(f"  [worker] goal '{goal_id}' round done in {elapsed:.1f} min", flush=True)
+        _running.release()
+
+
+def _execute_goal_planning(goal_id: str, goal: dict):
+    """Ask Amy to break the objective into concrete steps; persist the plan."""
+    system = (_memory.wake_up() if _memory else "") + WORK_PERSONA
+    prompt = (
+        f"You have a new goal: {goal['objective']}\n"
+        f"Reason: {goal['reason'] or 'not specified'}\n\n"
+        "Break this into 3–7 concrete, actionable steps — each one something you can do "
+        "with your available tools in a single execution round. "
+        "Reply with ONLY a numbered list, one step per line, no preamble."
+    )
+    try:
+        resp = ollama_chat(
+            model=_model,
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": prompt}],
+            options={"num_predict": 400, "temperature": 0.5},
+        )
+        raw = _clean(resp["message"].get("content", ""))
+        steps = [re.sub(r"^\d+[\.\)]\s*", "", line).strip()
+                 for line in raw.splitlines() if re.match(r"^\d+", line.strip())]
+        if steps:
+            _goals.set_plan(goal_id, steps)
+            print(f"  [worker] goal '{goal_id}' plan: {steps}", flush=True)
+    except Exception as e:
+        print(f"  [worker] goal planning failed: {e}", flush=True)
+
+
+def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) -> str:
+    """Run one step of a goal using Amy's tools. Returns a result string."""
+    context = _goals.goal_summary(goal)
+    system = (
+        (_memory.wake_up() if _memory else "") + WORK_PERSONA + scope_rules(MAX_HOPS) +
+        f"\n\n[Active goal context]\n{context}"
+    )
+    prompt = (
+        f"Execute this step now: {step_desc}\n\n"
+        "Use your tools. When done, report: what you did, what you found, and "
+        "whether this step is complete. Be specific."
+    )
+    allowed = [t for t in tools.TOOLS if t["function"]["name"] in ALLOWED_TOOLS]
+    messages = [{"role": "system", "content": system},
+                {"role": "user", "content": prompt}]
+    final = ""
+    for step in range(1, MAX_HOPS + 1):
+        _fit(messages)
+        msg = _chat(messages, allowed)["message"]
+        messages.append(msg)
+        calls = msg.get("tool_calls") or []
+        if not calls:
+            final = _clean(msg.get("content", ""))
+            break
+        for call in calls:
+            name = call["function"]["name"]
+            args = call["function"].get("arguments") or {}
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    continue
+            result_text = _cap(str(_guarded_dispatch(name, args) or "done"))
+            messages.append({"role": "tool",
+                             "content": result_text + f"\n[step {step} of {MAX_HOPS}]"})
+    return final or "(no output)"
+
+
+def _verify_step(goal: dict, step_idx: int, step_desc: str, result: str) -> tuple[bool, str]:
+    """Ask Amy: did this step actually succeed? Returns (verified, next_action)."""
+    system = (_memory.wake_up() if _memory else "") + WORK_PERSONA
+    prompt = (
+        f"Goal: {goal['objective']}\n"
+        f"Step {step_idx + 1}: {step_desc}\n"
+        f"Result: {result[:800]}\n\n"
+        "Did this step succeed? Answer YES or NO on the first line, then one sentence "
+        "describing what should happen next."
+    )
+    try:
+        resp = ollama_chat(
+            model=_model,
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": prompt}],
+            options={"num_predict": 100, "temperature": 0.3},
+        )
+        raw = _clean(resp["message"].get("content", ""))
+        first_line = raw.splitlines()[0].upper() if raw else ""
+        verified = "YES" in first_line
+        next_action = raw.split("\n", 1)[1].strip() if "\n" in raw else raw
+        return verified, next_action
+    except Exception:
+        return True, ""   # assume success if verification fails
+
+
+def _heartbeat_decision() -> str:
+    """Evaluate Amy's situation and decide what to do this tick.
+
+    Returns one of: 'goal', 'task', 'spont', 'idle'
+    """
+    now = datetime.now()
+    if _quiet(now):
+        return "idle"
+    idle_secs = time.time() - _last_user
+    if idle_secs < IDLE_GRACE:
+        return "idle"
+
+    # 1. Unfinished goal worth continuing?
+    goal = _goals.get_active_goal()
+    if goal and goal["status"] in ("active", "pending"):
+        return "goal"
+
+    # 2. Scheduled task due?
+    task = _pick()
+    if task:
+        return "task"
+
+    # 3. Spontaneous thought window?
+    if SPONTANEOUS and time.time() >= _next_spont and idle_secs >= SPONT_MIN:
+        return "spont"
+
+    return "idle"
+
+
 def _loop():
     _schedule_next_spont()
     while True:
         time.sleep(TICK_SECS)
         try:
-            task = _pick()
-            if task:
-                _run_task(task)
-            else:
+            decision = _heartbeat_decision()
+            if decision == "goal":
+                goal = _goals.get_active_goal()
+                if goal:
+                    _run_goal(goal)
+            elif decision == "task":
+                task = _pick()
+                if task:
+                    _run_task(task)
+            elif decision == "spont":
                 _spontaneous_thought()
+            # idle: do nothing
         except Exception as e:
             print(f"  [worker] loop error: {e}")
 

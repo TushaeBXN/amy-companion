@@ -1280,6 +1280,64 @@ _BASE_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_autonomous_goal",
+            "description": "Create a persistent autonomous goal that Amy will work toward independently between conversations. Use when you or Brian identify something worth pursuing over multiple steps or sessions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "objective": {"type": "string", "description": "What you want to accomplish"},
+                    "reason": {"type": "string", "description": "Why it matters"},
+                    "plan": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional ordered list of steps. Leave empty and Amy will plan.",
+                    },
+                },
+                "required": ["objective"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_autonomous_goals",
+            "description": "Show all active, pending, blocked, or completed autonomous goals.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["active", "pending", "blocked", "completed", "abandoned"],
+                        "description": "Filter by status. Leave empty for all.",
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_autonomous_goal",
+            "description": "Update an autonomous goal: mark it complete, blocked, abandoned, or resumed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal_id": {"type": "string", "description": "The goal_id slug"},
+                    "action": {
+                        "type": "string",
+                        "enum": ["complete", "block", "abandon", "resume"],
+                        "description": "What to do with this goal",
+                    },
+                    "note": {"type": "string", "description": "Optional reason or summary"},
+                },
+                "required": ["goal_id", "action"],
+            },
+        },
+    },
 ]  # end _BASE_TOOLS
 
 # Pending voice file path — set by speak(), consumed by worker._run_task
@@ -1569,6 +1627,52 @@ def dispatch(name, args, memory=None):
             return json.dumps(moltbook.verify(code, answer), default=str)
         except Exception as e:
             return f"verification failed: {e}"
+
+    if name == "create_autonomous_goal":
+        import agent_state as _ag
+        objective = args.get("objective", "").strip()
+        if not objective:
+            return "objective is required"
+        reason = args.get("reason", "")
+        plan = args.get("plan") or []
+        g = _ag.create_goal(objective, reason=reason, plan=plan)
+        print(f"  [agent] created goal: {g['goal_id']}")
+        return (f"Goal created: {g['goal_id']}\n"
+                f"Objective: {g['objective']}\n"
+                f"I'll start working on it the next time my heartbeat fires.")
+
+    if name == "list_autonomous_goals":
+        import agent_state as _ag
+        status_filter = args.get("status")
+        goals = _ag.list_goals(status=status_filter)
+        if not goals:
+            return "No goals found."
+        lines = []
+        for g in goals:
+            plan = g.get("plan") or []
+            step = g.get("current_step", 0)
+            lines.append(
+                f"[{g['status'].upper()}] {g['goal_id']}\n"
+                f"  {g['objective']}\n"
+                f"  Step {step + 1}/{len(plan)} — {g['next_action'] or 'not started'}"
+            )
+        return "\n\n".join(lines)
+
+    if name == "update_autonomous_goal":
+        import agent_state as _ag
+        goal_id = args.get("goal_id", "").strip()
+        action = args.get("action", "")
+        note = args.get("note", "")
+        if not goal_id:
+            return "goal_id is required"
+        fn = {"complete": _ag.complete_goal, "block": _ag.block_goal,
+              "abandon": _ag.abandon_goal, "resume": _ag.resume_goal}.get(action)
+        if not fn:
+            return f"Unknown action: {action}"
+        result = fn(goal_id, note) if action in ("complete", "block") else fn(goal_id)
+        if result is None:
+            return f"Goal '{goal_id}' not found."
+        return f"Goal '{goal_id}' → {result['status']}."
 
     if name == "add_goal":
         goal = args.get("goal", "").strip()
