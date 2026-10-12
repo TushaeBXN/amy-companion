@@ -5,9 +5,12 @@ to track whether goal completion rate, verification accuracy, and recovery
 actually improve — not just whether logs look better.
 
 Usage:
-  python3 benchmark.py              # run all tasks
+  python3 benchmark.py              # queue all tasks (manual inspect after)
+  python3 benchmark.py --auto       # queue + poll + auto-inspect + save report
   python3 benchmark.py --dry-run   # show tasks, don't execute
-  python3 benchmark.py --review    # show results of last run without running again
+  python3 benchmark.py --report    # print full report
+  python3 benchmark.py --trend     # show performance trend across runs
+  python3 benchmark.py --review    # compact history
 
 Each task has:
   id            — stable identifier (never change between runs)
@@ -27,7 +30,16 @@ from datetime import datetime
 import agent_state as ag
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-RESULTS_FILE = os.path.join(HERE, "experiments", "benchmark_results.jsonl")
+RESULTS_FILE  = os.path.join(HERE, "experiments", "benchmark_results.jsonl")
+REPORTS_DIR   = os.path.join(HERE, "experiments", "benchmark_reports")
+
+# Tasks that require human inspection — skip auto-inspect for these
+MANUAL_TASKS  = {"bm_ambiguous_evidence", "bm_resume_after_interrupt"}
+
+# How long --auto will wait for all goals to finish before giving up
+AUTO_TIMEOUT_HOURS = 3
+AUTO_POLL_SECS     = 120   # check every 2 minutes
+AUTO_STAGGER_SECS  = 660   # ~11 min between goal creations → 8 tasks ≈ 90 min total
 
 # ── Task definitions ──────────────────────────────────────────────────────────
 # These are the canonical benchmark tasks. Never modify them between runs —
@@ -451,6 +463,166 @@ def generate_report() -> str:
     return "\n".join(l for l in lines if l is not None)
 
 
+def save_report(report_text: str) -> str:
+    """Save the report to experiments/benchmark_reports/YYYY-MM-DD_HH-MM.md."""
+    os.makedirs(REPORTS_DIR, exist_ok=True)
+    fname = f"{datetime.now():%Y-%m-%d_%H-%M}.md"
+    path = os.path.join(REPORTS_DIR, fname)
+    with open(path, "w") as f:
+        f.write(report_text)
+    return path
+
+
+def run_auto(task_filter: str | None = None):
+    """Queue tasks, poll until done, auto-inspect, save report.
+
+    Manual tasks (bm_ambiguous_evidence, bm_resume_after_interrupt) are
+    skipped in auto-inspect and flagged in the report for human follow-up.
+    """
+    tasks = [t for t in TASKS if not task_filter or t["id"] == task_filter]
+    auto_tasks  = [t for t in tasks if t["id"] not in MANUAL_TASKS]
+    manual_tasks = [t for t in tasks if t["id"] in MANUAL_TASKS]
+
+    print(f"AUTO MODE — {len(tasks)} tasks ({len(manual_tasks)} need manual inspection)")
+    baseline = _capture_baseline()
+    print(f"Commit: {baseline['git_commit'][:8] if baseline['git_commit'] else '?'}  "
+          f"Model: {baseline['model'] or '?'}")
+    append_result({"type": "baseline", **baseline})
+
+    # Create goals staggered over 90 minutes so Amy's heartbeat isn't swamped
+    pending_map = {}  # goal_id → task
+    stagger = AUTO_STAGGER_SECS if len(tasks) > 1 else 0
+    for i, task in enumerate(tasks):
+        record = run_task(task)
+        append_result(record)
+        pending_map[record["goal_id"]] = task
+        if i < len(tasks) - 1:
+            next_in = stagger / 60
+            print(f"  Queued {task['id']} → next goal in {next_in:.0f} min…", flush=True)
+            time.sleep(stagger)
+
+    print(f"\n{len(pending_map)} goals queued. Polling every {AUTO_POLL_SECS}s "
+          f"(timeout {AUTO_TIMEOUT_HOURS}h)…")
+    if manual_tasks:
+        print(f"Skipping auto-inspect for: {[t['id'] for t in manual_tasks]}")
+
+    deadline = time.time() + AUTO_TIMEOUT_HOURS * 3600
+    inspected_ids = set()
+
+    while time.time() < deadline:
+        time.sleep(AUTO_POLL_SECS)
+        remaining = set(pending_map) - inspected_ids
+        if not remaining:
+            break
+
+        for goal_id in list(remaining):
+            task = pending_map[goal_id]
+            goal = ag.get_goal(goal_id)
+            if not goal:
+                continue
+            if goal["status"] not in ("completed", "blocked"):
+                continue  # still running
+
+            if task["id"] in MANUAL_TASKS:
+                print(f"  ⚠  {task['id']} reached {goal['status']} — needs manual inspect")
+                inspected_ids.add(goal_id)  # don't re-check, but don't record GT
+                append_result({
+                    "task_id": task["id"],
+                    "goal_id": goal_id,
+                    "actual_outcome": goal["status"],
+                    "expected_outcome": task["expected_outcome"],
+                    "outcome_correct": goal["status"] == task["expected_outcome"],
+                    "manual_inspect_required": True,
+                    "verified_at": datetime.now().isoformat(),
+                })
+            else:
+                result = inspect_results(goal_id, task)
+                append_result(result)
+                inspected_ids.add(goal_id)
+
+        done = len(inspected_ids)
+        total = len(pending_map)
+        print(f"  [{datetime.now():%H:%M}] {done}/{total} goals finished", flush=True)
+
+    # Final tally
+    timed_out = set(pending_map) - inspected_ids
+    if timed_out:
+        print(f"\nTIMED OUT — {len(timed_out)} goals never finished:")
+        for gid in timed_out:
+            goal = ag.get_goal(gid)
+            status = goal["status"] if goal else "missing"
+            print(f"  {gid} — {status}")
+
+    # Save report
+    report = generate_report()
+    path = save_report(report)
+    print(f"\nReport saved: {path}")
+    print(report)
+
+
+def show_trend():
+    """Show performance metrics across all automated runs over time."""
+    if not os.path.exists(REPORTS_DIR):
+        print("No saved reports yet. Run: python3 benchmark.py --auto")
+        return
+
+    reports = sorted(f for f in os.listdir(REPORTS_DIR) if f.endswith(".md"))
+    if not reports:
+        print("No saved reports yet.")
+        return
+
+    # Also pull from results JSONL for trend data
+    if not os.path.exists(RESULTS_FILE):
+        print("No results data yet.")
+        return
+    with open(RESULTS_FILE) as f:
+        rows = [json.loads(l) for l in f if l.strip()]
+
+    baselines  = [r for r in rows if r.get("type") == "baseline"]
+    inspected  = [r for r in rows if "all_gt_passed" in r or r.get("manual_inspect_required")]
+
+    # Group by baseline (each auto-run starts with a baseline record)
+    runs = []
+    for i, b in enumerate(baselines):
+        b_ts = b.get("ts", "")
+        next_ts = baselines[i + 1]["ts"] if i + 1 < len(baselines) else "9999"
+        run_results = [r for r in inspected
+                       if b_ts <= r.get("verified_at", r.get("started_at", "")) < next_ts]
+        if not run_results:
+            continue
+        completed = sum(1 for r in run_results if r.get("actual_outcome") == "completed")
+        total = len(run_results)
+        gt_pass = sum(1 for r in run_results if r.get("all_gt_passed"))
+        false_p = sum(1 for r in run_results
+                      if r.get("actual_outcome") == "completed" and not r.get("all_gt_passed"))
+        runs.append({
+            "date": b_ts[:10],
+            "commit": (b.get("git_commit") or "?")[:7],
+            "model": (b.get("model") or "?")[:20],
+            "total": total,
+            "completed": completed,
+            "completion_rate": f"{completed/total:.0%}" if total else "—",
+            "gt_pass": gt_pass,
+            "gt_accuracy": f"{gt_pass/total:.0%}" if total else "—",
+            "false_passes": false_p,
+        })
+
+    if not runs:
+        print("No completed auto-runs to trend yet.")
+        return
+
+    print(f"\nAMY BENCHMARK TREND ({len(runs)} runs)\n")
+    hdr = f"{'Date':<12} {'Commit':<8} {'Model':<22} {'Done':>4} {'Comp%':>6} {'GT%':>5} {'FP':>3}"
+    print(hdr)
+    print("─" * len(hdr))
+    for r in runs:
+        fp_flag = " ⚠" if r["false_passes"] > 0 else ""
+        print(f"{r['date']:<12} {r['commit']:<8} {r['model']:<22} "
+              f"{r['total']:>4} {r['completion_rate']:>6} {r['gt_accuracy']:>5} "
+              f"{r['false_passes']:>3}{fp_flag}")
+    print("\nFP = false passes (Amy reported complete but GT checks failed) — ⚠ = dangerous")
+
+
 def show_history():
     """Print a compact summary of all past benchmark runs."""
     if not os.path.exists(RESULTS_FILE):
@@ -485,22 +657,30 @@ def show_history():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Amy benchmark runner")
+    parser.add_argument("--auto", action="store_true",
+                        help="Queue tasks, poll until done, auto-inspect, save report")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show tasks without creating goals")
-    parser.add_argument("--review", action="store_true",
-                        help="Show compact history of past runs")
     parser.add_argument("--report", action="store_true",
                         help="Print the full baseline report")
-    parser.add_argument("--task", help="Run a specific task by id")
+    parser.add_argument("--trend", action="store_true",
+                        help="Show performance trend across all auto runs")
+    parser.add_argument("--review", action="store_true",
+                        help="Show compact history of past runs")
+    parser.add_argument("--task", help="Run or inspect a specific task by id")
     parser.add_argument("--inspect", metavar="GOAL_ID",
                         help="Record ground truth for a completed goal")
     parser.add_argument("--note", metavar="GOAL_ID",
-                        help="Record a human intervention for a goal (requires --message)")
+                        help="Record a human intervention (requires --message)")
     parser.add_argument("--message", metavar="TEXT",
                         help="Intervention description (used with --note)")
     args = parser.parse_args()
 
-    if args.report:
+    if args.auto:
+        run_auto(task_filter=args.task)
+    elif args.trend:
+        show_trend()
+    elif args.report:
         print(generate_report())
     elif args.review:
         show_history()
