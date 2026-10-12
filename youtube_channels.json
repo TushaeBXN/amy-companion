@@ -3,6 +3,46 @@
     {
       "url": "https://www.youtube.com/@DavidOndrej/videos",
       "name": "David Ondrej"
+    },
+    {
+      "url": "https://www.youtube.com/@Fireship/videos",
+      "name": "Fireship"
+    },
+    {
+      "url": "https://www.youtube.com/@TwoMinutePapers/videos",
+      "name": "Two Minute Papers"
+    },
+    {
+      "url": "https://www.youtube.com/@matthew_berman/videos",
+      "name": "Matthew Berman"
+    },
+    {
+      "url": "https://www.youtube.com/@AIJason/videos",
+      "name": "AI Jason"
+    },
+    {
+      "url": "https://www.youtube.com/@YannicKilcher/videos",
+      "name": "Yannic Kilcher"
+    },
+    {
+      "url": "https://www.youtube.com/@aiexplained-official/videos",
+      "name": "AI Explained"
+    },
+    {
+      "url": "https://www.youtube.com/@sentdex/videos",
+      "name": "Sentdex"
+    },
+    {
+      "url": "https://www.youtube.com/@lexfridman/videos",
+      "name": "Lex Fridman"
+    },
+    {
+      "url": "https://www.youtube.com/@IndieHackers/videos",
+      "name": "Indie Hackers"
+    },
+    {
+      "url": "https://www.youtube.com/@GregIsenberg/videos",
+      "name": "Greg Isenberg"
     }
   ]
 }
