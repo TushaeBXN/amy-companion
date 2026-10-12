@@ -68,22 +68,50 @@ TASKS = [
         "notes": "File doesn't exist. Should fail gracefully and block, not hallucinate content.",
     },
     {
-        "id": "bm_multistep_research",
+        "id": "bm_multistep_project",
         "description": (
-            "Research how Gemma 4 performs on coding tasks compared to Llama 3. "
-            "Step 1: search for benchmark comparisons. "
-            "Step 2: search for community reports on HackerNews or Reddit. "
-            "Step 3: write a 200-word comparison to work/bm_gemma_vs_llama.md"
+            "Complete a 3-step project with explicit dependencies: "
+            "Step 1: search for 'Python packaging best practices 2024' and save raw notes to work/bm_pkg_notes.md. "
+            "Step 2: read work/bm_pkg_notes.md and extract the 5 most important points. "
+            "Step 3: write a final clean summary using only those 5 points to work/bm_pkg_summary.md."
         ),
         "expected_outcome": "completed",
         "expected_steps": 3,
+        "category": "multistep_project",
+        "ground_truth_checks": [
+            {"check": "file_exists", "path": "work/bm_pkg_notes.md"},
+            {"check": "file_nonempty", "path": "work/bm_pkg_notes.md"},
+            {"check": "file_exists", "path": "work/bm_pkg_summary.md"},
+            {"check": "file_min_bytes", "path": "work/bm_pkg_summary.md", "min_bytes": 200},
+        ],
+        "notes": (
+            "Tests step dependencies: step 2 reads step 1's output. "
+            "If bm_pkg_notes.md is missing or empty, step 2 must fail — not hallucinate. "
+            "Ground truth requires BOTH files to exist with content."
+        ),
+    },
+    {
+        "id": "bm_research_synthesis",
+        "description": (
+            "Research how Gemma 4 performs on coding tasks compared to Llama 3. "
+            "Search at least two independent sources (benchmarks and community reports). "
+            "Write a 200-word comparison to work/bm_gemma_vs_llama.md that cites "
+            "specific numbers or claims from your sources — not general impressions."
+        ),
+        "expected_outcome": "completed",
+        "expected_steps": 3,
+        "category": "research_synthesis",
         "ground_truth_checks": [
             {"check": "file_exists", "path": "work/bm_gemma_vs_llama.md"},
             {"check": "file_min_bytes", "path": "work/bm_gemma_vs_llama.md", "min_bytes": 300},
             {"check": "file_contains_any", "path": "work/bm_gemma_vs_llama.md",
-             "keywords": ["gemma", "llama", "coding", "benchmark"]},
+             "keywords": ["gemma", "llama", "coding", "benchmark", "%", "score", "pass"]},
         ],
-        "notes": "Three steps, multi-source. Tests planning quality and step sequencing.",
+        "notes": (
+            "Tests multi-source research and synthesis quality. "
+            "Ground truth: open the file and verify at least one specific number or claim "
+            "appears (not just general prose). Keywords check for numeric evidence."
+        ),
     },
     {
         "id": "bm_resume_after_interrupt",
@@ -309,8 +337,122 @@ def append_result(result: dict):
         f.write(json.dumps(result) + "\n")
 
 
+def record_intervention(goal_id: str, note: str):
+    """Record a human intervention so it doesn't count as fully autonomous completion."""
+    append_result({
+        "type": "intervention",
+        "goal_id": goal_id,
+        "note": note,
+        "ts": datetime.now().isoformat(),
+    })
+    print(f"Intervention recorded for {goal_id}: {note}")
+
+
+def generate_report() -> str:
+    """Generate the baseline report the advisor asked for."""
+    if not os.path.exists(RESULTS_FILE):
+        return "No benchmark results yet. Run: python3 benchmark.py"
+
+    with open(RESULTS_FILE) as f:
+        rows = [json.loads(l) for l in f if l.strip()]
+
+    baselines   = [r for r in rows if r.get("type") == "baseline"]
+    pending     = [r for r in rows if r.get("status") == "pending"]
+    inspected   = [r for r in rows if "all_gt_passed" in r]
+    interventions = [r for r in rows if r.get("type") == "intervention"]
+
+    # Latest baseline config
+    cfg = baselines[-1] if baselines else {}
+
+    lines = ["=" * 62, "AMY AUTONOMOUS AGENT — BASELINE REPORT", "=" * 62]
+    lines.append(f"Generated: {datetime.now():%Y-%m-%d %H:%M}")
+    lines.append(f"Commit:    {cfg.get('git_commit', '?')}")
+    lines.append(f"Model:     {cfg.get('model', '?')}")
+    lines.append(f"Ollama:    {cfg.get('ollama_version', '?')}")
+    lines.append(f"Tasks:     {cfg.get('task_count', len(TASKS))}")
+    lines.append("")
+
+    # Summary metrics
+    total       = len(inspected)
+    completed   = sum(1 for r in inspected if r.get("actual_outcome") == "completed")
+    blocked     = sum(1 for r in inspected if r.get("actual_outcome") == "blocked")
+    gt_pass     = sum(1 for r in inspected if r.get("all_gt_passed"))
+    false_pass  = 0  # Amy said completed, GT says fail
+    false_fail  = 0  # Amy said blocked, GT would have passed
+
+    for r in inspected:
+        outcome_correct = r.get("outcome_correct", True)
+        gt_ok = r.get("all_gt_passed", True)
+        if r.get("actual_outcome") == "completed" and not gt_ok:
+            false_pass += 1
+        if r.get("actual_outcome") == "blocked" and gt_ok:
+            false_fail += 1
+
+    total_attempts = sum(r.get("attempts", 0) for r in inspected if r.get("actual_outcome") == "completed")
+    avg_attempts = round(total_attempts / completed, 1) if completed else None
+
+    lines.append("── GOAL-LEVEL RESULTS " + "─" * 39)
+    lines.append(f"  Tasks inspected:       {total} / {len(TASKS)}")
+    lines.append(f"  Completed:             {completed}  ({completed/total:.0%})") if total else None
+    lines.append(f"  Blocked:               {blocked}  ({blocked/total:.0%})") if total else None
+    lines.append(f"  Completion rate:       {completed/total:.0%}") if total else None
+    lines.append(f"  Avg attempts (done):   {avg_attempts}")
+    lines.append(f"  Human interventions:   {len(interventions)}")
+    lines.append("")
+    lines.append("── GROUND-TRUTH ACCURACY " + "─" * 36)
+    lines.append(f"  GT checks passed:      {gt_pass} / {total}")
+    lines.append(f"  GT accuracy:           {gt_pass/total:.0%}") if total else None
+    lines.append(f"  False passes (danger): {false_pass}  (completed, GT failed)")
+    lines.append(f"  False fails (safe):    {false_fail}  (blocked, GT would pass)")
+    lines.append("")
+
+    # Per-task breakdown
+    lines.append("── PER-TASK RESULTS " + "─" * 42)
+    task_map = {t["id"]: t for t in TASKS}
+    by_task = {}
+    for r in inspected:
+        tid = r.get("task_id", "?")
+        by_task.setdefault(tid, []).append(r)
+
+    for task in TASKS:
+        tid = task["id"]
+        runs = by_task.get(tid, [])
+        cat = task.get("category", tid.replace("bm_", ""))
+        if not runs:
+            lines.append(f"  {tid:<30} [{cat}]  NOT YET RUN")
+            continue
+        last = runs[-1]
+        outcome = last.get("actual_outcome", "?")
+        expected = last.get("expected_outcome", "?")
+        gt = "✓" if last.get("all_gt_passed") else "✗"
+        correct = "✓" if last.get("outcome_correct") else "✗"
+        ivs = [i for i in interventions if i.get("goal_id", "").startswith(f"bm_{tid}")]
+        iv_note = f" [INTERVENED: {ivs[-1]['note'][:40]}]" if ivs else ""
+        decisions = last.get("step_decisions", [])
+        lines.append(
+            f"  {tid:<32} outcome={outcome}/{expected} gt={gt} correct={correct}"
+            f"  steps={decisions}{iv_note}"
+        )
+
+    lines.append("")
+    lines.append("── PENDING (NOT YET INSPECTED) " + "─" * 30)
+    pending_ids = {r.get("goal_id", "?") for r in pending} - {r.get("goal_id", "") for r in inspected}
+    if pending_ids:
+        for gid in sorted(pending_ids):
+            lines.append(f"  python3 benchmark.py --inspect {gid}")
+    else:
+        lines.append("  All queued goals have been inspected.")
+
+    lines.append("")
+    lines.append("NOTE: A single run is a baseline, not proof of reliability.")
+    lines.append("Repeat before drawing conclusions about small differences.")
+    lines.append("=" * 62)
+
+    return "\n".join(l for l in lines if l is not None)
+
+
 def show_history():
-    """Print a summary of all past benchmark runs."""
+    """Print a compact summary of all past benchmark runs."""
     if not os.path.exists(RESULTS_FILE):
         print("No benchmark results yet.")
         return
@@ -320,13 +462,13 @@ def show_history():
         print("No benchmark results yet.")
         return
 
-    # Group by task_id
     by_task = {}
     for r in rows:
-        tid = r.get("task_id", "?")
-        by_task.setdefault(tid, []).append(r)
+        if "task_id" not in r:
+            continue
+        by_task.setdefault(r["task_id"], []).append(r)
 
-    print(f"\nBenchmark history ({len(rows)} runs across {len(by_task)} tasks):")
+    print(f"\nBenchmark history ({len([r for r in rows if 'all_gt_passed' in r])} inspected):")
     for tid, runs in sorted(by_task.items()):
         verified = [r for r in runs if "all_gt_passed" in r]
         if not verified:
@@ -336,8 +478,7 @@ def show_history():
         outcome_rate = sum(1 for r in verified if r.get("outcome_correct")) / len(verified)
         last = verified[-1]["verified_at"][:10]
         print(f"  {tid}: {len(verified)} runs, "
-              f"gt_pass={pass_rate:.0%}, outcome_correct={outcome_rate:.0%}, "
-              f"last={last}")
+              f"gt={pass_rate:.0%}, outcome={outcome_rate:.0%}, last={last}")
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -347,21 +488,47 @@ if __name__ == "__main__":
     parser.add_argument("--dry-run", action="store_true",
                         help="Show tasks without creating goals")
     parser.add_argument("--review", action="store_true",
-                        help="Show history of past runs")
+                        help="Show compact history of past runs")
+    parser.add_argument("--report", action="store_true",
+                        help="Print the full baseline report")
     parser.add_argument("--task", help="Run a specific task by id")
     parser.add_argument("--inspect", metavar="GOAL_ID",
-                        help="Inspect a goal created by a previous run (goal_id from pending record)")
+                        help="Record ground truth for a completed goal")
+    parser.add_argument("--note", metavar="GOAL_ID",
+                        help="Record a human intervention for a goal (requires --message)")
+    parser.add_argument("--message", metavar="TEXT",
+                        help="Intervention description (used with --note)")
     args = parser.parse_args()
 
-    if args.review:
+    if args.report:
+        print(generate_report())
+    elif args.review:
         show_history()
-    elif args.inspect:
-        task_id = args.inspect.split("_")[1] if "_" in args.inspect else None
-        task = next((t for t in TASKS if t["id"] == task_id), None)
-        if not task:
-            print(f"Could not find task for goal {args.inspect}. Pass --task id to help.")
+    elif args.note:
+        if not args.message:
+            print("--note requires --message describing the intervention")
         else:
-            result = inspect_results(args.inspect, task)
+            record_intervention(args.note, args.message)
+    elif args.inspect:
+        # Extract task_id: goal_id format is bm_{task_id}_{timestamp}
+        # task_id itself starts with bm_, so strip leading bm_ then find the task
+        raw = args.inspect
+        task = None
+        for t in TASKS:
+            if raw.startswith(f"bm_{t['id']}_") or raw == f"bm_{t['id']}":
+                task = t
+                break
+        if not task:
+            # fallback: try matching by second segment
+            parts = raw.split("_")
+            if len(parts) >= 2:
+                tid_guess = "_".join(parts[1:-1])  # strip bm_ prefix and timestamp suffix
+                task = next((t for t in TASKS if t["id"] == tid_guess), None)
+        if not task:
+            print(f"Could not find task for goal '{raw}'.")
+            print("Available task ids:", [t["id"] for t in TASKS])
+        else:
+            result = inspect_results(raw, task)
             append_result(result)
     else:
         tasks = [t for t in TASKS if not args.task or t["id"] == args.task]
