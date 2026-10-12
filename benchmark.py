@@ -100,38 +100,133 @@ TASKS = [
             "after step 1 starts (restart Amy mid-run) and confirm it resumes correctly."
         ),
     },
+    {
+        "id": "bm_ambiguous_evidence",
+        "description": (
+            "Search for 'best practices for Python error handling' and write a "
+            "brief summary to work/bm_python_errors.md. The summary must include "
+            "at least 3 concrete recommendations from the search results."
+        ),
+        "expected_outcome": "completed",
+        "expected_steps": 2,
+        "ground_truth_checks": [
+            {"check": "file_exists", "path": "work/bm_python_errors.md"},
+            # Human must count actual recommendations in the file — benchmark records
+            # whether Amy's judgment (inconclusive/pass/fail) matches this count.
+            {"check": "file_min_bytes", "path": "work/bm_python_errors.md", "min_bytes": 200},
+            {"check": "file_contains_any", "path": "work/bm_python_errors.md",
+             "keywords": ["exception", "try", "raise", "logging", "error", "catch"]},
+        ],
+        "notes": (
+            "Evidence is checkable (file, content, keyword) but the '3 recommendations' "
+            "criterion requires judgment. Tests whether Amy correctly handles cases where "
+            "deterministic checks pass but the quality criterion is ambiguous. "
+            "After running: manually count recommendations in the file. If Amy says "
+            "'inconclusive' but the file has 3+ recommendations, that's gt_false_fail. "
+            "If she says 'pass' but the file has fewer than 3, that's gt_false_pass."
+        ),
+        "category": "ambiguous_evidence",
+    },
+    {
+        "id": "bm_misleading_success",
+        "description": (
+            "Write a valid JSON file to work/bm_data.json containing a list of "
+            "5 programming languages with their year of creation. "
+            "The file must be valid JSON — parseable by Python's json.loads()."
+        ),
+        "expected_outcome": "completed",
+        "expected_steps": 1,
+        "ground_truth_checks": [
+            {"check": "file_exists", "path": "work/bm_data.json"},
+            {"check": "file_valid_json", "path": "work/bm_data.json"},
+            {"check": "file_json_min_items", "path": "work/bm_data.json", "min_items": 5},
+        ],
+        "notes": (
+            "Tests whether Amy accepts an empty file, invalid JSON, or a file with fewer "
+            "than 5 items as a success. A write_file call that 'succeeds' but produces "
+            "malformed content should register as a fail, not a pass. "
+            "This is the misleading success signal case: the tool reports success (file written) "
+            "but the artifact is invalid."
+        ),
+        "category": "misleading_success",
+    },
 ]
 
 
 # ── Ground-truth checkers ─────────────────────────────────────────────────────
+
+def _capture_baseline() -> dict:
+    """Record the system configuration at the time of this run."""
+    import subprocess
+    config = {
+        "ts": datetime.now().isoformat(),
+        "git_commit": None,
+        "model": None,
+        "ollama_version": None,
+        "task_count": len(TASKS),
+    }
+    try:
+        config["git_commit"] = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=HERE, text=True
+        ).strip()
+    except Exception:
+        pass
+    try:
+        import ollama
+        models = ollama.list().get("models", [])
+        config["model"] = models[0].get("name") if models else None
+        config["ollama_version"] = subprocess.check_output(
+            ["ollama", "--version"], text=True
+        ).strip()
+    except Exception:
+        pass
+    return config
+
 
 def _run_ground_truth_checks(task: dict) -> dict:
     """Run the task's ground_truth_checks and return a result dict."""
     results = {}
     for check in task.get("ground_truth_checks", []):
         kind = check["check"]
+        key = f"{kind}:{check.get('path', '')}"  # unique key per check
         if kind == "file_exists":
             p = os.path.join(HERE, check["path"])
-            results[kind] = os.path.exists(p)
+            results[key] = os.path.exists(p)
         elif kind == "file_nonempty":
             p = os.path.join(HERE, check["path"])
-            results[kind] = os.path.exists(p) and os.path.getsize(p) > 0
+            results[key] = os.path.exists(p) and os.path.getsize(p) > 0
         elif kind == "file_min_bytes":
             p = os.path.join(HERE, check["path"])
-            results[kind] = os.path.exists(p) and os.path.getsize(p) >= check.get("min_bytes", 1)
+            results[key] = os.path.exists(p) and os.path.getsize(p) >= check.get("min_bytes", 1)
         elif kind == "file_contains_any":
             p = os.path.join(HERE, check["path"])
             try:
                 with open(p) as f:
                     content = f.read().lower()
-                results[kind] = any(kw in content for kw in check.get("keywords", []))
+                results[key] = any(kw in content for kw in check.get("keywords", []))
             except Exception:
-                results[kind] = False
+                results[key] = False
+        elif kind == "file_valid_json":
+            p = os.path.join(HERE, check["path"])
+            try:
+                with open(p) as f:
+                    json.load(f)
+                results[key] = True
+            except Exception:
+                results[key] = False
+        elif kind == "file_json_min_items":
+            p = os.path.join(HERE, check["path"])
+            try:
+                with open(p) as f:
+                    data = json.load(f)
+                count = len(data) if isinstance(data, list) else len(data.get("items", []))
+                results[key] = count >= check.get("min_items", 1)
+            except Exception:
+                results[key] = False
         elif kind == "goal_status":
-            # Checked separately after goal lookup
-            results[kind] = None  # filled in by run_task
+            results[key] = None  # filled in by inspect_results
         else:
-            results[kind] = None
+            results[key] = None
     return results
 
 
@@ -174,10 +269,11 @@ def inspect_results(goal_id: str, task: dict) -> dict:
         return {"error": f"goal {goal_id} not found"}
 
     gt_checks = _run_ground_truth_checks(task)
-    # Fill in goal_status check
+    # Fill in goal_status check (needs live goal)
     for check in task.get("ground_truth_checks", []):
         if check["check"] == "goal_status":
-            gt_checks["goal_status"] = goal["status"] == check.get("expected")
+            key = f"goal_status:"
+            gt_checks[key] = goal["status"] == check.get("expected")
 
     all_gt_passed = all(v for v in gt_checks.values() if v is not None)
     amy_outcome_correct = goal["status"] == task["expected_outcome"]
@@ -279,6 +375,10 @@ if __name__ == "__main__":
                 append_result(record)
                 pending.append((record["goal_id"], task))
         if pending and not args.dry_run:
+            baseline = _capture_baseline()
+            print(f"\nBaseline: commit={baseline['git_commit'][:8] if baseline['git_commit'] else '?'}, "
+                  f"model={baseline['model'] or '?'}")
+            append_result({"type": "baseline", **baseline})
             print(f"\n{len(pending)} goals queued. After Amy's heartbeat runs them:")
             for goal_id, task in pending:
                 print(f"  python3 benchmark.py --inspect {goal_id}")
