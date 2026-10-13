@@ -473,7 +473,7 @@ def save_report(report_text: str) -> str:
     return path
 
 
-def run_auto(task_filter: str | None = None):
+def run_auto(task_filter: str | None = None, fast: bool = False):
     """Queue tasks, poll until done, auto-inspect, save report.
 
     Manual tasks (bm_ambiguous_evidence, bm_resume_after_interrupt) are
@@ -490,8 +490,9 @@ def run_auto(task_filter: str | None = None):
     append_result({"type": "baseline", **baseline})
 
     # Create goals staggered over 90 minutes so Amy's heartbeat isn't swamped
+    # (--fast skips the stagger for manual test runs)
     pending_map = {}  # goal_id → task
-    stagger = AUTO_STAGGER_SECS if len(tasks) > 1 else 0
+    stagger = 0 if fast else (AUTO_STAGGER_SECS if len(tasks) > 1 else 0)
     for i, task in enumerate(tasks):
         record = run_task(task)
         append_result(record)
@@ -659,6 +660,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Amy benchmark runner")
     parser.add_argument("--auto", action="store_true",
                         help="Queue tasks, poll until done, auto-inspect, save report")
+    parser.add_argument("--fast", action="store_true",
+                        help="Skip stagger delay — queue all goals immediately (for manual runs)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show tasks without creating goals")
     parser.add_argument("--report", action="store_true",
@@ -677,7 +680,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.auto:
-        run_auto(task_filter=args.task)
+        run_auto(task_filter=args.task, fast=args.fast)
     elif args.trend:
         show_trend()
     elif args.report:
