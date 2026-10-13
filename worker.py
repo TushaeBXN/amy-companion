@@ -30,7 +30,7 @@ PROPOSALS   = os.path.join(WORK_DIR, "proposals")
 TICK_SECS   = 60
 MAX_HOPS    = 8
 IDLE_GRACE  = 120          # don't start a task while Brian is mid-conversation
-QUIET_START, QUIET_END = 23, 7
+QUIET_START, QUIET_END = 23, 0  # override: no quiet hours
 SPONTANEOUS = True         # Amy sends unprompted thoughts during idle time
 SPONT_MIN   = 45 * 60      # earliest a spontaneous thought fires (45 min idle)
 SPONT_MAX   = 3 * 60 * 60  # latest window (3 hours idle)
@@ -874,7 +874,8 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
     return final or "(no output)"
 
 
-MAX_INCONCLUSIVE = 2   # max consecutive inconclusive judgments before blocking a step
+MAX_STEP_ATTEMPTS = 3   # retries before a step is marked blocked
+MAX_INCONCLUSIVE  = 2   # max consecutive inconclusive judgments before blocking a step
 
 
 def _check_file(path: str) -> tuple[bool, str]:
