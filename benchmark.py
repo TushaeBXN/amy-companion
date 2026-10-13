@@ -474,13 +474,12 @@ def save_report(report_text: str) -> str:
 
 
 def run_auto(task_filter: str | None = None, fast: bool = False):
-    """Queue tasks, poll until done, auto-inspect, save report.
+    """Queue tasks one at a time: create goal → wait for finish → next task.
 
     Manual tasks (bm_ambiguous_evidence, bm_resume_after_interrupt) are
     skipped in auto-inspect and flagged in the report for human follow-up.
     """
     tasks = [t for t in TASKS if not task_filter or t["id"] == task_filter]
-    auto_tasks  = [t for t in tasks if t["id"] not in MANUAL_TASKS]
     manual_tasks = [t for t in tasks if t["id"] in MANUAL_TASKS]
 
     print(f"AUTO MODE — {len(tasks)} tasks ({len(manual_tasks)} need manual inspection)")
@@ -489,70 +488,55 @@ def run_auto(task_filter: str | None = None, fast: bool = False):
           f"Model: {baseline['model'] or '?'}")
     append_result({"type": "baseline", **baseline})
 
-    # Create goals staggered over 90 minutes so Amy's heartbeat isn't swamped
-    # (--fast skips the stagger for manual test runs)
-    pending_map = {}  # goal_id → task
-    stagger = 0 if fast else (AUTO_STAGGER_SECS if len(tasks) > 1 else 0)
+    # Stagger only applies to the weekly cron run; --fast or sequential mode skips it
+    stagger = 0 if fast else AUTO_STAGGER_SECS
+
+    all_results = []
     for i, task in enumerate(tasks):
         record = run_task(task)
         append_result(record)
-        pending_map[record["goal_id"]] = task
-        if i < len(tasks) - 1:
-            next_in = stagger / 60
-            print(f"  Queued {task['id']} → next goal in {next_in:.0f} min…", flush=True)
-            time.sleep(stagger)
+        goal_id = record["goal_id"]
+        print(f"\n[{i+1}/{len(tasks)}] {task['id']} — waiting for Amy to finish…", flush=True)
 
-    print(f"\n{len(pending_map)} goals queued. Polling every {AUTO_POLL_SECS}s "
-          f"(timeout {AUTO_TIMEOUT_HOURS}h)…")
-    if manual_tasks:
-        print(f"Skipping auto-inspect for: {[t['id'] for t in manual_tasks]}")
-
-    deadline = time.time() + AUTO_TIMEOUT_HOURS * 3600
-    inspected_ids = set()
-
-    while time.time() < deadline:
-        time.sleep(AUTO_POLL_SECS)
-        remaining = set(pending_map) - inspected_ids
-        if not remaining:
-            break
-
-        for goal_id in list(remaining):
-            task = pending_map[goal_id]
+        # Poll until this goal reaches a terminal state
+        task_deadline = time.time() + AUTO_TIMEOUT_HOURS * 3600
+        while time.time() < task_deadline:
+            time.sleep(AUTO_POLL_SECS)
             goal = ag.get_goal(goal_id)
             if not goal:
+                break
+            status = goal["status"]
+            print(f"  [{datetime.now():%H:%M}] {task['id']} → {status}", flush=True)
+            if status not in ("completed", "blocked"):
                 continue
-            if goal["status"] not in ("completed", "blocked"):
-                continue  # still running
 
             if task["id"] in MANUAL_TASKS:
-                print(f"  ⚠  {task['id']} reached {goal['status']} — needs manual inspect")
-                inspected_ids.add(goal_id)  # don't re-check, but don't record GT
-                append_result({
+                print(f"  ⚠  needs manual inspect")
+                result = {
                     "task_id": task["id"],
                     "goal_id": goal_id,
-                    "actual_outcome": goal["status"],
+                    "actual_outcome": status,
                     "expected_outcome": task["expected_outcome"],
-                    "outcome_correct": goal["status"] == task["expected_outcome"],
+                    "outcome_correct": status == task["expected_outcome"],
                     "manual_inspect_required": True,
                     "verified_at": datetime.now().isoformat(),
-                })
+                }
             else:
                 result = inspect_results(goal_id, task)
-                append_result(result)
-                inspected_ids.add(goal_id)
+            append_result(result)
+            all_results.append(result)
+            outcome = "✓" if result.get("outcome_correct") else "✗"
+            print(f"  {outcome} {task['id']}: outcome={status}/{task['expected_outcome']} "
+                  f"gt={result.get('gt_passed', '?')} "
+                  f"decisions={result.get('step_decisions', [])}", flush=True)
+            break
+        else:
+            print(f"  TIMED OUT — {task['id']} never finished", flush=True)
 
-        done = len(inspected_ids)
-        total = len(pending_map)
-        print(f"  [{datetime.now():%H:%M}] {done}/{total} goals finished", flush=True)
-
-    # Final tally
-    timed_out = set(pending_map) - inspected_ids
-    if timed_out:
-        print(f"\nTIMED OUT — {len(timed_out)} goals never finished:")
-        for gid in timed_out:
-            goal = ag.get_goal(gid)
-            status = goal["status"] if goal else "missing"
-            print(f"  {gid} — {status}")
+        # Stagger before next task (weekly cron only)
+        if i < len(tasks) - 1 and stagger:
+            print(f"  Waiting {stagger//60} min before next task…", flush=True)
+            time.sleep(stagger)
 
     # Save report
     report = generate_report()
