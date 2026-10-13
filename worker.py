@@ -1020,7 +1020,7 @@ def _verify_step(goal: dict, step_idx: int, step_desc: str,
             model=_model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": prompt}],
-            options={"num_predict": 120, "temperature": 0.3},
+            options={"num_predict": 800, "temperature": 0.3},
         )
         raw = _clean(resp["message"].get("content", ""))
         first = raw.splitlines()[0].upper() if raw else ""
