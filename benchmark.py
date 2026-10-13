@@ -488,8 +488,8 @@ def run_auto(task_filter: str | None = None, fast: bool = False):
           f"Model: {baseline['model'] or '?'}")
     append_result({"type": "baseline", **baseline})
 
-    # Stagger only applies to the weekly cron run; --fast or sequential mode skips it
-    stagger = 0 if fast else AUTO_STAGGER_SECS
+    # No stagger by default — tasks run sequentially so there's no pile-up anyway
+    stagger = 0
 
     all_results = []
     for i, task in enumerate(tasks):

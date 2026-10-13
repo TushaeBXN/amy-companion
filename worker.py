@@ -772,7 +772,7 @@ def _execute_goal_planning(goal_id: str, goal: dict):
             model=_model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": plan_prompt}],
-            options={"num_predict": 400, "temperature": 0.5},
+            options={"num_predict": 1500, "temperature": 0.5},
         )
         raw = _clean(resp["message"].get("content", ""))
         # Accept numbered (1. / 1)) or bullet (- / * / •) lists
@@ -805,7 +805,7 @@ def _execute_goal_planning(goal_id: str, goal: dict):
             model=_model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": criteria_prompt}],
-            options={"num_predict": 600, "temperature": 0.3},
+            options={"num_predict": 2000, "temperature": 0.3},
         )
         criteria = _parse_criteria(resp2["message"].get("content", ""), len(steps))
         _goals.set_plan(goal_id, steps, criteria)
