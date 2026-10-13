@@ -852,6 +852,7 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
     messages = [{"role": "system", "content": system},
                 {"role": "user", "content": prompt}]
     final = ""
+    used = []
     for step in range(1, MAX_HOPS + 1):
         _fit(messages)
         msg = _chat(messages, allowed)["message"]
@@ -859,6 +860,14 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
         calls = msg.get("tool_calls") or []
         if not calls:
             final = _clean(msg.get("content", ""))
+            # If the step required saving a file but Amy never called write_file, nudge once
+            wants_save = re.search(r"(?i)\bwrite|save|\.md|\.json|\.txt", step_desc or "")
+            if wants_save and "write_file" not in used and step < MAX_HOPS:
+                messages.append({"role": "user",
+                                  "content": "You haven't saved anything yet. "
+                                             "Call write_file now to save your results — "
+                                             "don't describe what you would save, just save it."})
+                continue
             break
         for call in calls:
             name = call["function"]["name"]
@@ -868,6 +877,7 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
                     args = json.loads(args)
                 except json.JSONDecodeError:
                     continue
+            used.append(name)
             result_text = _cap(str(_guarded_dispatch(name, args) or "done"))
             messages.append({"role": "tool",
                              "content": result_text + f"\n[step {step} of {MAX_HOPS}]"})
