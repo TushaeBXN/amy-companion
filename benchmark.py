@@ -496,6 +496,14 @@ def run_auto(task_filter: str | None = None, fast: bool = False):
         for g in old:
             ag.abandon_goal(g["goal_id"])
 
+    # Remove any test files that must be missing for certain benchmark tasks to work
+    _test_files_to_clean = ["work/definitely_does_not_exist_xyz.md"]
+    for _tf in _test_files_to_clean:
+        _full = os.path.join(os.path.dirname(__file__), _tf)
+        if os.path.exists(_full):
+            os.remove(_full)
+            print(f"Cleaned up test file: {_tf}")
+
     # No stagger by default — tasks run sequentially so there's no pile-up anyway
     stagger = 0
 
