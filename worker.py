@@ -775,9 +775,21 @@ def _execute_goal_planning(goal_id: str, goal: dict):
             options={"num_predict": 400, "temperature": 0.5},
         )
         raw = _clean(resp["message"].get("content", ""))
-        steps = [re.sub(r"^\d+[\.\)]\s*", "", line).strip()
-                 for line in raw.splitlines() if re.match(r"^\d+", line.strip())]
+        # Accept numbered (1. / 1)) or bullet (- / * / •) lists
+        steps = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            m = re.match(r"^(?:\d+[\.\)]|[-*•])\s*(.+)", line)
+            if m:
+                steps.append(m.group(1).strip())
+        # Last resort: treat non-empty non-header lines as steps
         if not steps:
+            steps = [l.strip() for l in raw.splitlines()
+                     if l.strip() and not l.strip().endswith(":")]
+        if not steps:
+            _goals._update(goal_id, next_action=f"planning returned no steps: {raw[:200]}")
             return
         # Step 2: get verification criteria for each step
         criteria_prompt = (
