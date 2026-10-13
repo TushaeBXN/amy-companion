@@ -718,8 +718,9 @@ def _run_goal(goal: dict):
 
     goal_finished = False
     try:
-        result = _execute_goal_step(goal_id, goal, step_idx, step_desc)
-        verified, decision, next_action = _verify_step(goal, step_idx, step_desc, result)
+        result, files_written = _execute_goal_step(goal_id, goal, step_idx, step_desc)
+        verified, decision, next_action = _verify_step(
+            goal, step_idx, step_desc, result, files_written=files_written)
         advance = verified
         if not verified and goal["attempts"] >= MAX_STEP_ATTEMPTS * (step_idx + 1):
             _goals.block_goal(goal_id,
@@ -853,6 +854,7 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
                 {"role": "user", "content": prompt}]
     final = ""
     used = []
+    files_written: list[str] = []
     for step in range(1, MAX_HOPS + 1):
         _fit(messages)
         msg = _chat(messages, allowed)["message"]
@@ -888,10 +890,12 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
                 except json.JSONDecodeError:
                     continue
             used.append(name)
+            if name == "write_file" and args.get("path"):
+                files_written.append(args["path"])
             result_text = _cap(str(_guarded_dispatch(name, args) or "done"))
             messages.append({"role": "tool",
                              "content": result_text + f"\n[step {step} of {MAX_HOPS}]"})
-    return final or "(no output)"
+    return final or "(no output)", files_written
 
 
 MAX_STEP_ATTEMPTS = 3   # retries before a step is marked blocked
@@ -974,8 +978,7 @@ def _deterministic_check(step_desc: str, evidence_required: str,
             unique_items = len(set(i.strip().lower() for i in items))
             if unique_items >= n:
                 return True, f"found {unique_items} unique items (required {n})"
-            if unique_items == 0:
-                return False, f"expected {n} items, found none"
+            # unique_items < n — inconclusive; model will judge (Amy may use paragraph format)
         # Keyword check: must appear outside error lines
         kw_m = re.search(r"(?:contains?|includes?|mentions?)\s+[\"']?(\w[\w\s]{1,30})[\"']?", ev_low)
         if kw_m:
@@ -989,10 +992,11 @@ def _deterministic_check(step_desc: str, evidence_required: str,
 
 
 def _verify_step(goal: dict, step_idx: int, step_desc: str,
-                 result: str) -> tuple[bool, str, str]:
+                 result: str, files_written: list[str] | None = None) -> tuple[bool, str, str]:
     """Verify a step result. Returns (passed, decision, next_action).
 
     Strategy:
+      0. If Amy explicitly wrote a file this step and it exists, that's a pass.
       1. Deterministic checks — file content, error markers, unique item counts,
          keyword context. Definitive pass/fail requires no model call.
       2. Model judgment only when deterministic is inconclusive.
@@ -1004,6 +1008,15 @@ def _verify_step(goal: dict, step_idx: int, step_desc: str,
     crit = criteria_list[step_idx] if step_idx < len(criteria_list) else {}
     evidence_required = crit.get("evidence_required", "")
     expected = crit.get("expected", "")
+
+    # 0. Files explicitly written by Amy this step — strongest evidence of completion
+    for path in (files_written or []):
+        if path:
+            ok, reason = _check_file(path)
+            if ok:
+                return True, "deterministic_pass", (
+                    f"Verified: file written this step — {reason}. Proceed to step {step_idx + 2}."
+                )
 
     # 1. Deterministic check
     det_passed, det_reason = _deterministic_check(step_desc, evidence_required, result)
