@@ -498,7 +498,7 @@ def _run_task(task):
         )
         allowed = [t for t in tools.TOOLS if t["function"]["name"] in ALLOWED_TOOLS]
         messages = [{"role": "system", "content": system},
-                    {"role": "user", "content": task["prompt"].replace("{date}", today)
+                    {"role": "user", "content": (task.get("prompt") or task["description"]).replace("{date}", today)
                                                .replace("{work}", WORK_DIR)}]
         seen, nudges, tool_errors, hit_limit = {}, 0, 0, False
         for step in range(1, task_hops + 1):
