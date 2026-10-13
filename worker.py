@@ -30,7 +30,7 @@ PROPOSALS   = os.path.join(WORK_DIR, "proposals")
 TICK_SECS   = 60
 MAX_HOPS    = 8
 IDLE_GRACE  = 120          # don't start a task while Brian is mid-conversation
-QUIET_START, QUIET_END = 23, 0  # override: no quiet hours
+QUIET_START, QUIET_END = 23, 7
 SPONTANEOUS = True         # Amy sends unprompted thoughts during idle time
 SPONT_MIN   = 45 * 60      # earliest a spontaneous thought fires (45 min idle)
 SPONT_MAX   = 3 * 60 * 60  # latest window (3 hours idle)
@@ -772,7 +772,7 @@ def _execute_goal_planning(goal_id: str, goal: dict):
             model=_model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": plan_prompt}],
-            options={"num_predict": 1500, "temperature": 0.5},
+            options={"num_predict": 3000, "temperature": 0.5},
         )
         raw = _clean(resp["message"].get("content", ""))
         # Accept numbered (1. / 1)) or bullet (- / * / •) lists
@@ -860,8 +860,18 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
         calls = msg.get("tool_calls") or []
         if not calls:
             final = _clean(msg.get("content", ""))
-            # If the step required saving a file but Amy never called write_file, nudge once
-            wants_save = re.search(r"(?i)\bwrite|save|\.md|\.json|\.txt", step_desc or "")
+            # Nudge to write if: step or goal's plan involves writing AND Amy did research but
+            # hasn't called write_file yet
+            did_research = any(t in used for t in
+                               ("web_search", "read_article", "read_file", "list_files"))
+            plan_has_write = any(
+                re.search(r"(?i)\bwrite|save|\.md|\.json|\.txt", s)
+                for s in (goal.get("plan") or [])
+            )
+            wants_save = (
+                re.search(r"(?i)\bwrite|save|\.md|\.json|\.txt", step_desc or "") or
+                (plan_has_write and did_research)
+            )
             if wants_save and "write_file" not in used and step < MAX_HOPS:
                 messages.append({"role": "user",
                                   "content": "You haven't saved anything yet. "
@@ -923,7 +933,16 @@ def _deterministic_check(step_desc: str, evidence_required: str,
     if result_first_line.startswith("[tool_error]") or re.match(r"^\[?error\b", result_first_line):
         return False, f"tool error: {result[:120]}"
 
-    # File existence + content check
+    # Read-step failure: if step asks to read/summarize a specific file and result says not found
+    read_re = re.compile(r"(?i)\bread\s+(?:the\s+)?file\b|summarize.*?file\b|file.*?summarize\b")
+    not_found_re = re.compile(
+        r"(?i)\b(not found|not present|does not exist|doesn.t exist|no such file|"
+        r"could not find the file|file.*?missing)\b"
+    )
+    if read_re.search(step_desc) and not_found_re.search(result):
+        return False, "file not found — read step confirmed file is missing"
+
+    # File existence + content check (for write/save steps)
     save_re = re.compile(r"(?i)\b(save|write|create|output to|saved to|stored in)\b")
     path_re = re.compile(r"(work/[\w/.\-]+\.\w+|/[\w/.\-]{8,}\.\w+)")
     if save_re.search(step_desc) or save_re.search(evidence_required):
@@ -945,8 +964,9 @@ def _deterministic_check(step_desc: str, evidence_required: str,
         count_m = re.search(r"at least (\d+)|(\d+)\s+result", ev_low)
         if count_m:
             n = int(count_m.group(1) or count_m.group(2))
-            items = re.findall(r"\n[-•*]\s+\S|\d+\.\s+\S", result)
-            unique_items = len(set(items))
+            # Capture content after bullets/numbers (not just 1 char) to distinguish items
+            items = re.findall(r"(?m)^\s*(?:[-•*]|\d+[\.\)])\s+(.{2,40})", result)
+            unique_items = len(set(i.strip().lower() for i in items))
             if unique_items >= n:
                 return True, f"found {unique_items} unique items (required {n})"
             if unique_items == 0:
@@ -1008,7 +1028,7 @@ def _verify_step(goal: dict, step_idx: int, step_desc: str,
         f"Step {step_idx + 1}: {step_desc}\n"
         f"Expected: {expected or '(not specified)'}\n"
         f"Evidence required: {evidence_required or '(not specified)'}\n"
-        f"Observed result: {result[:800]}\n\n"
+        f"Observed result: {result[:1500]}\n\n"
         "Did this step succeed based on the evidence required? "
         "Answer YES or NO on the first line. "
         "If YES, say specifically what in the result confirms success. "
