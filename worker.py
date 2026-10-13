@@ -860,17 +860,17 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
         calls = msg.get("tool_calls") or []
         if not calls:
             final = _clean(msg.get("content", ""))
-            # Nudge to write if: step or goal's plan involves writing AND Amy did research but
-            # hasn't called write_file yet
-            did_research = any(t in used for t in
-                               ("web_search", "read_article", "read_file", "list_files"))
+            # Nudge to write if: step or goal's plan involves writing AND Amy did WEB research
+            # (web_search / read_article only — NOT file-system ops; we don't want Amy to
+            # create files that a task expects to be missing)
+            did_web_research = any(t in used for t in ("web_search", "read_article"))
             plan_has_write = any(
                 re.search(r"(?i)\bwrite|save|\.md|\.json|\.txt", s)
                 for s in (goal.get("plan") or [])
             )
             wants_save = (
                 re.search(r"(?i)\bwrite|save|\.md|\.json|\.txt", step_desc or "") or
-                (plan_has_write and did_research)
+                (plan_has_write and did_web_research)
             )
             if wants_save and "write_file" not in used and step < MAX_HOPS:
                 messages.append({"role": "user",
@@ -942,20 +942,25 @@ def _deterministic_check(step_desc: str, evidence_required: str,
     if read_re.search(step_desc) and not_found_re.search(result):
         return False, "file not found — read step confirmed file is missing"
 
-    # File existence + content check (for write/save steps)
-    save_re = re.compile(r"(?i)\b(save|write|create|output to|saved to|stored in)\b")
+    # General file-produced check: if any work/ path appears in result and the file exists,
+    # Amy produced output this step — that's a deterministic pass regardless of step_desc wording
     path_re = re.compile(r"(work/[\w/.\-]+\.\w+|/[\w/.\-]{8,}\.\w+)")
+    for p in path_re.findall(result):
+        p = p.strip().rstrip(".,)")
+        ok, reason = _check_file(p)
+        if ok:
+            return True, f"file produced: {reason}"
+
+    # File existence + content check (for write/save steps — also checks if file is bad)
+    save_re = re.compile(r"(?i)\b(save|write|create|output to|saved to|stored in)\b")
     if save_re.search(step_desc) or save_re.search(evidence_required):
-        paths = path_re.findall(result)
-        for p in paths:
+        for p in path_re.findall(result):
             p = p.strip().rstrip(".,)")
             ok, reason = _check_file(p)
-            if ok:
-                return True, reason
-            if "not found" not in reason:
-                # File exists but bad — definitive fail
+            if not ok and "not found" not in reason:
+                # File exists but is bad — definitive fail
                 return False, reason
-        # No valid path found — inconclusive (Amy may have described path wrong)
+        # No valid path found — fall through to keyword / model check
 
     # Evidence keyword check — ensure keyword is NOT inside an error context
     if evidence_required:
