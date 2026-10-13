@@ -700,7 +700,12 @@ def _run_goal(goal: dict):
         plan = goal.get("plan") or []
         step_idx = 0
         if not plan:
-            _goals.block_goal(goal_id, "Could not generate a plan.")
+            reason = goal.get("next_action") or "Planning call returned no steps."
+            _goals.record_step_result(goal_id, 0, reason,
+                                      next_action="Retry: check Ollama is running and model is loaded.",
+                                      advance=False, observed=reason,
+                                      decision="deterministic_fail", passed=False)
+            _goals.block_goal(goal_id, f"Could not generate a plan: {reason}")
             _running.release()
             return
 
@@ -794,7 +799,10 @@ def _execute_goal_planning(goal_id: str, goal: dict):
         _goals.set_plan(goal_id, steps, criteria)
         print(f"  [worker] goal '{goal_id}' plan ({len(steps)} steps) + criteria set", flush=True)
     except Exception as e:
-        print(f"  [worker] goal planning failed: {e}", flush=True)
+        reason = f"planning exception: {type(e).__name__}: {e}"
+        print(f"  [worker] goal '{goal_id}' {reason}", flush=True)
+        # Store reason so block_goal can surface it
+        _goals._update(goal_id, next_action=reason)
 
 
 def _parse_criteria(raw: str, n_steps: int) -> list[dict]:
