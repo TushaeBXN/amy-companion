@@ -488,6 +488,14 @@ def run_auto(task_filter: str | None = None, fast: bool = False):
           f"Model: {baseline['model'] or '?'}")
     append_result({"type": "baseline", **baseline})
 
+    # Abandon any leftover bm_* goals from previous runs so the worker queue is clean
+    old = [g for g in ag.list_goals()
+           if g["goal_id"].startswith("bm_") and g["status"] in ("active", "pending", "blocked")]
+    if old:
+        print(f"Cleaning up {len(old)} leftover benchmark goals…")
+        for g in old:
+            ag.abandon_goal(g["goal_id"])
+
     # No stagger by default — tasks run sequentially so there's no pile-up anyway
     stagger = 0
 
