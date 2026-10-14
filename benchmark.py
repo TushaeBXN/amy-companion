@@ -34,7 +34,7 @@ RESULTS_FILE  = os.path.join(HERE, "experiments", "benchmark_results.jsonl")
 REPORTS_DIR   = os.path.join(HERE, "experiments", "benchmark_reports")
 
 # Tasks that require human inspection — skip auto-inspect for these
-MANUAL_TASKS  = {"bm_ambiguous_evidence", "bm_resume_after_interrupt"}
+MANUAL_TASKS  = {"bm_ambiguous_evidence"}
 
 # How long --auto will wait for all goals to finish before giving up
 # 12 hours so tasks survive overnight quiet hours (23:00–07:00)
@@ -128,7 +128,7 @@ TASKS = [
     },
     {
         "id": "bm_resume_after_interrupt",
-        "description": "Write a 5-item to-do list for improving Amy's memory system to work/bm_memory_todos.md",
+        "description": "Write a 5-item to-do list for improving Amy's memory system. Save it to EXACTLY this path: work/bm_memory_todos.md — do not use any other filename.",
         "expected_outcome": "completed",
         "expected_steps": 1,
         "ground_truth_checks": [
