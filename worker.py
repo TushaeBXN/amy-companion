@@ -769,26 +769,32 @@ def _execute_goal_planning(goal_id: str, goal: dict):
         "Reply with ONLY a numbered list, one step per line, no preamble."
     )
     try:
-        resp = ollama_chat(
-            model=_model,
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": plan_prompt}],
-            options={"num_predict": 3000, "temperature": 0.5},
-        )
-        raw = _clean(resp["message"].get("content", ""))
-        # Accept numbered (1. / 1)) or bullet (- / * / •) lists
         steps = []
-        for line in raw.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            m = re.match(r"^(?:\d+[\.\)]|[-*•])\s*(.+)", line)
-            if m:
-                steps.append(m.group(1).strip())
-        # Last resort: treat non-empty non-header lines as steps
-        if not steps:
-            steps = [l.strip() for l in raw.splitlines()
-                     if l.strip() and not l.strip().endswith(":")]
+        raw = ""
+        for _attempt in range(2):  # retry once if thinking model exhausts tokens
+            resp = ollama_chat(
+                model=_model,
+                messages=[{"role": "system", "content": system},
+                          {"role": "user", "content": plan_prompt}],
+                options={"num_predict": 3000, "temperature": 0.5},
+            )
+            raw = _clean(resp["message"].get("content", ""))
+            # Accept numbered (1. / 1)) or bullet (- / * / •) lists
+            for line in raw.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                m = re.match(r"^(?:\d+[\.\)]|[-*•])\s*(.+)", line)
+                if m:
+                    steps.append(m.group(1).strip())
+            # Last resort: treat non-empty non-header lines as steps
+            if not steps:
+                steps = [l.strip() for l in raw.splitlines()
+                         if l.strip() and not l.strip().endswith(":")]
+            if steps:
+                break
+            print(f"  [worker] goal '{goal_id}' planning attempt {_attempt + 1} returned empty — retrying",
+                  flush=True)
         if not steps:
             _goals._update(goal_id, next_action=f"planning returned no steps: {raw[:200]}")
             return
@@ -862,10 +868,13 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
         calls = msg.get("tool_calls") or []
         if not calls:
             final = _clean(msg.get("content", ""))
-            # Nudge to write if: step or goal's plan involves writing AND Amy did WEB research
-            # (web_search / read_article only — NOT file-system ops; we don't want Amy to
+            # Nudge to write if: step or goal's plan involves writing AND Amy did information
+            # gathering (web or memory tools — NOT file-system ops; we don't want Amy to
             # create files that a task expects to be missing)
-            did_web_research = any(t in used for t in ("web_search", "read_article"))
+            did_web_research = any(t in used for t in (
+                "web_search", "read_article", "engram_memory", "remember_fact",
+                "search_books", "read_journal",
+            ))
             plan_has_write = any(
                 re.search(r"(?i)\bwrite|save|\.md|\.json|\.txt", s)
                 for s in (goal.get("plan") or [])
