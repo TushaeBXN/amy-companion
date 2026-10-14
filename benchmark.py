@@ -474,16 +474,46 @@ def save_report(report_text: str) -> str:
     return path
 
 
+def _already_passed_tasks() -> set[str]:
+    """Return task IDs whose most recent result was a correct pass (outcome matches expected)."""
+    if not os.path.exists(RESULTS_FILE):
+        return set()
+    with open(RESULTS_FILE) as f:
+        rows = [json.loads(l) for l in f if l.strip()]
+    # Keep only rows that have a final outcome verdict
+    result_rows = [r for r in rows if "actual_outcome" in r and "task_id" in r]
+    # For each task, take the most recent row
+    latest: dict[str, dict] = {}
+    for r in result_rows:
+        tid = r["task_id"]
+        if tid not in latest or r.get("verified_at", "") > latest[tid].get("verified_at", ""):
+            latest[tid] = r
+    passed = set()
+    for tid, r in latest.items():
+        task = next((t for t in TASKS if t["id"] == tid), None)
+        if task and r.get("actual_outcome") == task.get("expected_outcome") and r.get("outcome_correct"):
+            passed.add(tid)
+    return passed
+
+
 def run_auto(task_filter: str | None = None, fast: bool = False):
     """Queue tasks one at a time: create goal → wait for finish → next task.
 
-    Manual tasks (bm_ambiguous_evidence, bm_resume_after_interrupt) are
-    skipped in auto-inspect and flagged in the report for human follow-up.
+    Already-passing tasks (correct outcome on most recent run) are skipped
+    so only failing tasks are re-run. Manual tasks (bm_ambiguous_evidence,
+    bm_resume_after_interrupt) are still flagged for human follow-up.
     """
     tasks = [t for t in TASKS if not task_filter or t["id"] == task_filter]
     manual_tasks = [t for t in tasks if t["id"] in MANUAL_TASKS]
 
-    print(f"AUTO MODE — {len(tasks)} tasks ({len(manual_tasks)} need manual inspection)")
+    # Skip tasks that already passed on their most recent run
+    already_passed = _already_passed_tasks() if not task_filter else set()
+    skipped = [t for t in tasks if t["id"] in already_passed]
+    tasks = [t for t in tasks if t["id"] not in already_passed]
+
+    print(f"AUTO MODE — {len(tasks)} tasks to run ({len(skipped)} already passing, skipped)")
+    if skipped:
+        print(f"  Skipping: {', '.join(t['id'] for t in skipped)}")
     baseline = _capture_baseline()
     print(f"Commit: {baseline['git_commit'][:8] if baseline['git_commit'] else '?'}  "
           f"Model: {baseline['model'] or '?'}")
