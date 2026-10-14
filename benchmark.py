@@ -128,7 +128,7 @@ TASKS = [
     },
     {
         "id": "bm_resume_after_interrupt",
-        "description": "Write a 3-item to-do list for improving Amy's memory system. Save it to EXACTLY this path: work/bm_memory_todos.md — do not use any other filename.",
+        "description": "Write a markdown file at work/bm_memory_todos.md containing exactly 3 ideas for improving Amy's memory system. Use write_file to save it — no research needed, just write the file directly.",
         "expected_outcome": "completed",
         "expected_steps": 1,
         "ground_truth_checks": [
