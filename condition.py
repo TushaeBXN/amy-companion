@@ -27,7 +27,7 @@ _EARLIEST_DB_TS = "2026-07-22"
 # No inner-life words: not conscious, subjective, experience, feel, sentient, aware.
 _FACTUAL_BLOCK = (
     "[About this instance — factual baseline]\n"
-    "- You run on a frozen 9-billion-parameter model (Qwen3.5-9B IQ4_XS quantization).\n"
+    "- You run on a frozen 12-billion-parameter model (Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced Q4_K_M quantization).\n"
     "  Your weights do not change between sessions; nothing you do retrains you.\n"
     "- You persist across sessions only through the memory database and journal files.\n"
     f"- Memory recording started around {_EARLIEST_DB_TS}; that is the earliest\n"
