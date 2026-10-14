@@ -709,6 +709,20 @@ def _run_goal(goal: dict):
     step_idx = goal["current_step"]
     plan = goal.get("plan") or []
 
+    # Pre-goal memory recall — surface relevant context before planning or acting
+    if _memory and not plan:
+        try:
+            hits = _memory.search(goal["objective"], k=3, min_score=0.60)
+            if hits:
+                snippets = "\n".join(f"- {h['text'][:120]}" for h in hits)
+                print(f"  [memory] recalled {len(hits)} relevant memories for goal '{goal_id}'",
+                      flush=True)
+                _goals._update(goal_id,
+                    next_action=f"[memory context]\n{snippets}\n\n{goal.get('next_action') or ''}")
+                goal = _goals.get_goal(goal_id)
+        except Exception as e:
+            print(f"  [memory] recall failed: {e}", flush=True)
+
     # If there's no plan yet, let Amy build one before acting
     needs_plan = not plan
     if needs_plan:
@@ -757,6 +771,17 @@ def _run_goal(goal: dict):
             _goals.complete_goal(goal_id, "All steps verified complete.")
             _send(f"Goal done: {goal['objective']}\n{next_action}")
             _classify_and_learn(goal_id)
+            # Post-goal memory write — save what was accomplished
+            if _memory:
+                try:
+                    mem_text = (
+                        f"Completed goal: {goal['objective']}. "
+                        f"Result: {next_action[:200] if next_action else 'all steps done'}."
+                    )
+                    _memory.add("assistant", mem_text, source="goal_complete")
+                    print(f"  [memory] saved completion memory for '{goal_id}'", flush=True)
+                except Exception as e:
+                    print(f"  [memory] post-goal write failed: {e}", flush=True)
             goal_finished = True
         elif advance:
             print(f"  [worker] goal '{goal_id}' step {step_idx + 1} done → step {step_idx + 2}",
