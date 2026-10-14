@@ -850,14 +850,39 @@ def _run_goal(goal: dict):
         _running.release()
 
 
+def _load_learned_patterns() -> str:
+    """Load approved learned_pattern proposals from work/proposals/ into a prompt block."""
+    patterns = []
+    proposals_dir = PROPOSALS
+    if not os.path.isdir(proposals_dir):
+        return ""
+    for fname in sorted(os.listdir(proposals_dir)):
+        if not fname.endswith(".json"):
+            continue
+        try:
+            data = json.loads(open(os.path.join(proposals_dir, fname)).read())
+            if data.get("type") == "learned_pattern" and data.get("approved"):
+                pattern = data.get("pattern", "").strip()
+                applies_when = data.get("applies_when", "").strip()
+                if pattern:
+                    patterns.append(f"- {pattern} (applies when: {applies_when})")
+        except Exception:
+            continue
+    if not patterns:
+        return ""
+    return "\n\n[Learned patterns — apply these to your planning]\n" + "\n".join(patterns)
+
+
 def _execute_goal_planning(goal_id: str, goal: dict):
     """Ask Amy to break the objective into steps + verification criteria."""
     system = (_memory.wake_up() if _memory else "") + WORK_PERSONA
+    learned = _load_learned_patterns()
     # Step 1: get the plan
     plan_prompt = (
         f"You have a new goal: {goal['objective']}\n"
-        f"Reason: {goal['reason'] or 'not specified'}\n\n"
-        "Break this into 3–7 concrete, actionable steps — each one something you can "
+        f"Reason: {goal['reason'] or 'not specified'}\n"
+        + (f"\n{learned}" if learned else "")
+        + "\n\nBreak this into 3–7 concrete, actionable steps — each one something you can "
         "accomplish with your available tools in a single execution round. "
         "Reply with ONLY a numbered list, one step per line, no preamble."
     )
