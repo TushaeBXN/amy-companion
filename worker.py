@@ -59,6 +59,7 @@ ALLOWED_TOOLS = {
 # Whitelisted email recipients — Amy may only send to these addresses autonomously
 EMAIL_WHITELIST = {
     "brian.thomas.t@gmail.com",
+    "b.thomas@aimhigherineducation.org",
     "amy@aimhigherineducation.org",
 }
 
