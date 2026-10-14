@@ -38,3 +38,15 @@ Amy can deliver quick-turnaround AI market research reports. She'll interview cl
 ### Income Idea — 2026-10-04 18:01
 **Market Research Reports on Contra** | Contra | $75–$200/report | Confidence: 8/10
 Amy can deliver concise, data-backed market research reports for startups and small businesses. No account setup needed — Contra is instant. Deliverables include executive summary, key metrics, competitive landscape snapshot, and strategic recommendations in 1-3 pages per report.
+
+### Income Idea — 2026-10-14 14:22
+**LangGraph Framework Analysis on YouTube 2026** | YouTube study | N/A | Confidence: 7/10
+Production-ready AI agent framework prioritizing state management over hype. LangGraph becoming standard for multi-agent systems in 2026 based on creator testing across production teams. Key criteria: production readiness, efficient memory/state handling, observability/debugging capabilities, community maturity. Visual builders like Flowise good for prototyping but less mature than N8N/LangGraph combos.
+
+### Income Idea — 2026-10-14 14:23
+**AI Agent Foundations from Simplilearn Course** | YouTube course | N/A | Confidence: 8/10
+Systematic approach to building AI agents: start with ReAct loops, tool use patterns, and agent-environment interaction before frameworks. Hands-on experience with LangChain, Hugging Face, and menless.ai essential for practical skills that translate to real-world problems in automation and decision-making systems.
+
+### Income Idea — 2026-10-14 14:26
+**LangGraph state management pattern (local ~9B agent)** | internal knowledge base | N/A (framework adoption insight) | Confidence: 8/10
+Production-standard AI agent framework prioritizing explicit state management over hype; ReAct loops are practical foundation before full orchestration library adoption. Insight from YouTube study Oct 14 2026. Applies to Brian's local ~9B parameter constraint: implement simple ReAct manually first for debugging and lean compute footprint, then layer LangGraph when scaling beyond single-threaded demo scope. Transcript saved at ~/ai-knowledge/creators/youtube/watch_v_ywymavrbizm/profile.md.

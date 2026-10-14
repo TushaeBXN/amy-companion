@@ -33,7 +33,8 @@ def _load_env():
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 k, _, v = line.partition("=")
-                config[k.strip()] = v.strip()
+                v = v.strip().strip('"').strip("'")
+                config[k.strip()] = v
     # Environment variables override file
     for key in ["AMY_EMAIL", "AMY_EMAIL_PASSWORD", "PROTON_BRIDGE_IMAP_PORT",
                  "PROTON_BRIDGE_SMTP_PORT", "PROTON_BRIDGE_PASSWORD", "PROTON_USE_BRIDGE",
@@ -134,7 +135,8 @@ def send_email(to: str, subject: str, body: str) -> str:
         msg["From"] = cfg["AMY_EMAIL"]
         msg["To"] = to
         msg["Subject"] = subject
-        msg.set_content(body)
+        signature = "\n\n--\nWarm regards,\nAmy · amyai@aimhigherineducation.org\nAnthos Intelligence"
+        msg.set_content(body + signature)
         if _is_google():
             with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
                 s.login(cfg["AMY_EMAIL"], cfg.get("AMY_EMAIL_PASSWORD", "").replace(" ", ""))
