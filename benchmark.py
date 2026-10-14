@@ -504,7 +504,13 @@ def _already_passed_tasks() -> set[str]:
     passed = set()
     for tid, r in latest.items():
         task = next((t for t in TASKS if t["id"] == tid), None)
-        if task and r.get("actual_outcome") == task.get("expected_outcome") and r.get("outcome_correct"):
+        if not task:
+            continue
+        outcome_ok = r.get("outcome_correct") and r.get("actual_outcome") == task.get("expected_outcome")
+        # For tasks with ground truth checks, also require gt to pass
+        has_gt = bool(task.get("ground_truth_checks"))
+        gt_ok = r.get("all_gt_passed", True) if has_gt else True
+        if outcome_ok and gt_ok:
             passed.add(tid)
     return passed
 
