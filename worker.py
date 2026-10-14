@@ -697,6 +697,52 @@ def _spontaneous_thought():
         _schedule_next_spont()
 
 
+def _propose_next_goal(goal: dict):
+    """After completing a goal, ask Amy what logically comes next and save as a proposal."""
+    try:
+        system = (_memory.wake_up() if _memory else "") + WORK_PERSONA
+        prompt = (
+            f"You just completed this goal:\n"
+            f"  Objective: {goal['objective']}\n"
+            f"  Plan: {goal.get('plan', [])}\n\n"
+            "Based on what you accomplished, suggest ONE specific follow-up goal that would "
+            "build on this work. It should be concrete and actionable.\n\n"
+            "Reply in this exact format:\n"
+            "GOAL: <one sentence objective>\n"
+            "REASON: <why this follows from the work just done>\n\n"
+            "If no follow-up is needed, reply with: GOAL: none"
+        )
+        resp = ollama_chat(
+            model=_model,
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": prompt}],
+            options={"num_predict": 300, "temperature": 0.5},
+        )
+        raw = _clean(resp["message"].get("content", ""))
+        goal_m = re.search(r"GOAL:\s*(.+)", raw, re.IGNORECASE)
+        reason_m = re.search(r"REASON:\s*(.+)", raw, re.IGNORECASE)
+        proposed = goal_m.group(1).strip() if goal_m else ""
+        reason = reason_m.group(1).strip() if reason_m else ""
+
+        if not proposed or proposed.lower() == "none":
+            return
+
+        # Save as a proposal file for Brian to review — never auto-create
+        os.makedirs(PROPOSALS, exist_ok=True)
+        fname = f"{datetime.now():%Y-%m-%d_%H%M}_next_goal.json"
+        _save(os.path.join(PROPOSALS, fname), {
+            "type": "goal_proposal",
+            "proposed_objective": proposed,
+            "reason": reason,
+            "triggered_by": goal["goal_id"],
+            "ts": datetime.now().isoformat(),
+        })
+        _send(f"Goal done — I have a follow-up idea:\n\"{proposed}\"\nSaved to proposals for your review.")
+        print(f"  [worker] next-goal proposal saved: {proposed[:80]}", flush=True)
+    except Exception as e:
+        print(f"  [worker] next-goal proposal failed: {e}", flush=True)
+
+
 def _run_goal(goal: dict):
     """Execute one round of an autonomous goal (plan → step → verify → persist)."""
     if not _running.acquire(blocking=False):
@@ -782,6 +828,8 @@ def _run_goal(goal: dict):
                     print(f"  [memory] saved completion memory for '{goal_id}'", flush=True)
                 except Exception as e:
                     print(f"  [memory] post-goal write failed: {e}", flush=True)
+            # Propose follow-up goals based on what was just completed
+            _propose_next_goal(goal)
             goal_finished = True
         elif advance:
             print(f"  [worker] goal '{goal_id}' step {step_idx + 1} done → step {step_idx + 2}",
