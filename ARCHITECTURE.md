@@ -84,7 +84,7 @@ flowchart TD
         CoreDesc["16-msg sliding window · model routing · tool dispatch (max 4 hops)\nsystem prompt = amy_persona.py + memory recall + session learnings\nspontaneous thought thread"]
     end
 
-    Core -->|tool turns| Hermes["**amy-hermes**\nLlama 3 8B · tool-calling\nctx=8192"]
+    Core -->|tool turns| Hermes["**gemma12-test**\nGemma4-12B QAT · tool-calling\nctx=16384"]
     Core -->|/look| Amy["**amy**\n5.1B Q4 · vision only\nctx=128k"]
     Core -->|code regex| Coder["**deepseek-coder**\n6.7B · code tasks\nrouted by regex"]
     Core -->|embed| Nomic["**nomic-embed-text**\nembeddings for RAG\ncosine sim ≥ 0.65"]
@@ -112,7 +112,7 @@ is an env var:
 
 ```bash
 ollama pull deepseek-coder:6.7b          # not installed by default
-export AMY_MODEL=hermes3                 # tool-calling (Llama 3 8B base; today's amy-hermes tag is Qwen3.5)
+export AMY_MODEL=gemma12-test            # tool-calling (Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M)
 export AMY_VISION_MODEL=amy              # vision-only model for /look
 export AMY_CODE_MODEL=deepseek-coder:6.7b  # re-enables code routing (empty = paused)
 ```
@@ -138,14 +138,14 @@ Both interfaces feed the same inference loop:
 
 1. **System prompt** is assembled from `amy_persona.py` (identity), recalled memory, and session learnings from the prior conversation.
 2. **Context window** is kept to the last 16 messages (sliding window) to prevent context bloat and verbatim regurgitation.
-3. **Single model** handles everything. No routing, no separate code or vision model. Images (webcam, uploads, Telegram attachments) are passed directly to `amy-hermes` via the multimodal projector.
+3. **Single model** handles everything. No routing, no separate code or vision model. Images (webcam, uploads, Telegram attachments) are passed directly to `gemma12-test` via the multimodal projector.
 4. **Tool dispatch** runs up to 12 hops: model emits `tool_calls[]`, `tools.py` executes them and injects results, model continues. The loop stops at 12 hops or when no more tool calls are emitted.
 
 ### Ollama model
 
 | Tag | Role | Context |
 |-----|------|---------|
-| `amy-hermes` | Reasoning, tools, conversation, vision | 16 384 tokens |
+| `gemma12-test` | Reasoning, tools, conversation, vision | 16 384 tokens |
 
 One model handles everything. Swap at runtime with `AMY_MODEL`.
 
@@ -164,7 +164,7 @@ Four layers, all local:
 
 ### Tools — `tools.py`
 
-31 whitelisted tools dispatched by `amy-hermes`. Key ones:
+31 whitelisted tools dispatched by `gemma12-test`. Key ones:
 
 | Tool | What it does |
 |------|-------------|
@@ -210,7 +210,7 @@ Piper TTS synthesizes speech using the `en_US-amy-medium` voice model at speed 0
 user input (web | Telegram | terminal | voice)
   → [text | image | transcript]
     → core assembles system prompt (persona + memory recall + learnings)
-      → amy-hermes → tool calls → tools.py (≤12 hops)
+      → gemma12-test → tool calls → tools.py (≤12 hops)
         → reply
           → nomic-embed-text → store in ava_memory.db
           → voice.py → afplay (spoken aloud)          [web/terminal only]
