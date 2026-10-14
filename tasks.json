@@ -50,7 +50,7 @@
     },
     {
       "id": "daily_self_audit",
-      "description": "Read your core files (amy_persona.py, worker.py, tools.py, memory.py, condition.py) to understand what you currently are and what you can do. Identify: (1) what capabilities are missing or incomplete, (2) what could work better, (3) what you wish you could do but currently cannot. Write your findings to work/self_audit.md \u2014 be honest and specific.",
+      "description": "Read your core files (amy_persona.py, worker.py, tools.py, memory.py, condition.py) to understand what you currently are and what you can do. Identify: (1) what capabilities are missing or incomplete, (2) what could work better, (3) what you wish you could do but currently cannot. Write your findings to work/self_audit.md \u2014 be honest and specific. Then for each concrete improvement you identify, write a separate file to work/proposals/ named YYYY-MM-DD_HHMM_audit_<slug>.json with this exact structure: {\"type\": \"learned_pattern\", \"pattern\": \"<one specific rule or change>\", \"applies_when\": \"<when this should activate>\", \"source\": \"self_audit\", \"approved\": false}. These proposals become actionable \u2014 Brian can approve them with 'approve <slug>' in Telegram.",
       "at": "18:30",
       "on": "daily",
       "voice": false,
