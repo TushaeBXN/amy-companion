@@ -701,33 +701,47 @@ def _spontaneous_thought():
 
 
 def _propose_next_goal(goal: dict):
-    """After completing a goal, ask Amy what logically comes next and save as a proposal."""
+    """After completing a goal, propose a follow-up only if it's higher priority than existing work."""
     try:
+        # Gather current workload so Amy can weigh the proposal against it
+        existing = _goals.list_goals(status="pending") + _goals.list_goals(status="active")
+        workload_lines = "\n".join(
+            f"- [{g['status'].upper()}] {g['objective']}"
+            for g in existing[:8]
+        ) or "None"
+
         system = (_memory.wake_up() if _memory else "") + WORK_PERSONA
         prompt = (
             f"You just completed this goal:\n"
             f"  Objective: {goal['objective']}\n"
             f"  Plan: {goal.get('plan', [])}\n\n"
-            "Based on what you accomplished, suggest ONE specific follow-up goal that would "
-            "build on this work. It should be concrete and actionable.\n\n"
+            f"Current active/pending goals:\n{workload_lines}\n\n"
+            "Based on what you accomplished, suggest ONE specific follow-up goal — but only if "
+            "it is more urgent or more valuable than the existing goals above. "
+            "Consider: does this follow-up unblock something, fill a clear gap, or address "
+            "an immediate need? If the existing workload already covers the most important next "
+            "step, reply with GOAL: none.\n\n"
             "Reply in this exact format:\n"
-            "GOAL: <one sentence objective>\n"
-            "REASON: <why this follows from the work just done>\n\n"
-            "If no follow-up is needed, reply with: GOAL: none"
+            "GOAL: <one sentence objective, or 'none'>\n"
+            "REASON: <why this is higher priority than existing goals, or why none is right>\n"
+            "PRIORITY: <high / medium / low>"
         )
         resp = ollama_chat(
             model=_model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": prompt}],
-            options={"num_predict": 300, "temperature": 0.5},
+            options={"num_predict": 350, "temperature": 0.4},
         )
         raw = _clean(resp["message"].get("content", ""))
         goal_m = re.search(r"GOAL:\s*(.+)", raw, re.IGNORECASE)
         reason_m = re.search(r"REASON:\s*(.+)", raw, re.IGNORECASE)
+        priority_m = re.search(r"PRIORITY:\s*(\w+)", raw, re.IGNORECASE)
         proposed = goal_m.group(1).strip() if goal_m else ""
         reason = reason_m.group(1).strip() if reason_m else ""
+        priority = priority_m.group(1).strip().lower() if priority_m else "medium"
 
         if not proposed or proposed.lower() == "none":
+            print(f"  [worker] no follow-up proposed (existing workload sufficient)", flush=True)
             return
 
         # Save as a proposal file for Brian to review — never auto-create
@@ -737,11 +751,13 @@ def _propose_next_goal(goal: dict):
             "type": "goal_proposal",
             "proposed_objective": proposed,
             "reason": reason,
+            "priority": priority,
             "triggered_by": goal["goal_id"],
+            "existing_goals_count": len(existing),
             "ts": datetime.now().isoformat(),
         })
-        _send(f"Goal done — I have a follow-up idea:\n\"{proposed}\"\nSaved to proposals for your review.")
-        print(f"  [worker] next-goal proposal saved: {proposed[:80]}", flush=True)
+        _send(f"Goal done — follow-up idea [{priority} priority]:\n\"{proposed}\"\nReason: {reason[:120]}\nSaved to proposals for your review.")
+        print(f"  [worker] next-goal proposal saved [{priority}]: {proposed[:80]}", flush=True)
     except Exception as e:
         print(f"  [worker] next-goal proposal failed: {e}", flush=True)
 
