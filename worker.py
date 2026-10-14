@@ -44,7 +44,7 @@ ALLOWED_TOOLS = {
     "add_goal", "complete_goal",
     "create_autonomous_goal", "list_autonomous_goals", "update_autonomous_goal",
     "research_income", "log_income_idea",
-    "fund_status", "search_books",
+    "fund_status", "search_books", "check_calendar",
     "moltbook_check_in", "moltbook_post", "moltbook_engage", "moltbook_verify",
     "create_slideshow", "bottube_post", "bottube_check",
     "self_improve", "speak",
