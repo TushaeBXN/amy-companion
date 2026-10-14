@@ -815,8 +815,38 @@ def _execute_goal_planning(goal_id: str, goal: dict):
             options={"num_predict": 2000, "temperature": 0.3},
         )
         criteria = _parse_criteria(resp2["message"].get("content", ""), len(steps))
+
+        # Step 3: estimate complexity to set per-goal hop budget
+        complexity_prompt = (
+            f"Goal: {goal['objective']}\n"
+            f"Steps: {len(steps)}\n\n"
+            "Rate the complexity of THIS goal with a single word:\n"
+            "  simple   — straightforward, no research, 1-2 tool calls per step\n"
+            "  medium   — some research or multi-step reasoning, 3-5 tool calls per step\n"
+            "  deep     — extensive research, synthesis across sources, 6+ tool calls per step\n\n"
+            "Reply with ONLY one word: simple, medium, or deep."
+        )
+        resp3 = ollama_chat(
+            model=_model,
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": complexity_prompt}],
+            options={"num_predict": 50, "temperature": 0.0},
+        )
+        complexity_raw = _clean(resp3["message"].get("content", "")).lower()
+        if "deep" in complexity_raw:
+            goal_max_hops = 12
+            complexity = "deep"
+        elif "medium" in complexity_raw:
+            goal_max_hops = 6
+            complexity = "medium"
+        else:
+            goal_max_hops = 3
+            complexity = "simple"
+
         _goals.set_plan(goal_id, steps, criteria)
-        print(f"  [worker] goal '{goal_id}' plan ({len(steps)} steps) + criteria set", flush=True)
+        _goals._update(goal_id, max_hops=goal_max_hops)
+        print(f"  [worker] goal '{goal_id}' plan ({len(steps)} steps, {complexity}, "
+              f"max_hops={goal_max_hops}) set", flush=True)
     except Exception as e:
         reason = f"planning exception: {type(e).__name__}: {e}"
         print(f"  [worker] goal '{goal_id}' {reason}", flush=True)
@@ -845,9 +875,10 @@ def _parse_criteria(raw: str, n_steps: int) -> list[dict]:
 
 def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) -> str:
     """Run one step of a goal using Amy's tools. Returns a result string."""
+    goal_max_hops = goal.get("max_hops", MAX_HOPS)
     context = _goals.goal_summary(goal)
     system = (
-        (_memory.wake_up() if _memory else "") + WORK_PERSONA + scope_rules(MAX_HOPS) +
+        (_memory.wake_up() if _memory else "") + WORK_PERSONA + scope_rules(goal_max_hops) +
         f"\n\n[Active goal context]\n{context}"
     )
     prompt = (
@@ -861,7 +892,7 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
     final = ""
     used = []
     files_written: list[str] = []
-    for step in range(1, MAX_HOPS + 1):
+    for step in range(1, goal_max_hops + 1):
         _fit(messages)
         msg = _chat(messages, allowed)["message"]
         messages.append(msg)
@@ -884,7 +915,7 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
                            step_desc or "") or
                 (plan_has_write and did_web_research)
             )
-            if wants_save and "write_file" not in used and step < MAX_HOPS:
+            if wants_save and "write_file" not in used and step < goal_max_hops:
                 messages.append({"role": "user",
                                   "content": "You haven't saved anything yet. "
                                              "Call write_file now to save your results — "
@@ -904,7 +935,7 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
                 files_written.append(args["path"])
             result_text = _cap(str(_guarded_dispatch(name, args) or "done"))
             messages.append({"role": "tool",
-                             "content": result_text + f"\n[step {step} of {MAX_HOPS}]"})
+                             "content": result_text + f"\n[step {step} of {goal_max_hops}]"})
     return final or "(no output)", files_written
 
 

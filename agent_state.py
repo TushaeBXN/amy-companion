@@ -77,10 +77,12 @@ def _conn():
             updated_at   TEXT    NOT NULL
         )
     """)
-    # Migrate existing rows — add criteria column if missing
+    # Migrate existing rows — add columns if missing
     cols = [r[1] for r in db.execute("PRAGMA table_info(agent_goals)").fetchall()]
     if "criteria" not in cols:
         db.execute("ALTER TABLE agent_goals ADD COLUMN criteria TEXT DEFAULT '[]'")
+    if "max_hops" not in cols:
+        db.execute("ALTER TABLE agent_goals ADD COLUMN max_hops INTEGER DEFAULT 8")
     db.commit()
     return db
 
