@@ -101,7 +101,7 @@ Claude, or any voice AI and let them talk directly with Amy.
 
 | Tag | Base | Quant | Context |
 |-----|------|-------|---------|
-| `amy-hermes` | Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-MTP | IQ4_XS (~6.53 GB) | 16 384 tokens |
+| `gemma12-test` | Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M | Q4_K_M (~8.1 GB) | 16 384 tokens |
 
 One model handles everything — reasoning, tool-calling, conversation, and vision.
 No routing, no separate code or vision model.
@@ -168,7 +168,7 @@ or study resources on any programming, CS, or math topic.
 
 | File | Role |
 |------|------|
-| `Modelfile.hermes` | Creates `amy-hermes` — Qwen3.5-9B IQ4_XS, ctx 16384, tool-calling |
+| `Modelfile.hermes` | Creates `gemma12-test` — Gemma4-12B Q4_K_M, ctx 16384, tool-calling |
 | `companion.py` | Terminal loop: recall → chat → tool calls → speak → remember |
 | `amy_server.py` | FastAPI web UI at localhost:3000 — chat, webcam, image upload, PDF/code learning |
 | `telegram_amy.py` | Telegram bot — full Amy over chat; multi-user, morning briefs, image gen |
@@ -239,9 +239,9 @@ Layered, entirely local:
 
 ## How she works
 
-**Models** — On Telegram, Amy runs on `amy-neo` (Qwen3.5-9B NEO-MAX Q4_K_M plus
-an `mmproj-F16` vision projector). One model does conversation, tool calls and
-vision. `.env` sets `AMY_MODEL=amy-neo`. Telegram loads it directly, and
+**Models** — Amy runs on `gemma12-test` (Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M).
+One model handles conversation, tool calls, and reasoning.
+`.env` sets `AMY_MODEL=gemma12-test`. Telegram loads it directly, and
 `start.sh` exports it for the web UI. Running `companion.py` on its own without
 `.env` falls back to `amy-vl`.
 

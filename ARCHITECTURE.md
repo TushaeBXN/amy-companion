@@ -20,8 +20,7 @@ Amy is a locally-hosted AI companion with multiple input paths, a single-model i
 
 | Tag | Base | Quant | Context | Notes |
 |-----|------|-------|---------|-------|
-| `amy-hermes` | Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-MTP | IQ4_XS (~6.53 GB) | 16 384 | Tool-calling, reasoning, conversation |
-| `amy-neo` (alt) | Qwen3.5-9B Q4\_K\_M + mmproj-F16 | Q4\_K\_M | 16 384 | Multimodal projector for native image input |
+| `gemma12-test` | Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M | Q4_K_M (~8.1 GB) | 16 384 | Tool-calling, reasoning, conversation |
 
 One model handles everything — tools, reasoning, conversation, and vision.
 No routing, no separate code or vision model.
@@ -47,7 +46,7 @@ flowchart TD
         CoreDesc["16-msg sliding window · tool dispatch (max 12 hops)\nsystem prompt = amy_persona.py + memory recall + session learnings\nspontaneous thought thread · heartbeat worker"]
     end
 
-    Core -->|tool turns| Hermes["**amy-hermes**\nQwen3.5-9B IQ4_XS\nctx=16384 · tools + vision"]
+    Core -->|tool turns| Hermes["**gemma12-test**\nGemma4-12B Q4_K_M\nctx=16384 · tools + vision"]
     Core -->|embed| Nomic["**nomic-embed-text**\nembeddings for RAG\ncosine sim ≥ 0.65"]
 
     Hermes -->|tool_calls| Tools["**tools.py**\n31 tools · whitelisted dispatch\nweb · file · moltbook · journal · image gen"]
