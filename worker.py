@@ -61,6 +61,8 @@ EMAIL_WHITELIST = {
     "brian.thomas.t@gmail.com",
     "b.thomas@aimhigherineducation.org",
     "amy@aimhigherineducation.org",
+    "amyai@aimhigherineducation.org",
+    "raketa.thomas@aimhigherineducation.org",
 }
 
 _WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
