@@ -385,23 +385,29 @@ def generate_report() -> str:
     lines.append(f"Tasks:     {cfg.get('task_count', len(TASKS))}")
     lines.append("")
 
-    # Summary metrics
-    total       = len(inspected)
-    completed   = sum(1 for r in inspected if r.get("actual_outcome") == "completed")
-    blocked     = sum(1 for r in inspected if r.get("actual_outcome") == "blocked")
-    gt_pass     = sum(1 for r in inspected if r.get("all_gt_passed"))
-    false_pass  = 0  # Amy said completed, GT says fail
-    false_fail  = 0  # Amy said blocked, GT would have passed
-
+    # Use only the most recent result per task to avoid skewing stats with dev runs
+    latest_per_task: dict[str, dict] = {}
     for r in inspected:
-        outcome_correct = r.get("outcome_correct", True)
+        tid = r.get("task_id", "?")
+        if tid not in latest_per_task or r.get("verified_at", "") > latest_per_task[tid].get("verified_at", ""):
+            latest_per_task[tid] = r
+    current = list(latest_per_task.values())
+
+    total       = len(current)
+    completed   = sum(1 for r in current if r.get("actual_outcome") == "completed")
+    blocked     = sum(1 for r in current if r.get("actual_outcome") == "blocked")
+    gt_pass     = sum(1 for r in current if r.get("all_gt_passed"))
+    false_pass  = 0
+    false_fail  = 0
+
+    for r in current:
         gt_ok = r.get("all_gt_passed", True)
         if r.get("actual_outcome") == "completed" and not gt_ok:
             false_pass += 1
         if r.get("actual_outcome") == "blocked" and gt_ok:
             false_fail += 1
 
-    total_attempts = sum(r.get("attempts", 0) for r in inspected if r.get("actual_outcome") == "completed")
+    total_attempts = sum(r.get("attempts", 0) for r in current if r.get("actual_outcome") == "completed")
     avg_attempts = round(total_attempts / completed, 1) if completed else None
 
     lines.append("── GOAL-LEVEL RESULTS " + "─" * 39)
@@ -449,7 +455,14 @@ def generate_report() -> str:
 
     lines.append("")
     lines.append("── PENDING (NOT YET INSPECTED) " + "─" * 30)
-    pending_ids = {r.get("goal_id", "?") for r in pending} - {r.get("goal_id", "") for r in inspected}
+    # Only show pending goals from the most recent baseline run
+    latest_baseline_ts = cfg.get("ts", "")
+    recent_pending = [
+        r for r in pending
+        if r.get("started_at", "") >= latest_baseline_ts
+    ]
+    inspected_ids = {r.get("goal_id", "") for r in inspected}
+    pending_ids = {r.get("goal_id", "?") for r in recent_pending} - inspected_ids
     if pending_ids:
         for gid in sorted(pending_ids):
             lines.append(f"  python3 benchmark.py --inspect {gid}")
