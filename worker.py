@@ -321,7 +321,10 @@ def _guarded_dispatch(name, args):
         if not any(to == addr or to.endswith(f"<{addr}>") for addr in EMAIL_WHITELIST):
             return (f"Blocked: '{to}' is not on the approved recipient list. "
                     f"Amy may only send email to known contacts.")
-    return tools.dispatch(name, args, _memory)
+    try:
+        return tools.dispatch(name, args, _memory)
+    except tools.ToolError as e:
+        return f"tool error [{e.code}]: {e.detail}"
 
 
 _INTENT_RE = re.compile(
@@ -1327,6 +1330,20 @@ def _classify_and_learn(goal_id: str):
         return
     evidence = goal.get("evidence") or []
     failures = [e for e in evidence if not e.get("passed", True)]
+
+    # Log task_completion score to self_metrics so performance data accumulates
+    try:
+        import self_metrics as _sm
+        total = len(evidence)
+        fail_count = len(failures)
+        if total > 0:
+            score = max(1, 5 - round((fail_count / total) * 4))
+            status = goal.get("status", "unknown")
+            note = f"goal '{goal_id}' — {fail_count}/{total} steps failed, status={status}"
+            _sm.log_score("task_completion", score, note)
+    except Exception:
+        pass
+
     if not failures:
         return   # no failures — nothing to learn from
 

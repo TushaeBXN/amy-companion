@@ -12,6 +12,35 @@ import web
 import moltbook
 import journal as _journal
 
+
+class ToolError(Exception):
+    """Structured tool failure. Attributes: tool (str), code (str), detail (str)."""
+    def __init__(self, tool: str, code: str, detail: str = ""):
+        self.tool = tool
+        self.code = code
+        self.detail = detail
+        super().__init__(f"[{tool}:{code}] {detail}")
+
+
+# ── Network result cache ──────────────────────────────────────────────────────
+# Keyed by (tool_name, cache_key). Entries expire after _CACHE_TTL seconds.
+_CACHE_TTL = 3600  # 1 hour
+_net_cache: dict = {}
+_cache_lock = threading.Lock()
+
+
+def _cache_get(tool: str, key: str):
+    with _cache_lock:
+        entry = _net_cache.get((tool, key))
+        if entry and (time.time() - entry["ts"]) < _CACHE_TTL:
+            return entry["value"]
+    return None
+
+
+def _cache_set(tool: str, key: str, value):
+    with _cache_lock:
+        _net_cache[(tool, key)] = {"value": value, "ts": time.time()}
+
 # Check moltbook reachability once at import time — skip its tools if it's down.
 def _moltbook_reachable():
     try:
@@ -1421,24 +1450,36 @@ def dispatch(name, args, memory=None):
         query = args.get("query", "").strip()
         if not query:
             return "no query given"
+        cached = _cache_get("web_search", query)
+        if cached:
+            print(f"  [web] search cache hit: {query[:60]}")
+            return cached
         print(f"  [web] searching: {query}")
         try:
             results = web.search(query)
-            return "\n".join(
+            result = "\n".join(
                 f"- {r['title']}: {r['snippet']} ({r['url']})"
                 for r in results
             ) or "no results"
+            _cache_set("web_search", query, result)
+            return result
         except Exception as e:
-            return f"search failed: {e}"
+            raise ToolError("web_search", "network_error", str(e))
     if name == "read_article":
         url = args.get("url", "").strip()
         if not url:
             return "no url given"
+        cached = _cache_get("read_article", url)
+        if cached:
+            print(f"  [web] article cache hit: {url[:60]}")
+            return cached
         print(f"  [web] reading: {url}")
         try:
-            return web.read_url(url)
+            result = web.read_url(url)
+            _cache_set("read_article", url, result)
+            return result
         except Exception as e:
-            return f"could not read page: {e}"
+            raise ToolError("read_article", "network_error", str(e))
 
     if name == "search_books":
         query = args.get("query", "").strip()
