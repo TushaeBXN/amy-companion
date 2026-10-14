@@ -119,6 +119,61 @@ def note_message(chat_id):
         return st["owner_chat_id"] == chat_id
 
 
+def _list_proposals() -> str:
+    """Return a summary of pending proposals in work/proposals/."""
+    if not os.path.isdir(PROPOSALS):
+        return "No proposals yet."
+    rows = []
+    for fname in sorted(os.listdir(PROPOSALS)):
+        if not fname.endswith(".json"):
+            continue
+        try:
+            data = json.loads(open(os.path.join(PROPOSALS, fname)).read())
+            approved = data.get("approved", False)
+            ptype = data.get("type", "?")
+            slug = fname.replace(".json", "")
+            if ptype == "learned_pattern":
+                label = f"[pattern{'✓' if approved else ''}] {data.get('pattern', '')[:80]}"
+            elif ptype == "goal_proposal":
+                label = f"[goal] {data.get('proposed_objective', '')[:80]}"
+            else:
+                label = f"[{ptype}] {slug}"
+            rows.append(f"• {slug}\n  {label}")
+        except Exception:
+            continue
+    if not rows:
+        return "No proposals yet."
+    return "Proposals in work/proposals/:\n\n" + "\n\n".join(rows) + \
+           "\n\nTo approve a pattern: approve <slug>"
+
+
+def _approve_proposal(slug: str) -> str:
+    """Mark a learned_pattern proposal as approved so it flows into planning."""
+    if not os.path.isdir(PROPOSALS):
+        return "No proposals directory found."
+    # Accept partial match — find the file
+    matches = [f for f in os.listdir(PROPOSALS)
+               if f.endswith(".json") and slug.lower() in f.lower()]
+    if not matches:
+        return f"No proposal matching '{slug}'. Say 'proposals' to see the list."
+    if len(matches) > 1:
+        return f"Ambiguous — {len(matches)} matches. Be more specific:\n" + "\n".join(matches)
+    fname = matches[0]
+    fpath = os.path.join(PROPOSALS, fname)
+    try:
+        data = json.loads(open(fpath).read())
+        if data.get("type") != "learned_pattern":
+            return f"'{fname}' is a {data.get('type', '?')} — only learned_pattern proposals can be approved this way."
+        data["approved"] = True
+        data["approved_at"] = datetime.now().isoformat()
+        with open(fpath, "w") as f:
+            json.dump(data, f, indent=2)
+        pattern = data.get("pattern", "")[:120]
+        return f"Approved. This pattern will now apply to all future goal planning:\n\"{pattern}\""
+    except Exception as e:
+        return f"Failed to approve: {e}"
+
+
 def handle_command(text):
     """Owner-only text commands. Returns a reply string, or None if not a command."""
     t = text.strip()
@@ -139,6 +194,11 @@ def handle_command(text):
             return f"No task called {m.group(1)}. Say 'tasks' to see the list."
         threading.Thread(target=_run_task, args=(task,), daemon=True).start()
         return f"Starting {task['id']} now."
+    if t.lower() in ("proposals", "proposal list", "what proposals"):
+        return _list_proposals()
+    m = re.match(r"(?i)^approve\s+(.+)$", t)
+    if m:
+        return _approve_proposal(m.group(1).strip())
     return None
 
 
