@@ -760,7 +760,7 @@ def _run_goal(goal: dict):
         try:
             hits = _memory.search(goal["objective"], k=3, min_score=0.60)
             if hits:
-                snippets = "\n".join(f"- {h['text'][:120]}" for h in hits)
+                snippets = "\n".join(f"- {h[:120]}" for h in hits)
                 print(f"  [memory] recalled {len(hits)} relevant memories for goal '{goal_id}'",
                       flush=True)
                 _goals._update(goal_id,
