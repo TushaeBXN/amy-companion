@@ -52,8 +52,8 @@ ALLOWED_TOOLS = {
     "income_eval", "income_stream",
     "self_metrics", "engram_memory",
     "tiktok_search",
-    # Email: read-only in autonomous goals; send_email requires explicit goal from Brian
-    "check_email",
+    # Email: guardrails enforced in _guarded_dispatch (whitelist + quiet hours)
+    "check_email", "send_email",
 }
 
 # Whitelisted email recipients — Amy may only send to these addresses autonomously
