@@ -37,7 +37,8 @@ REPORTS_DIR   = os.path.join(HERE, "experiments", "benchmark_reports")
 MANUAL_TASKS  = {"bm_ambiguous_evidence", "bm_resume_after_interrupt"}
 
 # How long --auto will wait for all goals to finish before giving up
-AUTO_TIMEOUT_HOURS = 3
+# 12 hours so tasks survive overnight quiet hours (23:00–07:00)
+AUTO_TIMEOUT_HOURS = 12
 AUTO_POLL_SECS     = 120   # check every 2 minutes
 AUTO_STAGGER_SECS  = 660   # ~11 min between goal creations → 8 tasks ≈ 90 min total
 

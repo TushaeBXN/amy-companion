@@ -876,11 +876,12 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
                 "search_books", "read_journal",
             ))
             plan_has_write = any(
-                re.search(r"(?i)\bwrite|save|\.md|\.json|\.txt", s)
+                re.search(r"(?i)\b(write|save|create|output)\b", s)
                 for s in (goal.get("plan") or [])
             )
             wants_save = (
-                re.search(r"(?i)\bwrite|save|\.md|\.json|\.txt", step_desc or "") or
+                re.search(r"(?i)\b(write|save|create)\b.{0,40}?\b(file|\.md|\.json|\.txt)\b",
+                           step_desc or "") or
                 (plan_has_write and did_web_research)
             )
             if wants_save and "write_file" not in used and step < MAX_HOPS:
