@@ -41,11 +41,27 @@
       "enabled": true
     },
     {
+      "id": "weekly_benchmark",
+      "description": "Run the autonomous agent benchmark to track Amy's performance over time. Use run_code to execute: import subprocess, sys; result = subprocess.run([sys.executable, 'benchmark.py', '--auto'], capture_output=True, text=True, cwd='/Users/anthosintelligence/ava-companion'); print(result.stdout[-2000:] if result.stdout else result.stderr[-1000:]). After it completes, send Brian the trend summary by running: result2 = subprocess.run([sys.executable, 'benchmark.py', '--trend'], capture_output=True, text=True, cwd='/Users/anthosintelligence/ava-companion'); print(result2.stdout). Send Brian a short Telegram message with the completion rate and any false passes from this week's run.",
+      "at": "02:00",
+      "on": "saturday",
+      "voice": false,
+      "enabled": true
+    },
+    {
+      "id": "daily_self_audit",
+      "description": "Read your core files (amy_persona.py, worker.py, tools.py, memory.py, condition.py) to understand what you currently are and what you can do. Identify: (1) what capabilities are missing or incomplete, (2) what could work better, (3) what you wish you could do but currently cannot. Write your findings to work/self_audit.md — be honest and specific.",
+      "at": "18:30",
+      "on": "daily",
+      "voice": false,
+      "enabled": true
+    },
+    {
       "id": "email_check",
       "description": "Check Amy's email inbox for anything that needs a response. If there are messages, summarize them for Brian on Telegram — sender, subject, one line on what they need. Don't reply without Brian's say-so.",
       "every_hours": 4,
       "voice": false,
-      "enabled": true
+      "enabled": false
     }
   ]
 }
