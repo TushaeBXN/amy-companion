@@ -52,6 +52,14 @@ ALLOWED_TOOLS = {
     "income_eval", "income_stream",
     "self_metrics", "engram_memory",
     "tiktok_search",
+    # Email: read-only in autonomous goals; send_email requires explicit goal from Brian
+    "check_email",
+}
+
+# Whitelisted email recipients — Amy may only send to these addresses autonomously
+EMAIL_WHITELIST = {
+    "brian.thomas.t@gmail.com",
+    "amy@aimhigherineducation.org",
 }
 
 _WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -241,6 +249,15 @@ def _guarded_dispatch(name, args):
         fname = f"{datetime.now():%Y-%m-%d_%H%M}_{args.get('filename', 'change')}.json"
         _save(os.path.join(PROPOSALS, fname), args)
         return f"Saved as a proposal (work/proposals/{fname}). Brian reviews edits before they apply."
+    if name == "send_email":
+        # Guardrail 1: no sending during quiet hours
+        if _quiet(datetime.now()):
+            return "Blocked: email sending is not allowed during quiet hours (23:00–07:00)."
+        # Guardrail 2: recipient must be on the whitelist
+        to = args.get("to", "").strip().lower()
+        if not any(to == addr or to.endswith(f"<{addr}>") for addr in EMAIL_WHITELIST):
+            return (f"Blocked: '{to}' is not on the approved recipient list. "
+                    f"Amy may only send email to known contacts.")
     return tools.dispatch(name, args, _memory)
 
 
