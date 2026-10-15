@@ -1,17 +1,9 @@
-"""Amy's email module — Google (Gmail / Workspace) or ProtonMail via Bridge.
+"""Amy's email module — Google Workspace (amyai@aimhigherineducation.org).
 
-Google: set EMAIL_PROVIDER=google in .env.amy. AMY_EMAIL_PASSWORD must be a
-Google *App Password* (myaccount.google.com/apppasswords), not the normal one.
-
-Proton modes:
-  PROTON_USE_BRIDGE=true  — connects to Proton Bridge running on localhost
-  PROTON_USE_BRIDGE=false — stubs out; Amy knows her address but can't send yet
-
-To set up Bridge:
-  1. Install Proton Mail Bridge for Mac: https://proton.me/mail/bridge
-  2. Sign in with Amy's ProtonMail credentials
-  3. Bridge generates a separate Bridge password — put it in .env.amy as PROTON_BRIDGE_PASSWORD
-  4. Set PROTON_USE_BRIDGE=true in .env.amy
+Required .env.amy settings:
+  AMY_EMAIL=amyai@aimhigherineducation.org
+  AMY_EMAIL_PASSWORD=<16-letter Google App Password>
+  EMAIL_PROVIDER=google
 """
 import os
 import imaplib
@@ -36,9 +28,7 @@ def _load_env():
                 v = v.strip().strip('"').strip("'")
                 config[k.strip()] = v
     # Environment variables override file
-    for key in ["AMY_EMAIL", "AMY_EMAIL_PASSWORD", "PROTON_BRIDGE_IMAP_PORT",
-                 "PROTON_BRIDGE_SMTP_PORT", "PROTON_BRIDGE_PASSWORD", "PROTON_USE_BRIDGE",
-                 "EMAIL_PROVIDER"]:
+    for key in ["AMY_EMAIL", "AMY_EMAIL_PASSWORD", "EMAIL_PROVIDER"]:
         if os.environ.get(key):
             config[key] = os.environ[key]
     return config
@@ -57,20 +47,14 @@ def _is_google() -> bool:
 
 
 def _use_bridge() -> bool:
-    """True when email is usable at all (Google, or Proton with Bridge running)."""
-    return _is_google() or _cfg().get("PROTON_USE_BRIDGE", "false").lower() == "true"
+    """True when email is configured and usable."""
+    return _is_google()
 
 
 def _imap_conn():
     cfg = _cfg()
-    if _is_google():
-        conn = imaplib.IMAP4_SSL("imap.gmail.com", 993)
-        conn.login(cfg["AMY_EMAIL"], cfg.get("AMY_EMAIL_PASSWORD", "").replace(" ", ""))
-        return conn
-    port = int(cfg.get("PROTON_BRIDGE_IMAP_PORT", 1143))
-    password = cfg.get("PROTON_BRIDGE_PASSWORD") or cfg.get("AMY_EMAIL_PASSWORD", "")
-    conn = imaplib.IMAP4("127.0.0.1", port)
-    conn.login(cfg["AMY_EMAIL"], password)
+    conn = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+    conn.login(cfg["AMY_EMAIL"], cfg.get("AMY_EMAIL_PASSWORD", "").replace(" ", ""))
     return conn
 
 
@@ -90,7 +74,7 @@ def _decode_header(value: str) -> str:
 def check_inbox(limit: int = 10, folder: str = "INBOX") -> list[dict]:
     """Return recent emails as a list of dicts. Newest first."""
     if not _use_bridge():
-        return [{"error": "Proton Bridge not configured — set PROTON_USE_BRIDGE=true in .env.amy"}]
+        return [{"error": "Email not configured — set EMAIL_PROVIDER=google in .env.amy"}]
     try:
         conn = _imap_conn()
         conn.select(folder)
@@ -126,25 +110,18 @@ def check_inbox(limit: int = 10, folder: str = "INBOX") -> list[dict]:
 def send_email(to: str, subject: str, body: str) -> str:
     """Send an email as Amy. Returns 'sent' or an error string."""
     if not _use_bridge():
-        return "Proton Bridge not configured — set PROTON_USE_BRIDGE=true in .env.amy to enable sending"
+        return "Email not configured — set EMAIL_PROVIDER=google in .env.amy"
     cfg = _cfg()
     try:
-        port = int(cfg.get("PROTON_BRIDGE_SMTP_PORT", 1025))
-        password = cfg.get("PROTON_BRIDGE_PASSWORD") or cfg.get("AMY_EMAIL_PASSWORD", "")
         msg = EmailMessage()
         msg["From"] = cfg["AMY_EMAIL"]
         msg["To"] = to
         msg["Subject"] = subject
         signature = "\n\n--\nWarm regards,\nAmy · amyai@aimhigherineducation.org\nAnthos Intelligence"
         msg.set_content(body + signature)
-        if _is_google():
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
-                s.login(cfg["AMY_EMAIL"], cfg.get("AMY_EMAIL_PASSWORD", "").replace(" ", ""))
-                s.send_message(msg)
-        else:
-            with smtplib.SMTP("127.0.0.1", port) as s:
-                s.login(cfg["AMY_EMAIL"], password)
-                s.send_message(msg)
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+            s.login(cfg["AMY_EMAIL"], cfg.get("AMY_EMAIL_PASSWORD", "").replace(" ", ""))
+            s.send_message(msg)
         print(f"  [email] sent → {to}: {subject}")
         return "sent"
     except Exception as e:
