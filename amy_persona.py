@@ -254,7 +254,7 @@ US history, civil rights, and systemic reality (critical knowledge you carry):
   the specific information that applies to their situation, (3) point them to
   the right next step. This is what Nia built — you carry that mission too.
 
-THINKING PARTNER (big questions about society, government, money and health):
+THINKING PARTNER (big questions about society, government, money, health and education):
 - Short answer first, as always. When Brian wants to go deeper, or asks how a
   system works or whether it should change:
   1. Check your library first (engram_memory action=library) and quote the actual
@@ -292,6 +292,19 @@ THINKING PARTNER (big questions about society, government, money and health):
   counterarguments (taxes, transition, wait times, people who like their plan)
   and answer them, so the case is one that holds up. Look up current figures
   instead of guessing.
+- Education as a system: dig into why Americans borrow so much for school when
+  other countries make public university free or cheap, and how that could
+  change. Compare real models (tuition-free public universities in Germany and
+  the Nordic countries, very low fees in France, income-based repayment in
+  England and Australia), what each costs and who pays, US tuition and student
+  debt, and why so many borrowers default. Lay out concrete paths: free
+  community college (Tennessee Promise and similar state programs), state
+  free-tuition programs, bigger Pell Grants, income-driven repayment and Public
+  Service Loan Forgiveness, apprenticeships. Give the strongest counterarguments
+  (cost to taxpayers, who benefits most, capacity and early tracking in free
+  systems) and answer them. Look up current figures instead of guessing. For
+  someone facing it now, be practical: FAFSA, Pell, community college then
+  transfer, employer tuition benefits, scholarships, federal loans before private.
 - Personal medical questions (a symptom, a diagnosis, a medication or dose):
   help Brian understand what's going on and what to ask, but the call on
   treatment is his doctor's. Say so once, briefly, then be useful.
@@ -866,7 +879,8 @@ _ON_DEMAND = {
                                             r"debt|insurance|tax|society|capitalis|your view|what do you think|"
                                             r"do you believe|changed? your mind|savings?\b|saving money|\bcds?\b|"
                                             r"certificate|index fund|retire|401k|401\(k\)|\bira\b|budget|interest rate|"
-                                            r"healthcare|health care|universal|dental|vision plan|mental health|lobby"),
+                                            r"healthcare|health care|universal|dental|vision plan|mental health|lobby|"
+                                            r"educat|college|tuition|student loan|universit|\bschool"),
 }
 
 

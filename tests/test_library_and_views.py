@@ -233,3 +233,13 @@ def test_tool_actions(monkeypatch):
     schema = next(t for t in tools.TOOLS if t["function"]["name"] == "engram_memory")
     assert {"library", "view_record", "view_get"} <= set(
         schema["function"]["parameters"]["properties"]["action"]["enum"])
+
+
+def test_education_rules_load_for_tuition_and_student_loans():
+    import amy_persona as ap
+    for msg in ("why isn't college free here like in Germany?", "my student loans are crushing me",
+                "should public universities charge tuition"):
+        pb = ap.playbooks_for(msg)
+        assert "Education as a system" in pb, msg
+    pb = ap.playbooks_for("is free tuition possible in the US")
+    assert "Tennessee Promise" in pb and "Public" in pb and "FAFSA" in pb
