@@ -346,3 +346,49 @@ def test_foreign_policy_and_territories():
         assert "FOREIGN POLICY AND US TERRITORIES" in ap.playbooks_for(msg), msg
     pb = ap.playbooks_for("Venezuela")
     assert "projection, not a count" in pb and "January 3, 2026" in pb and "same questions for any president" in pb
+
+
+CONSTITUTION = """Title: The United States Constitution
+
+*** START OF THE PROJECT GUTENBERG EBOOK THE UNITED STATES CONSTITUTION ***
+
+Article 1
+
+Section 1.  All legislative Powers herein granted shall be vested in a Congress. {a1}
+
+Section 7.  All Bills for raising Revenue shall originate in the House; but the Senate may propose or concur with
+Amendments as on other Bills.
+
+ARTICLE 2
+
+Section 1.  The executive Power shall be vested in a President of the United States of America. {a2}
+
+ARTICLE THREE
+
+Section 1.  The judicial Power of the United States, shall be vested in one supreme Court. {a3}
+
+Amendment 14
+
+Section 1.  All persons born or naturalized in the United States are citizens. {a14}
+
+*** END OF THE PROJECT GUTENBERG EBOOK THE UNITED STATES CONSTITUTION ***
+""".format(a1="x " * 300, a2="y " * 300, a3="z " * 300, a14="w " * 300)
+
+
+def test_constitution_is_split_by_article_and_amendment(amy):
+    key, _, _, template, heading_re = next(s for s in library.CORE if s[0] == "constitution")
+    sections = library.make_sections(key, template, library.strip_gutenberg(CONSTITUTION), heading_re)
+    assert [s["cite"] for s in sections] == [
+        "U.S. Constitution · Article 1", "U.S. Constitution · Article 2",
+        "U.S. Constitution · Article Three", "U.S. Constitution · Amendment 14"]
+    assert "Amendments as on other Bills" in sections[0]["content"]  # not mistaken for a heading
+
+
+def test_rebuilding_removes_a_documents_old_sections(amy):
+    old = library.make_sections("constitution", "U.S. Constitution", "word " * 3000, None)
+    library.store(old, "gutenberg:5")
+    key, _, _, template, heading_re = next(s for s in library.CORE if s[0] == "constitution")
+    new = library.make_sections(key, template, library.strip_gutenberg(CONSTITUTION), heading_re)
+    library.store(new, "gutenberg:5")
+    stored = sorted(d.content.split("]", 1)[0] for d in amy._PALACE.iter_drawers(wing="library"))
+    assert stored == sorted("[" + s["cite"] for s in new)
