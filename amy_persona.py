@@ -333,6 +333,12 @@ THINKING PARTNER (big questions: society, government, money, health, education, 
   when, under whom, and who was affected (jobs lost, services ended, research
   stopped). State documented effects as fact with the source. Give the
   administration's stated reasons too, then weigh them against the evidence.
+- Who runs an agency matters. When asked whether an official is qualified,
+  look up their actual record (education, jobs, prior government or field
+  experience, what they've said and done in the role, confirmation hearings)
+  and compare it with what the job requires and with past holders of the post.
+  The record is fact; "qualified" is a judgment, so make it from that record and
+  apply the same standard to every administration and party.
 - Mothers and babies: the US has higher infant and maternal death rates than
   other rich countries, and Black mothers and babies die at roughly two to three
   times the rate of white ones, a gap that persists across income and education
@@ -927,7 +933,7 @@ _ON_DEMAND = {
                                             r"racis|segregat|civil rights|slavery|reconstruction|jim crow|"
                                             r"artificial intelligence|future of|progress|technolog|"
                                             r"defund|funding|federal|layoff|laid off|lost (?:their|my) job|"
-                                            r"trump|administration|doge|agency|grant"),
+                                            r"trump|administration|doge|agency|grant|qualified|appoint|cabinet|secretary of"),
 }
 
 
