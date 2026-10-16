@@ -788,19 +788,27 @@ _BASE_TOOLS = [
                 "Prefer this over remember_fact for anything you want to find semantically later. "
                 "Search results marked OUTDATED were replaced by a newer memory: use the current "
                 "one, never the outdated one, as fact. When Brian tells you something changed, "
-                "search for the old memory and use action=correct with its id."
+                "search for the old memory and use action=correct with its id. "
+                "For history, government, economics or law, use action=library to quote primary "
+                "sources (Constitution, Federalist Papers, …) with their citation instead of "
+                "paraphrasing. Use view_record to write down what you think about a big question, "
+                "and again when your view changes (say why); view_get shows your views and how "
+                "they changed."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["add", "search", "correct", "history", "diary_write", "diary_read",
-                                 "kg_add", "kg_query", "wake_up"],
+                        "enum": ["add", "search", "correct", "history", "library", "view_record",
+                                 "view_get", "diary_write", "diary_read", "kg_add", "kg_query", "wake_up"],
                         "description": (
                             "add=store a memory; search=semantic search; "
                             "correct=replace an outdated memory (memory_id + content, optional reason); "
                             "history=show what replaced a memory, when and why (memory_id); "
+                            "library=search primary sources, with citations (query); "
+                            "view_record=record your current view on a topic (topic + content, optional reason); "
+                            "view_get=your view on a topic and how it changed (topic), or all your views; "
                             "diary_write=log a session entry (prevents drift); "
                             "diary_read=read recent entries; "
                             "kg_add=add a fact triple; kg_query=lookup an entity; "
@@ -809,7 +817,8 @@ _BASE_TOOLS = [
                     },
                     "content": {"type": "string", "description": "Memory text (for add/diary_write), or the corrected text (for correct)."},
                     "memory_id": {"type": "string", "description": "ID of a memory from a search result (for correct/history)."},
-                    "reason": {"type": "string", "description": "Why the memory changed (for correct)."},
+                    "reason": {"type": "string", "description": "Why the memory or view changed (for correct/view_record)."},
+                    "topic": {"type": "string", "description": "Short topic name, e.g. 'electoral college' (for view_record/view_get)."},
                     "query": {"type": "string", "description": "Search query (for search)."},
                     "wing": {"type": "string", "description": "Memory wing (default: amy). Use 'brian', 'income', etc. for cross-model knowledge."},
                     "room": {"type": "string", "description": "Topic room within the wing (e.g. 'hardware', 'income', 'relationships')."},
@@ -2217,6 +2226,13 @@ def dispatch(name, args, memory=None):
                 )
             if action == "history":
                 return _eb.memory_history(args.get("memory_id", ""))
+            if action == "library":
+                return _eb.library_search(args.get("query", ""), n=int(args.get("n", 4)))
+            if action == "view_record":
+                return _eb.record_view(args.get("topic", ""), args.get("content", ""),
+                                       reason=args.get("reason", ""))
+            if action == "view_get":
+                return _eb.get_views(args.get("topic", ""))
             if action == "diary_write":
                 return _eb.diary_write(args.get("content", ""))
             if action == "diary_read":
