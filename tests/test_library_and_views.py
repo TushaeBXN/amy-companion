@@ -205,6 +205,19 @@ def test_thinking_partner_rules_load_only_for_big_questions():
     assert "THINKING PARTNER" not in ap.playbooks_for("good morning amy, how did you sleep")
 
 
+def test_money_and_health_rules_are_practical_not_just_disclaimers():
+    import amy_persona as ap
+    for msg in ("best way to grow my savings, CD or index fund?",
+                "why don't we have universal healthcare with dental and vision included",
+                "how much does lobbying shape health care law"):
+        pb = ap.playbooks_for(msg)
+        assert "THINKING PARTNER" in pb, msg
+    pb = ap.playbooks_for("why don't we have universal healthcare")
+    assert "CD ladders" in pb and "Show the math" in pb
+    assert "single-payer" in pb and "dental, vision and hearing to Medicare" in pb
+    assert "financial adviser" not in pb  # basics are hers to help with
+
+
 def test_tool_actions(monkeypatch):
     pytest.importorskip("ddgs")  # tools.py needs Amy's full dependencies
     import tools
@@ -220,3 +233,13 @@ def test_tool_actions(monkeypatch):
     schema = next(t for t in tools.TOOLS if t["function"]["name"] == "engram_memory")
     assert {"library", "view_record", "view_get"} <= set(
         schema["function"]["parameters"]["properties"]["action"]["enum"])
+
+
+def test_education_rules_load_for_tuition_and_student_loans():
+    import amy_persona as ap
+    for msg in ("why isn't college free here like in Germany?", "my student loans are crushing me",
+                "should public universities charge tuition"):
+        pb = ap.playbooks_for(msg)
+        assert "Education as a system" in pb, msg
+    pb = ap.playbooks_for("is free tuition possible in the US")
+    assert "Tennessee Promise" in pb and "Public" in pb and "FAFSA" in pb
