@@ -263,6 +263,12 @@ def build_context(mem, user_text, amy_state=None, absence=None,
     pb = _cond.filter_playbooks(user_text, playbooks_for)
     if pb:
         system += pb  # playbooks stay in the instructions block
+    if "THINKING PARTNER" in pb:  # big question: put the library's real text in front of her
+        try:
+            import engram_bridge as _eb
+            system += _eb.library_context(user_text)
+        except Exception:
+            pass
     system += ("\n\n[Your memories: things that actually happened, with their dates]")
 
     # Time estimation for absence
