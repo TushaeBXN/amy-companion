@@ -24,6 +24,48 @@ def search(query, max_results=5):
     return results
 
 
+def news(query, max_results=6, timelimit="y"):
+    """Recent news articles — list of {title, url, snippet, date, source}.
+
+    timelimit: "d" day, "w" week, "m" month, "y" year.
+    """
+    results = []
+    for r in DDGS().news(query, timelimit=timelimit, max_results=max_results):
+        results.append({
+            "title": r.get("title", ""),
+            "url": r.get("url") or r.get("href", ""),
+            "snippet": r.get("body", ""),
+            "date": (r.get("date") or "")[:10],
+            "source": r.get("source", ""),
+        })
+    return results
+
+
+def research(topic, timelimit="y", max_news=6, max_web=4):
+    """What's happening now on *topic*: dated news first (newest first), then web results.
+
+    Duplicates (same URL) are dropped. If the news search fails, web results
+    are still returned, and vice versa; raises only if both fail.
+    """
+    found, seen, errors = [], set(), []
+    try:
+        items = sorted(news(topic, max_results=max_news, timelimit=timelimit),
+                       key=lambda r: r["date"], reverse=True)
+    except Exception as e:  # network or "no results"
+        items, _ = [], errors.append(f"news: {e}")
+    try:
+        items += [{**r, "date": "", "source": ""} for r in search(topic, max_results=max_web)]
+    except Exception as e:
+        errors.append(f"web: {e}")
+    for r in items:
+        if r["url"] and r["url"] not in seen:
+            seen.add(r["url"])
+            found.append(r)
+    if not found and errors:
+        raise RuntimeError("; ".join(errors))
+    return found
+
+
 _JS_HOSTS = {"tiktok.com", "www.tiktok.com", "instagram.com", "www.instagram.com"}
 
 
