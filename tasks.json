@@ -67,6 +67,14 @@
       "enabled": true
     },
     {
+      "id": "trash_reminder",
+      "description": "Remind Brian on Telegram to check the trash/recycling app and set out the bins tonight. Keep it short — one line, direct. Example: 'Hey — check the recycling app and get the bins out tonight.'",
+      "at": "20:00",
+      "on": "thursday",
+      "voice": false,
+      "enabled": true
+    },
+    {
       "id": "email_check",
       "description": "Check Amy's email inbox for anything that needs a response. If there are messages, summarize them for Brian on Telegram \u2014 sender, subject, one line on what they need. Don't reply without Brian's say-so.",
       "every_hours": 4,
