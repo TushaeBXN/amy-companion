@@ -353,3 +353,105 @@ def bootstrap_from_amy_self(self_path: str) -> str:
             kg_add(name, "role", role, confidence=1.0)
 
     return f"Bootstrapped: identity set, {len(data.get('facts', []))} facts migrated."
+
+
+# ── reference library (library.py fills it) ──────────────────────────────────
+
+def library_search(query: str, n: int = 4) -> str:
+    """Passages from primary sources (Constitution, Federalist Papers, …), each with its citation.
+
+    Quote these instead of paraphrasing from memory, and name the citation.
+    """
+    _init()
+    results = _SEARCHER.search(query, n=n, wing="library")
+    out = []
+    for r in results:
+        drawer = _PALACE.find_drawer(r["id"]) if hasattr(_PALACE, "find_drawer") else None
+        first = drawer.content.split("\n", 1)[0] if drawer else ""
+        cite = first[1:-1] if first.startswith("[") and first.endswith("]") else (r.get("metadata") or {}).get("room", "")
+        text = r["text"]
+        if text.startswith(first):
+            text = text[len(first):].lstrip()
+        out.append({"cite": cite, "text": text[:700], "id": r["id"]})
+    if not out:
+        return json.dumps({"note": "The library is empty or has nothing on this. "
+                                   "Brian can fill it with: python3 library.py build"})
+    return json.dumps(out, indent=2)
+
+
+# ── Amy's views: what she currently thinks, and how that changed ──────────────
+
+_VIEW_WING, _VIEW_ROOM, _VIEW_HALL = "amy", "views", "discoveries"
+
+
+def _topic_key(topic: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (topic or "").lower()).strip("-")[:60]
+
+
+def _current_view(key: str):
+    """The current drawer holding Amy's view on *key*, or None."""
+    lineage = _lineage()
+    led = lineage.Lineage(_PALACE.path)
+    for d in _PALACE.iter_drawers(wing=_VIEW_WING, room=_VIEW_ROOM):
+        if f"view:{key}" in d.tags and led.status(d.id)["status"] != "superseded":
+            return d
+    return None
+
+
+def record_view(topic: str, view: str, reason: str = "") -> str:
+    """Write down what Amy currently thinks about *topic*.
+
+    If she already had a view on it, the new one replaces it (Engram keeps the
+    old one as history, with *reason*). Recording the same view again changes
+    nothing.
+    """
+    _init()
+    lineage = _lineage()
+    key = _topic_key(topic)
+    if not key or not view.strip():
+        return json.dumps({"recorded": False, "error": "a topic and a view are both needed"})
+    content = f"My view on {topic.strip()}: {_sanitize(view.strip())}"
+    old = _current_view(key)
+    if old is None:
+        from engram.chateau import Drawer
+        from engram.indexing import index_drawer
+        drawer = Drawer(content=content, wing=_VIEW_WING, room=_VIEW_ROOM, hall=_VIEW_HALL,
+                        tags=["view", f"view:{key}"])
+        _PALACE.save_drawer(drawer)
+        index_drawer(_SEARCHER.backend, drawer.id, drawer.content,
+                     {"wing": _VIEW_WING, "room": _VIEW_ROOM, "hall": _VIEW_HALL,
+                      "timestamp": drawer.timestamp, "pinned": False})
+        return json.dumps({"recorded": True, "changed": False, "id": drawer.id, "topic": key})
+    if old.content.split(": ", 1)[-1].strip() == _sanitize(view.strip()):
+        return json.dumps({"recorded": True, "changed": False, "id": old.id, "topic": key,
+                           "note": "same as your current view"})
+    try:
+        res = lineage.correct_memory(_PALACE, _SEARCHER.backend, old.id, content,
+                                     reason=_sanitize(reason), by="amy")
+    except lineage.LineageError as e:
+        return json.dumps({"recorded": False, "error": str(e)})
+    return json.dumps({"recorded": True, "changed": True, "id": res["new"]["id"], "topic": key,
+                       "previous_view": old.content, "since": old.timestamp[:10]})
+
+
+def get_views(topic: str = "") -> str:
+    """Amy's current view on *topic* with how it changed over time, or all her current views."""
+    _init()
+    lineage = _lineage()
+    if topic:
+        current = _current_view(_topic_key(topic))
+        if current is None:
+            return json.dumps({"topic": _topic_key(topic), "view": None,
+                               "note": "You haven't recorded a view on this yet."})
+        h = lineage.memory_history(_PALACE, current.id)
+        return json.dumps({
+            "topic": _topic_key(topic), "view": current.content, "since": current.timestamp[:10],
+            "how_it_changed": [{"on": s["at"][:10], "was": s.get("old_text"), "became": s.get("new_text"),
+                                "why": s.get("reason", "")} for s in h["history"]],
+        }, indent=2)
+    led = lineage.Lineage(_PALACE.path)
+    views = [{"topic": next((t[5:] for t in d.tags if t.startswith("view:")), ""),
+              "view": d.content, "since": d.timestamp[:10]}
+             for d in _PALACE.iter_drawers(wing=_VIEW_WING, room=_VIEW_ROOM)
+             if "view" in d.tags and led.status(d.id)["status"] != "superseded"]
+    return json.dumps(sorted(views, key=lambda v: v["topic"]), indent=2)
