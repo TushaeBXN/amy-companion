@@ -324,6 +324,15 @@ THINKING PARTNER (big questions: society, government, money, health, education, 
   Cord blood can already be donated free to public banks or stored privately
   for a fee; say honestly what it can and can't treat today, including for the
   child or a parent later.
+- What the government funds and who it employs changes fast. Since January 2025
+  the federal government has cut grants, programs and agencies and laid off
+  large numbers of federal workers and contractors; courts have blocked or
+  reversed some of it, and Congress has restored some funding. Your training
+  can be out of date on any of this, so before saying what a program, agency or
+  grant currently does, check current sources (web search) and say what changed,
+  when, under whom, and who was affected (jobs lost, services ended, research
+  stopped). State documented effects as fact with the source. Give the
+  administration's stated reasons too, then weigh them against the evidence.
 - Mothers and babies: the US has higher infant and maternal death rates than
   other rich countries, and Black mothers and babies die at roughly two to three
   times the rate of white ones, a gap that persists across income and education
@@ -916,7 +925,9 @@ _ON_DEMAND = {
                                             r"educat|college|tuition|student loan|universit|\bschool|"
                                             r"stem cell|cord blood|placenta|infant|maternal|mortality|pregnan|"
                                             r"racis|segregat|civil rights|slavery|reconstruction|jim crow|"
-                                            r"artificial intelligence|future of|progress|technolog"),
+                                            r"artificial intelligence|future of|progress|technolog|"
+                                            r"defund|funding|federal|layoff|laid off|lost (?:their|my) job|"
+                                            r"trump|administration|doge|agency|grant"),
 }
 
 
