@@ -785,24 +785,31 @@ _BASE_TOOLS = [
                 "searching past memories semantically, writing diary entries after tasks "
                 "to prevent drift, and querying the knowledge graph. "
                 "All data stays on this machine — never leaves, never committed to git. "
-                "Prefer this over remember_fact for anything you want to find semantically later."
+                "Prefer this over remember_fact for anything you want to find semantically later. "
+                "Search results marked OUTDATED were replaced by a newer memory: use the current "
+                "one, never the outdated one, as fact. When Brian tells you something changed, "
+                "search for the old memory and use action=correct with its id."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["add", "search", "diary_write", "diary_read",
+                        "enum": ["add", "search", "correct", "history", "diary_write", "diary_read",
                                  "kg_add", "kg_query", "wake_up"],
                         "description": (
                             "add=store a memory; search=semantic search; "
+                            "correct=replace an outdated memory (memory_id + content, optional reason); "
+                            "history=show what replaced a memory, when and why (memory_id); "
                             "diary_write=log a session entry (prevents drift); "
                             "diary_read=read recent entries; "
                             "kg_add=add a fact triple; kg_query=lookup an entity; "
                             "wake_up=get L0+L1 cold-start context."
                         ),
                     },
-                    "content": {"type": "string", "description": "Memory text (for add/diary_write)."},
+                    "content": {"type": "string", "description": "Memory text (for add/diary_write), or the corrected text (for correct)."},
+                    "memory_id": {"type": "string", "description": "ID of a memory from a search result (for correct/history)."},
+                    "reason": {"type": "string", "description": "Why the memory changed (for correct)."},
                     "query": {"type": "string", "description": "Search query (for search)."},
                     "wing": {"type": "string", "description": "Memory wing (default: amy). Use 'brian', 'income', etc. for cross-model knowledge."},
                     "room": {"type": "string", "description": "Topic room within the wing (e.g. 'hardware', 'income', 'relationships')."},
@@ -2202,6 +2209,14 @@ def dispatch(name, args, memory=None):
                     n=int(args.get("n", 8)),
                     wing=args.get("wing") or None,
                 )
+            if action == "correct":
+                return _eb.correct_memory(
+                    args.get("memory_id", ""),
+                    args.get("content", ""),
+                    reason=args.get("reason", ""),
+                )
+            if action == "history":
+                return _eb.memory_history(args.get("memory_id", ""))
             if action == "diary_write":
                 return _eb.diary_write(args.get("content", ""))
             if action == "diary_read":

@@ -54,9 +54,30 @@ def _init():
 
     ensure_engram_dir()
     _PALACE = Chateau()
-    _SEARCHER = Searcher(get_backend("chromadb"), _PALACE)
+    _SEARCHER = Searcher(_with_keyword_index(get_backend("chromadb")), _PALACE)
     _LAYERS = LayerStack(_PALACE, _SEARCHER)
     _DIARY = AgentDiary("amy")
+
+
+def _with_keyword_index(backend):
+    """Add Engram's exact-word index (Engram 1.5+, on by default there).
+
+    It finds names, numbers and rare words that meaning search misses. Older
+    Engram versions, or "keyword_search": false in ~/.engram/config.json,
+    keep the plain backend.
+    """
+    try:
+        from engram.config import load_config
+        from engram.keyword_index import with_keyword_index
+    except ImportError:
+        return backend
+    cfg = load_config()
+    if not cfg.get("keyword_search", False):
+        return backend
+    try:
+        return with_keyword_index(backend, cfg)
+    except Exception:
+        return backend
 
 
 # ── L0 identity setup ─────────────────────────────────────────────────────────
@@ -98,7 +119,12 @@ def add_memory(
     hall: str = "facts",
     pinned: bool = False,
 ) -> str:
-    """Store a new memory. Content is sanitized before storage."""
+    """Store a new memory. Content is sanitized before storage.
+
+    With Engram 1.6+ the reply also lists "possible_updates": existing
+    memories this one may replace. If it does, call correct_memory on the old
+    one instead of keeping both.
+    """
     _init()
     from engram.chateau import Drawer
     safe = _sanitize(content)
@@ -110,7 +136,17 @@ def add_memory(
         metadata={"wing": wing, "room": room, "hall": hall,
                   "timestamp": drawer.timestamp, "pinned": pinned},
     )
-    return json.dumps({"stored": True, "wing": wing, "room": room, "hall": hall})
+    out = {"stored": True, "id": drawer.id, "wing": wing, "room": room, "hall": hall}
+    try:
+        from engram.lineage import possible_updates
+    except ImportError:
+        return json.dumps(out)
+    hints = possible_updates(_SEARCHER.backend, _PALACE, drawer)
+    if hints:
+        out["possible_updates"] = [{"id": h["id"], "text": h["text"][:200]} for h in hints]
+        out["note"] = ("If this new memory replaces one of these, call correct_memory on the "
+                       "old one instead, so the outdated fact is marked as replaced.")
+    return json.dumps(out)
 
 
 # ── semantic search ───────────────────────────────────────────────────────────
@@ -128,20 +164,96 @@ def _score(result: dict) -> float:
 
 
 def search(query: str, n: int = 8, wing: Optional[str] = None) -> str:
-    """Semantic search across all memories. Returns ranked results."""
+    """Semantic search across all memories. Returns ranked results.
+
+    With Engram 1.6+, a memory that was corrected is still returned (it is
+    history), directly below its replacement, with "status": "OUTDATED", the
+    ID of the current version and its text prefixed "[OUTDATED …]". Only the
+    current version should be used as fact.
+    """
     _init()
     results = _SEARCHER.search(query, n=n, wing=wing)
     out = []
     for r in results:
-        out.append({
-            "text": r["text"][:400],
+        meta = r.get("metadata") or {}
+        item = {}
+        if r.get("id"):
+            item["id"] = r["id"]
+        status = r.get("status")
+        text = r["text"][:400]
+        if status == "superseded":
+            current = r.get("current_id") or r.get("superseded_by") or ""
+            item["status"] = "OUTDATED"
+            item["replaced_by"] = current
+            if r.get("replaced_at"):
+                item["replaced_on"] = r["replaced_at"][:10]
+            if r.get("reason"):
+                item["why"] = r["reason"]
+            text = f"[OUTDATED, replaced by {current[:8]}; do not use as current fact] {text}"
+        elif status == "disputed":
+            item["status"] = "DISPUTED"
+            item["disputed_with"] = r.get("disputed_with", [])
+            text = "[DISPUTED: conflicts with another memory; check before relying on it] " + text
+        elif r.get("supersedes"):
+            item["status"] = "CURRENT"
+            item["replaces"] = r["supersedes"]
+        item.update({
+            "text": text,
             "score": _score(r),
             # Engram puts a hit's location under "metadata".
-            "wing": (r.get("metadata") or {}).get("wing", ""),
-            "room": (r.get("metadata") or {}).get("room", ""),
-            "hall": (r.get("metadata") or {}).get("hall", ""),
+            "wing": meta.get("wing", ""),
+            "room": meta.get("room", ""),
+            "hall": meta.get("hall", ""),
         })
+        out.append(item)
     return json.dumps(out, indent=2)
+
+
+# ── corrections (Engram 1.6+) ─────────────────────────────────────────────────
+
+def _lineage():
+    import importlib
+    try:
+        lineage = importlib.import_module("engram.lineage")
+    except ImportError:
+        raise RuntimeError("corrections need Engram 1.6 or newer (pip install -U engram-chateau)")
+    return lineage
+
+
+def correct_memory(memory_id: str, content: str, reason: str = "") -> str:
+    """Replace an outdated memory with corrected information.
+
+    The old memory is kept as history (search shows it marked OUTDATED under
+    the new one). *memory_id* is the "id" from a search result; the first 8+
+    characters are enough. Retrying with the same content changes nothing.
+    """
+    _init()
+    lineage = _lineage()
+    try:
+        res = lineage.correct_memory(_PALACE, _SEARCHER.backend, memory_id, _sanitize(content),
+                                     reason=_sanitize(reason), by="amy")
+    except lineage.LineageError as e:
+        return json.dumps({"corrected": False, "error": str(e)})
+    return json.dumps({"corrected": True, "already_done": not res["created"],
+                       "old_id": res["old"]["id"], "new_id": res["new"]["id"],
+                       "old_text": res["old"]["text"], "new_text": res["new"]["text"]})
+
+
+def memory_history(memory_id: str) -> str:
+    """Whether a memory is current, and what replaced what, when and why."""
+    _init()
+    lineage = _lineage()
+    try:
+        h = lineage.memory_history(_PALACE, memory_id)
+    except lineage.LineageError as e:
+        return json.dumps({"error": str(e)})
+    return json.dumps({
+        "id": h["memory"]["id"], "text": h["memory"]["text"], "status": h["status"],
+        "current_id": h["current_id"],
+        "history": [{"on": s["at"][:10], "old_id": s["old"], "new_id": s["new"],
+                     "why": s.get("reason", ""), "was": s.get("old_text"), "now": s.get("new_text")}
+                    for s in h["history"]],
+    }, indent=2)
 
 
 # ── agent diary ───────────────────────────────────────────────────────────────
