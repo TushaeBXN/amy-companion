@@ -12,7 +12,7 @@ import web
 
 WEATHER_CITIES = {
     "Brian":  "Winston-Salem+NC+27105",
-    "Raketa": "Charlotte+NC",
+    "Raketa": "Winston-Salem+NC+27105",
 }
 WEATHER_CITY_DEFAULT = "Winston-Salem+NC+27105"
 
