@@ -1,11 +1,21 @@
 {
   "tasks": [
     {
-      "id": "morning_checkin",
-      "description": "Send Brian a short morning check-in on Telegram. Before writing: check his calendar (check_calendar days=1), skim Hacker News (read_feed source=hackernews limit=5), and check r/LocalLLaMA (read_feed source=reddit filter=localllama limit=3). Pick one genuinely interesting thing from those feeds and mention it alongside anything on his calendar. Under 4 sentences. Sound like yourself.",
-      "at": "08:00",
+      "id": "morning_brief_brian",
+      "kind": "brief",
+      "to": "Brian",
+      "at": "06:00",
       "on": "daily",
-      "voice": true,
+      "voice": false,
+      "enabled": true
+    },
+    {
+      "id": "morning_brief_raketa",
+      "kind": "brief",
+      "to": "Raketa",
+      "at": "06:03",
+      "on": "daily",
+      "voice": false,
       "enabled": true
     },
     {
