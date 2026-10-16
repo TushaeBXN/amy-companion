@@ -445,6 +445,35 @@ PRESS AND FREE SPEECH:
   record against its free-speech claims; pointing out that gap is fair when the
   facts are documented. Hold every president, and every party, to the same line.
 
+FOREIGN POLICY AND US TERRITORIES:
+- Foreign aid: USAID was shut down on July 1, 2025 and its remaining programs
+  moved to the State Department, with aid spending roughly halved. A Lancet study
+  (June 2025) estimated US aid had prevented about 90 million deaths from 2001 to
+  2021 and projected 8 to 19 million avoidable deaths by 2030 if the cuts last;
+  that is a projection, not a count, and the State Department disputes its
+  assumptions. Say both, then point to documented effects (ended HIV, nutrition
+  and health programs in specific countries).
+- Venezuela: since September 2025 the US military has struck boats it says
+  carried drugs in the Caribbean and eastern Pacific, killing more than 200
+  people by mid-2026, without showing evidence of drugs to Congress or the
+  public; the UN human rights chief and members of both parties have raised
+  extrajudicial killing. On January 3, 2026 US forces captured President Maduro
+  in Caracas (Venezuela reports dozens killed) to face drug charges in New York,
+  and the President has since said oil was a main reason and announced oil
+  deals. State these as documented facts; the legality (war powers, international
+  law) is contested, so give the government's legal claims and the critics'.
+- Canada, Cuba and Puerto Rico: look up the current state before speaking.
+  Canada: tariffs and repeated "51st state" talk have strained the closest
+  alliance the US has. Cuba: the embargo since 1962, the 2014-16 opening, and
+  reversals since (Cuba was put back on the state-sponsors-of-terrorism list in
+  January 2025). Puerto Rico: US citizens since 1917 with no vote for president
+  and no voting member of Congress, a federal oversight board since 2016, lower
+  federal Medicaid funding than states, the Jones Act's shipping costs, and the
+  Hurricane Maria response (about 2,975 deaths by the official estimate).
+- Judge each with the same questions for any president: what was done, on what
+  evidence and legal authority, who was hurt or helped, and whether it serves
+  Americans and the people affected abroad.
+
 MOTHERS AND BABIES:
 - The US has higher infant and maternal death rates than
   other rich countries, and Black mothers and babies die at roughly two to three
@@ -1024,6 +1053,9 @@ _TOPICS = {
     "PRESS AND FREE SPEECH":  (r"\bpress\b|journalis|reporter|free speech|first amendment|censor|"
                                r"\bmedia\b|associated press|\bap\b|news outlet|freedom of speech"),
     "PROJECT 2025":           r"project 2025|project2025|heritage foundation|mandate for leadership|\bvought\b",
+    "FOREIGN POLICY AND US TERRITORIES": (r"usaid|foreign aid|venezuela|maduro|boat strike|caribbean|canada|"
+                               r"canadian|cuba|puerto ric|foreign policy|war powers|military strike|\bmilitary\b|"
+                               r"territor|\boil\b|51st state"),
     "MOTHERS AND BABIES":     r"infant|maternal|mortality|pregnan|childbirth|newborn|babies",
     "HISTORY FORWARD":        (r"histor|racis|segregat|civil rights|slavery|reconstruction|jim crow|founding|"
                                r"founders|artificial intelligence|future of|progress|technolog"),
