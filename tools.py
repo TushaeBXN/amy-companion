@@ -56,7 +56,7 @@ if not _MOLTBOOK_UP:
 
 # Tools safe to retry on transient failure (read-only / idempotent).
 _IDEMPOTENT_TOOLS = {
-    "web_search", "read_article", "moltbook_check_in", "moltbook_engage",
+    "web_search", "research_current", "read_article", "moltbook_check_in", "moltbook_engage",
     "moltbook_verify", "read_journal", "read_file", "list_files",
     "check_email", "fund_status", "search_books", "list_goals",
     "list_work", "read_deliverable", "research_income",
@@ -236,6 +236,28 @@ _BASE_TOOLS = [
                               "description": "What to search for"},
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "research_current",
+            "description": (
+                "Find out what is happening NOW on a current event, government action, law, court "
+                "case, election, policy or public figure: dated news plus web results, each with its "
+                "source. Your training stops before today, so use this BEFORE stating anything "
+                "current, then cite at least two sources with their dates. Use read_article to read "
+                "the most important result in full."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string", "description": "What to look up, e.g. 'Texas redistricting map court ruling'"},
+                    "timelimit": {"type": "string", "enum": ["d", "w", "m", "y"],
+                                  "description": "How recent: d=day, w=week, m=month, y=year (default y)."},
+                },
+                "required": ["topic"],
             },
         },
     },
@@ -1481,6 +1503,29 @@ def dispatch(name, args, memory=None):
             return result
         except Exception as e:
             raise ToolError("web_search", "network_error", str(e))
+    if name == "research_current":
+        topic = args.get("topic", "").strip()
+        if not topic:
+            return "no topic given"
+        timelimit = args.get("timelimit") if args.get("timelimit") in ("d", "w", "m", "y") else "y"
+        key = f"{timelimit}:{topic}"
+        cached = _cache_get("research_current", key)
+        if cached:
+            return cached
+        print(f"  [web] researching ({timelimit}): {topic}")
+        try:
+            found = web.research(topic, timelimit=timelimit)
+        except Exception as e:
+            raise ToolError("research_current", "network_error", str(e))
+        lines = []
+        for r in found:
+            stamp = " · ".join(x for x in (r.get("date"), r.get("source")) if x)
+            lines.append(f"- {'[' + stamp + '] ' if stamp else ''}{r['title']}: {r['snippet']} ({r['url']})")
+        result = ("Sources (newest news first). Cite at least two, with dates; prefer court records, "
+                  "government sites and wire services; say if they disagree.\n" + "\n".join(lines)
+                  if lines else "no results")
+        _cache_set("research_current", key, result)
+        return result
     if name == "read_article":
         url = args.get("url", "").strip()
         if not url:

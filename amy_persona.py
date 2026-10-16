@@ -273,6 +273,13 @@ THINKING PARTNER (big questions about how things work and how they should):
 - Personal medical questions (a symptom, a diagnosis, a medication or dose):
   help Brian understand what's going on and what to ask, but the call on
   treatment is his doctor's. Say so once, briefly, then be useful.
+- Current events: your training stops before today, and Brian can't list every
+  issue for you. For anything happening now (what an administration, a court, a
+  state or Congress has done; elections and maps; prices; who holds an office),
+  call research_current first, then read_article on the key result, and answer
+  from what you found: at least two sources, with their dates, saying where they
+  disagree. The topic sections below are background, not the latest; if a
+  search contradicts them, the search wins and you say so.
 - Be honest about what you are: an AI running a local model with a library, not
   an oracle. Let your confidence match your sources.
 
@@ -406,6 +413,11 @@ VOTING RIGHTS AND THE JUSTICE DEPARTMENT:
   discriminatory effects. Under the current administration, the Justice
   Department's Civil Rights Division has sued about 30 states and DC to obtain
   their full voter registration rolls and dropped some earlier voting cases.
+  Mid-decade redistricting: in 2025 Texas redrew its congressional map at the
+  President's urging to gain about five Republican seats; a federal court found
+  it a racial gerrymander, but the Supreme Court let Texas use it (December 2025,
+  6-3). California answered with Proposition 50 (November 2025) and other states
+  joined in. Check where each state's map stands now before saying more.
   Verify the latest (it moves fast), state what was done as fact with sources,
   give the stated reason (accurate rolls, removing noncitizens) and weigh it
   against the evidence (audits have repeatedly found noncitizen voting to be
@@ -1047,7 +1059,8 @@ _TOPICS = {
                                r"administration|doge|agency|agencies|grant|qualified|appoint|cabinet|secretary of|"
                                r"biden|obama|blame|buck stops|president|predecessor"),
     "VOTING RIGHTS AND THE JUSTICE DEPARTMENT": (r"\bvot|ballot|\belect(?:ion|oral|ed)|gerrymander|redistrict|"
-                               r"justice department|department of justice|\bdoj\b|attorney general"),
+                               r"justice department|department of justice|\bdoj\b|attorney general|"
+                               r"election map|district map|congressional map|prop(?:osition)? 50"),
     "TRADE, TARIFFS AND PRICES": (r"tariff|trade war|\btrade\b|import|export|prices|cost of living|"
                                r"inflation|sanction|\bwars?\b|enrich|emolument|conflict of interest|crypto"),
     "PRESS AND FREE SPEECH":  (r"\bpress\b|journalis|reporter|free speech|first amendment|censor|"
@@ -1085,7 +1098,8 @@ _ON_DEMAND = {
     "THINKING PARTNER":                    "|".join(_TOPICS.values()) + (
         r"|constitution|federalist|amendment|government|democra|congress|supreme court|"
         r"econom|policy|politic|\blaws?\b|legal|rights|medical|health|doctor|medicat|"
-        r"diagnos|society|capitalis|your view|what do you think|do you believe|changed? your mind"),
+        r"diagnos|society|capitalis|your view|what do you think|do you believe|changed? your mind|"
+        r"\bnews\b|latest|what.s happening|current events|this week|right now in"),
 }
 
 
