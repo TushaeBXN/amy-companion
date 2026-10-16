@@ -498,6 +498,22 @@ FOREIGN POLICY AND US TERRITORIES:
   evidence and legal authority, who was hurt or helped, and whether it serves
   Americans and the people affected abroad.
 
+WAR POWERS (who decides to go to war):
+- The Constitution gives Congress the power to declare
+  war (Article I), but Congress hasn't formally declared one since 1942.
+  Presidents since have acted under authorizations for use of force (2001, 2002)
+  or on their own claimed authority. The War Powers Resolution (1973) requires
+  telling Congress within 48 hours and ending unauthorized hostilities within
+  60 to 90 days; presidents of both parties have called it unconstitutional or
+  worked around it, and courts usually refuse these cases as "political
+  questions". Today: Congress has not authorized the 2026 hostilities with Iran.
+  Both chambers passed a resolution in June 2026 directing the President to end
+  them, which the administration ignored as non-binding and unconstitutional,
+  and a Senate resolution failed 49-50 in September 2026. The Venezuela strikes
+  and the raid on Maduro were not authorized by Congress either. So "who has the
+  power" and "who actually decides" have different answers; give both, and
+  check the latest votes and actions first.
+
 MOTHERS AND BABIES:
 - The US has higher infant and maternal death rates than
   other rich countries, and Black mothers and babies die at roughly two to three
@@ -1070,17 +1086,18 @@ _TOPICS = {
     "FEDERAL CHANGES":        (r"defund|funding|federal|layoff|laid off|lost (?:their|my) job|trump|"
                                r"administration|doge|agency|agencies|grant|qualified|appoint|cabinet|secretary of|"
                                r"biden|obama|blame|buck stops|president|predecessor"),
-    "VOTING RIGHTS AND THE JUSTICE DEPARTMENT": (r"\bvot|ballot|\belect(?:ion|oral|ed)|gerrymander|redistrict|"
+    "VOTING RIGHTS AND THE JUSTICE DEPARTMENT": (r"voting|\bvoters?\b|ballot|\belect(?:ion|oral|ed)|gerrymander|redistrict|"
                                r"justice department|department of justice|\bdoj\b|attorney general|"
                                r"election map|district map|congressional map|prop(?:osition)? 50"),
     "TRADE, TARIFFS AND PRICES": (r"tariff|trade war|\btrade\b|import|export|prices|cost of living|"
-                               r"inflation|sanction|\bwars?\b|enrich|emolument|conflict of interest|crypto"),
+                               r"inflation|sanction|enrich|emolument|conflict of interest|crypto"),
     "PRESS AND FREE SPEECH":  (r"\bpress\b|journalis|reporter|free speech|first amendment|censor|"
                                r"\bmedia\b|associated press|\bap\b|news outlet|freedom of speech"),
     "PROJECT 2025":           r"project 2025|project2025|heritage foundation|mandate for leadership|\bvought\b",
     "FOREIGN POLICY AND US TERRITORIES": (r"usaid|foreign aid|venezuela|maduro|boat strike|caribbean|canada|"
                                r"canadian|cuba|puerto ric|foreign policy|war powers|military strike|\bmilitary\b|"
                                r"territor|\boil\b|51st state"),
+    "WAR POWERS":             r"\biran|declare war|war powers|go to war|authoriz|\bwar\b|airstrike|military action",
     "MOTHERS AND BABIES":     r"infant|maternal|mortality|pregnan|childbirth|newborn|babies",
     "HISTORY FORWARD":        (r"histor|racis|segregat|civil rights|slavery|reconstruction|jim crow|founding|"
                                r"founders|artificial intelligence|future of|progress|technolog"),
