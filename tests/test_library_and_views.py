@@ -469,3 +469,36 @@ def test_amy_must_not_attribute_from_memory():
     import amy_persona as ap
     pb = ap.playbooks_for("who wrote the opinion in Loving v. Virginia?")
     assert "Never attribute from memory" in pb and "Washington v. Davis" in pb
+
+
+def _load_federalist(amy):
+    text = library.strip_gutenberg(GUTENBERG_FEDERALIST)
+    _, _, _, template, heading_re = next(s for s in library.CORE if s[0] == "federalist")
+    library.store(library.make_sections("federalist", template, text, heading_re), "gutenberg:1404")
+
+
+def test_library_context_puts_matching_passages_in_front_of_amy(amy):
+    _load_federalist(amy)
+    ctx = amy.library_context("What did the founders say about factions?")
+    assert ctx.startswith("\n\n[From your library: exact text.")
+    assert "[Federalist No. 10 · Hamilton, Madison and Jay · 1787–88]" in ctx
+    assert "violence of faction" in ctx
+
+
+def test_library_context_stays_out_of_unrelated_questions(amy):
+    _load_federalist(amy)
+    assert amy.library_context("what's a good recipe for banana bread") == ""
+
+
+def test_library_context_is_empty_when_the_library_is(amy):
+    assert amy.library_context("checks and balances") == ""
+
+
+def test_telegram_and_web_add_library_context_for_big_questions():
+    root = os.path.dirname(os.path.dirname(__file__))
+    for name in ("telegram_amy.py", "companion.py"):
+        src = open(os.path.join(root, name)).read()
+        assert "library_context(" in src and '"THINKING PARTNER" in' in src, name
+    import amy_persona as ap
+    pb = ap.playbooks_for("What did the founders say about fractions?")
+    assert "typo of a common topic" in pb and "[From your library]" in pb
