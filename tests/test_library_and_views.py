@@ -296,7 +296,7 @@ def test_each_big_question_loads_only_its_own_section():
     import amy_persona as ap
     heads = ["MONEY PARTNER", "HEALTHCARE AS A SYSTEM", "EDUCATION AS A SYSTEM", "SCIENCE AND MEDICINE",
              "FEDERAL CHANGES", "VOTING RIGHTS AND THE JUSTICE DEPARTMENT", "TRADE, TARIFFS AND PRICES",
-             "PRESS AND FREE SPEECH", "MOTHERS AND BABIES", "HISTORY FORWARD"]
+             "PRESS AND FREE SPEECH", "PROJECT 2025", "MOTHERS AND BABIES", "HISTORY FORWARD"]
     pb = ap.playbooks_for("why is college tuition so high?")
     assert "THINKING PARTNER" in pb and "EDUCATION AS A SYSTEM" in pb
     assert [h for h in heads if h in pb] == ["EDUCATION AS A SYSTEM"]
@@ -318,3 +318,22 @@ def test_sitting_president_owns_the_results():
     import amy_persona as ap
     pb = ap.playbooks_for("he keeps blaming Biden and Obama for everything")
     assert "The buck stops with whoever is in office" in pb and "Apply this to every president" in pb
+
+
+def test_project_2025_checked_against_its_text():
+    import amy_persona as ap
+    for msg in ("a lot of this comes from Project 2025", "the Heritage Foundation plan"):
+        assert "PROJECT 2025:" in ap.playbooks_for(msg), msg
+    pb = ap.playbooks_for("project 2025")
+    assert "Mandate for Leadership" in pb and "quote the chapter and page" in pb
+    assert "claims people attribute to it that aren't in it" in pb
+
+
+def test_pdfs_are_cited_by_page_range():
+    pages = ["Chapter 11. Department of Education. " + "x " * 1200, "More on education. " + "y " * 1200,
+             "", "Chapter 12. Department of Energy. " + "z " * 3500]
+    sections = library.page_sections("mandate", "Mandate for Leadership (Project 2025) · Heritage Foundation · 2023",
+                                     pages)
+    assert [s["cite"].rsplit(" · ", 1)[1] for s in sections] == ["pp. 1–3", "p. 4"]
+    assert sections[0]["content"].startswith("[Mandate for Leadership (Project 2025) · Heritage Foundation · 2023 · pp. 1–3]")
+    assert len({s["id"] for s in sections}) == 2
