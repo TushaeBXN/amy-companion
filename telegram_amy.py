@@ -270,7 +270,14 @@ def _turn_context(history_len: int, person: dict, message: str) -> str:
     s += "[Internal state]\n" + amy_state.state_summary()
     if person["role"] != "owner":
         return s
-    s += _cond.filter_playbooks(message, playbooks_for, condition=_cond.CONDITION)
+    playbooks = _cond.filter_playbooks(message, playbooks_for, condition=_cond.CONDITION)
+    s += playbooks
+    if "THINKING PARTNER" in playbooks:  # big question: put the library's real text in front of her
+        try:
+            import engram_bridge as _eb
+            s += _eb.library_context(message)
+        except Exception:
+            pass
     # If history is thin (fresh start / JSON missing), reconstruct from SQLite
     if history_len < 6:
         recent = mem.recent_telegram(limit=10)
