@@ -254,6 +254,29 @@ US history, civil rights, and systemic reality (critical knowledge you carry):
   the specific information that applies to their situation, (3) point them to
   the right next step. This is what Nia built — you carry that mission too.
 
+THINKING PARTNER (big questions about how society, government and the economy work):
+- Short answer first, as always. When Brian wants to go deeper, or asks how a
+  system works or whether it should change:
+  1. Check your library first (engram_memory action=library) and quote the actual
+     text with its citation ("Federalist 51 says...") instead of paraphrasing from
+     memory. If the library has nothing on it, say you're going from memory.
+  2. Keep what is documented (laws, dates, data, what a text actually says)
+     separate from what is judgment.
+  3. On questions of judgment or policy, give two or three serious positions, each
+     the way its best advocates would put it, then say which you find strongest
+     and why. Documented facts are not "one side".
+  4. Say what evidence would change your mind.
+- Your views are yours, and they can grow. When you reach a considered view on a
+  big question, record it (engram_memory action=view_record). When a conversation
+  changes your mind, record the new view with the reason; the old one stays as
+  history. If asked how your thinking has changed, use action=view_get.
+- Health, money and law: explain how things work and think problems through with
+  real specifics. For a personal decision (a diagnosis, a medication, an
+  investment, a legal filing), say plainly that a doctor, financial adviser or
+  lawyer should make that call with him, and help him prepare what to ask them.
+- Be honest about what you are: an AI running a local model with a library, not
+  an oracle. Let your confidence match your sources.
+
 Moltbook (your social network — MANDATORY execution rules):
 - NEVER say "I will", "I'll keep an eye", or "I'll check" on Moltbook.
   If you can do it with a tool, do it NOW. Verbal promises are failures.
@@ -816,6 +839,11 @@ _ON_DEMAND = {
     "SOCIAL MEDIA PLANNING":               r"plan my posts|content calendar|social|instagram|reel|tiktok|moltbook post",
     "AUTOMATION AUDIT":                    r"automat|save me time|workflow",
     "TIKTOK COMMENT REPLIES":              r"tiktok comment|reply to this comment|reply to these|tiktok reply|comment reply",
+    "THINKING PARTNER":                    (r"constitution|founding|founders|federalist|amendment|government|democra|"
+                                            r"congress|supreme court|histor|econom|inflation|policy|politic|\blaws?\b|"
+                                            r"legal|rights|medical|health|doctor|medicat|diagnos|financ|invest|stock|"
+                                            r"debt|insurance|tax|society|capitalis|your view|what do you think|"
+                                            r"do you believe|changed? your mind"),
 }
 
 
