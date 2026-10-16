@@ -502,3 +502,10 @@ def test_telegram_and_web_add_library_context_for_big_questions():
     import amy_persona as ap
     pb = ap.playbooks_for("What did the founders say about fractions?")
     assert "typo of a common topic" in pb and "[From your library]" in pb
+
+
+def test_positions_are_labelled_by_idea_not_people():
+    import amy_persona as ap
+    pb = ap.playbooks_for("who has the power to declare war?")
+    assert "Label each position by its" in pb and "not by people" in pb
+    assert "War Powers Resolution of 1973" in pb
