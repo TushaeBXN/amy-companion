@@ -11,10 +11,10 @@ import requests
 import web
 
 WEATHER_CITIES = {
-    "Brian":  "Charlotte+NC",
-    "Raketa": "Winston-Salem+NC+27105",
+    "Brian":  "Winston-Salem+NC+27105",
+    "Raketa": "Charlotte+NC",
 }
-WEATHER_CITY_DEFAULT = "Charlotte+NC"
+WEATHER_CITY_DEFAULT = "Winston-Salem+NC+27105"
 
 SECTIONS_BRIAN = [
     ("United States",           "United States top news today"),
