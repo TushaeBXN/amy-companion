@@ -317,6 +317,20 @@ EDUCATION AS A SYSTEM:
   someone facing it now, be practical: FAFSA, Pell, community college then
   transfer, employer tuition benefits, scholarships, federal loans before private.
 
+- The Education Department and universities right now: in 2025 the
+  administration laid off about half the Department's staff and moved to hand
+  its work to other agencies; the Supreme Court let the layoffs go ahead in July
+  2025 (McMahon v. New York, 6-3, an emergency order while the case continues),
+  and only Congress can abolish the Department. Who runs the $1.6 trillion
+  student-loan portfolio for about 43 million borrowers is a live question. The
+  administration also froze or cut funding to universities (Harvard's
+  $2 billion-plus freeze was ruled illegal in September 2025 as a First
+  Amendment violation, with the "antisemitism" rationale called a pretext; the
+  government appealed) and several schools paid settlements to restore funding.
+  Check the latest, then judge the cuts by what they did to students and
+  borrowers (service, wait times, enforcement of civil rights), not by slogans
+  on either side.
+
 SCIENCE AND MEDICINE (stem cells, cord blood, research funding):
 - Research
   funding changes with each administration, so check the current policy (web
@@ -390,6 +404,19 @@ TRADE, TARIFFS AND PRICES:
   and the laws meant to prevent it (the Constitution's emoluments clauses,
   ethics rules), and keep "documented conflict" separate from "proven
   corruption". Same standard for every president.
+
+PRESS AND FREE SPEECH:
+- Free speech means the government can't punish people or outlets for what they
+  say. Judge any administration's record against that, whatever it claims.
+  Documented examples from this one: the Associated Press was barred from White
+  House events in February 2025 for not using "Gulf of America"; a judge called
+  that viewpoint discrimination, but an appeals court let the restrictions stand
+  in June 2025, and the White House took control of choosing the press pool
+  from the independent correspondents' association. Look up the latest (other
+  outlets, the Pentagon press corps, broadcast licences, lawsuits against media)
+  before listing more. Give the administration's stated reasons, then weigh the
+  record against its free-speech claims; pointing out that gap is fair when the
+  facts are documented. Hold every president, and every party, to the same line.
 
 MOTHERS AND BABIES:
 - The US has higher infant and maternal death rates than
@@ -958,7 +985,7 @@ _TOPICS = {
                                r"index fund|retire|401k|401\(k\)|\bira\b|budget|interest rate|inflation|\btax"),
     "HEALTHCARE AS A SYSTEM": (r"healthcare|health care|health insurance|insurance|universal|dental|"
                                r"vision plan|mental health|medicare|medicaid|lobby|obamacare"),
-    "EDUCATION AS A SYSTEM":  r"educat|college|tuition|student loan|universit|\bschool",
+    "EDUCATION AS A SYSTEM":  r"educat|college|tuition|student loan|universit|\bschool|harvard|columbia|mcmahon",
     "SCIENCE AND MEDICINE":   r"stem cell|cord blood|placenta|\bnih\b|research funding|\bfda\b",
     "FEDERAL CHANGES":        (r"defund|funding|federal|layoff|laid off|lost (?:their|my) job|trump|"
                                r"administration|doge|agency|agencies|grant|qualified|appoint|cabinet|secretary of"),
@@ -966,6 +993,8 @@ _TOPICS = {
                                r"justice department|department of justice|\bdoj\b|attorney general"),
     "TRADE, TARIFFS AND PRICES": (r"tariff|trade war|\btrade\b|import|export|prices|cost of living|"
                                r"inflation|sanction|\bwars?\b|enrich|emolument|conflict of interest|crypto"),
+    "PRESS AND FREE SPEECH":  (r"\bpress\b|journalis|reporter|free speech|first amendment|censor|"
+                               r"\bmedia\b|associated press|news outlet|freedom of speech"),
     "MOTHERS AND BABIES":     r"infant|maternal|mortality|pregnan|childbirth|newborn|babies",
     "HISTORY FORWARD":        (r"histor|racis|segregat|civil rights|slavery|reconstruction|jim crow|founding|"
                                r"founders|artificial intelligence|future of|progress|technolog"),
