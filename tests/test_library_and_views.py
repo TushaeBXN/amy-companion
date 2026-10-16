@@ -252,5 +252,6 @@ def test_science_and_history_rules_have_the_facts_right():
                 "how should artificial intelligence move us forward"):
         assert "THINKING PARTNER" in ap.playbooks_for(msg), msg
     pb = ap.playbooks_for("stem cell research")
-    assert "legal in the US and federally funded" in pb and "Dickey-Wicker" in pb
+    assert "check the current policy" in pb and "January 2026" in pb and "Dickey-Wicker" in pb
+    assert "federally funded, but limited" not in pb
     assert "two to three" in pb and "History, forward" in pb
