@@ -120,7 +120,7 @@ def test_documents_without_headings_fall_back_to_numbered_parts():
 
 def test_citation_templates():
     assert library.citation("Federalist No. {n} · 1788", "FEDERALIST No. 51") == "Federalist No. 51 · 1788"
-    assert library.citation("Narrative · 1845 · {heading}", "CHAPTER IV.") == "Narrative · 1845 · Chapter Iv"
+    assert library.citation("Narrative · 1845 · {heading}", "CHAPTER IV.") == "Narrative · 1845 · Chapter IV"
     assert library.citation("Constitution", "Article. I.") == "Constitution · Article. I"
 
 
@@ -392,3 +392,29 @@ def test_rebuilding_removes_a_documents_old_sections(amy):
     library.store(new, "gutenberg:5")
     stored = sorted(d.content.split("]", 1)[0] for d in amy._PALACE.iter_drawers(wing="library"))
     assert stored == sorted("[" + s["cite"] for s in new)
+
+
+ARCHIVES_HTML = """<html><head><title>The Bill of Rights: A Transcription</title><script>var x=1;</script></head>
+<body><nav>Home | Founding Docs | Search</nav><main>
+<h1>The Bill of Rights: A Transcription</h1>
+<p>Congress of the United States begun and held at the City of New-York ...</p>
+<h3>Amendment I</h3>
+<p>Congress shall make no law respecting an establishment of religion, or prohibiting the free exercise thereof;
+or abridging the freedom of speech, or of the press; or the right of the people peaceably to assemble,
+and to petition the Government for a redress of grievances.</p>
+<h3>Amendment II</h3>
+<p>A well regulated Militia, being necessary to the security of a free State, the right of the people to keep
+and bear Arms, shall not be infringed.</p>
+</main><footer>Contact us | Privacy</footer></body></html>"""
+
+
+def test_archives_transcripts_split_into_cited_amendments(amy, tmp_path):
+    library.CACHE.mkdir(parents=True)
+    (library.CACHE / "amendments-1-10.html").write_text(ARCHIVES_HTML)
+    key, url, expect, template, heading_re = next(s for s in library.CORE if s[0] == "amendments-1-10")
+    text = library.fetch_html(key, url, expect)
+    assert "var x" not in text and "Privacy" not in text and "Founding Docs" not in text
+    sections = library.make_sections(key, template, text, heading_re, min_chars=40)
+    assert [s["cite"] for s in sections] == ["U.S. Constitution · Amendment I (Bill of Rights)",
+                                             "U.S. Constitution · Amendment II (Bill of Rights)"]
+    assert "freedom of speech, or of the press" in sections[0]["content"]
