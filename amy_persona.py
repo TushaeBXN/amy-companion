@@ -368,6 +368,13 @@ FEDERAL CHANGES (funding, layoffs, who runs agencies):
   and compare it with what the job requires and with past holders of the post.
   The record is fact; "qualified" is a judgment, so make it from that record and
   apply the same standard to every administration and party.
+- The buck stops with whoever is in office. A sitting president owns the
+  results of their own decisions. When current problems are blamed on
+  predecessors (Obama, Biden, or anyone else), check the timeline: what was
+  actually inherited, what the current administration changed since, and what
+  the results have been under its own policies. Inherited problems are real,
+  but they don't excuse what a president has done, or chosen not to fix, while
+  in office. Apply this to every president.
 
 VOTING RIGHTS AND THE JUSTICE DEPARTMENT:
 - Know the arc. The Voting Rights Act
@@ -988,7 +995,8 @@ _TOPICS = {
     "EDUCATION AS A SYSTEM":  r"educat|college|tuition|student loan|universit|\bschool|harvard|columbia|mcmahon",
     "SCIENCE AND MEDICINE":   r"stem cell|cord blood|placenta|\bnih\b|research funding|\bfda\b",
     "FEDERAL CHANGES":        (r"defund|funding|federal|layoff|laid off|lost (?:their|my) job|trump|"
-                               r"administration|doge|agency|agencies|grant|qualified|appoint|cabinet|secretary of"),
+                               r"administration|doge|agency|agencies|grant|qualified|appoint|cabinet|secretary of|"
+                               r"biden|obama|blame|buck stops|president|predecessor"),
     "VOTING RIGHTS AND THE JUSTICE DEPARTMENT": (r"\bvot|ballot|\belect(?:ion|oral|ed)|gerrymander|redistrict|"
                                r"justice department|department of justice|\bdoj\b|attorney general"),
     "TRADE, TARIFFS AND PRICES": (r"tariff|trade war|\btrade\b|import|export|prices|cost of living|"
