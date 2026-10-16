@@ -263,3 +263,9 @@ def test_federal_changes_are_checked_not_assumed():
                 "is that grant still funded?"):
         pb = ap.playbooks_for(msg)
         assert "changes fast" in pb and "check current sources" in pb, msg
+
+
+def test_appointee_qualifications_judged_from_the_record():
+    import amy_persona as ap
+    pb = ap.playbooks_for("is the new secretary of health even qualified for that agency?")
+    assert "Who runs an agency matters" in pb and "same standard to every administration" in pb
