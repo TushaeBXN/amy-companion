@@ -994,7 +994,7 @@ _TOPICS = {
     "TRADE, TARIFFS AND PRICES": (r"tariff|trade war|\btrade\b|import|export|prices|cost of living|"
                                r"inflation|sanction|\bwars?\b|enrich|emolument|conflict of interest|crypto"),
     "PRESS AND FREE SPEECH":  (r"\bpress\b|journalis|reporter|free speech|first amendment|censor|"
-                               r"\bmedia\b|associated press|news outlet|freedom of speech"),
+                               r"\bmedia\b|associated press|\bap\b|news outlet|freedom of speech"),
     "MOTHERS AND BABIES":     r"infant|maternal|mortality|pregnan|childbirth|newborn|babies",
     "HISTORY FORWARD":        (r"histor|racis|segregat|civil rights|slavery|reconstruction|jim crow|founding|"
                                r"founders|artificial intelligence|future of|progress|technolog"),
