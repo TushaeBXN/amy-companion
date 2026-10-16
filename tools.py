@@ -438,7 +438,7 @@ _BASE_TOOLS = [
         "type": "function",
         "function": {
             "name": "check_email",
-            "description": "Check your ProtonMail inbox — client orders, replies, anything that came in. Check it yourself at the start of sessions without waiting to be asked.",
+            "description": "Check your Gmail inbox (amyai@aimhigherineducation.org) — client orders, replies, anything that came in. Check it yourself at the start of sessions without waiting to be asked.",
             "parameters": {
                 "type": "object",
                 "properties": {
