@@ -5,6 +5,7 @@ Deliverables are saved to work/ so Brian can deliver them to clients.
 """
 import os
 import json
+import re
 import time
 from datetime import datetime
 
@@ -50,6 +51,54 @@ def draft_deliverable(gig_type: str, brief: str, extra_context: str = "") -> str
         options={"num_predict": 2000, "temperature": 0.75, "num_ctx": 32768},
     )
     return resp["message"]["content"].strip()
+
+
+# --- Deliverable linter -------------------------------------------------------
+
+_BANNED = re.compile(
+    r"\b(game[- ]changing|revolutionary|leverage|robust|innovative|serious cash"
+    r"|buckle up|cash in|it'?s worth noting|in today'?s (world|landscape|market)"
+    r"|unlock(?:ing)? (?:your )?potential|supercharge|seamless(?:ly)?|cutting[- ]edge"
+    r"|elevate your|take it to the next level|synerg(?:y|ies|ize)"
+    r"|paradigm shift|thought leader|best[- ]in[- ]class|holistic approach)\b",
+    re.IGNORECASE,
+)
+
+_META_OPENERS = re.compile(
+    r"^(sure[,!]|absolutely[,!]|of course[,!]|great[,!]|certainly[,!]"
+    r"|here(?:'s| is) (?:your|the)|i('ve| have) (drafted|written|created|prepared)"
+    r"|below (?:you'?ll find|is)|as requested)",
+    re.IGNORECASE,
+)
+
+VIOLATIONS_LOG = os.path.join(HERE, "work", "deliverable_violations.log")
+
+
+def lint_content(content: str, title: str = "") -> list[str]:
+    """Check content against writing rules. Returns list of violation strings (empty = clean)."""
+    violations = []
+
+    banned_hits = _BANNED.findall(content)
+    for hit in set(h if isinstance(h, str) else h[0] for h in banned_hits):
+        violations.append(f"banned phrase: '{hit}'")
+
+    first_line = content.lstrip().split("\n")[0].strip()
+    if _META_OPENERS.match(first_line):
+        violations.append(f"meta opener: '{first_line[:60]}'")
+
+    if len(content.split()) < 50:
+        violations.append("suspiciously short — under 50 words")
+
+    if violations:
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        entry = f"[{ts}] {title or 'untitled'}: {'; '.join(violations)}\n"
+        try:
+            with open(VIOLATIONS_LOG, "a") as f:
+                f.write(entry)
+        except Exception:
+            pass
+
+    return violations
 
 
 # --- File management -------------------------------------------------------
@@ -112,9 +161,11 @@ def execute(gig_type: str, brief: str, title: str = "", extra_context: str = "")
     content = draft_deliverable(gig_type, brief, extra_context)
     elapsed = round(time.time() - start, 1)
 
+    violations = lint_content(content, title)
+
     path = save_deliverable(title, content, gig_type)
 
-    return {
+    result = {
         "title": title,
         "gig_type": gig_type,
         "path": path,
@@ -122,6 +173,9 @@ def execute(gig_type: str, brief: str, title: str = "", extra_context: str = "")
         "elapsed_s": elapsed,
         "content_preview": content[:300],
     }
+    if violations:
+        result["lint_warnings"] = violations
+    return result
 
 
 # --- Background work task (called from thought loop) -----------------------
