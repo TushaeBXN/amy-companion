@@ -20,7 +20,7 @@ Re-running is safe: sections keep the same IDs, so they are replaced rather than
 duplicated. Stop Amy while building (Ctrl+C in her window), then start her again,
 so she sees the new sections.
 
-Texts come from Project Gutenberg (public domain). Each download is checked
+Texts come from Project Gutenberg and the National Archives (public domain). Each download is checked
 against the title it should have; a mismatch is skipped with a warning.
 """
 from __future__ import annotations
@@ -60,6 +60,18 @@ CORE = [
      "Narrative of the Life of Frederick Douglass · 1845 · {heading}",
      r"^\s*(?:CHAPTER\s+[IVXL]+\.?|PREFACE|LETTER FROM WENDELL PHILLIPS.*|APPENDIX)\s*$"),
 ]
+# Official transcripts from the National Archives (Gutenberg's Constitution
+# leaves out the amendments). The heading pattern accepts "Amendment I" and
+# "AMENDMENT XI"; each amendment becomes its own section.
+_AMENDMENT_RE = r"^\s*amendment\s+(?:[ivxl]+|\d+)\.?\s*$"
+CORE += [
+    ("amendments-1-10", "https://www.archives.gov/founding-docs/bill-of-rights-transcript", "Amendment",
+     "U.S. Constitution · {heading} (Bill of Rights)", _AMENDMENT_RE),
+    ("amendments-11-27", "https://www.archives.gov/founding-docs/amendments-11-27", "Amendment",
+     "U.S. Constitution · {heading}", _AMENDMENT_RE),
+]
+HTML_SECTION_MAX = 3500   # the longest amendment (the 14th) is ~2,600 characters; the rest is page footer
+
 EXTENDED = [
     ("democracy-in-america", 815, "Democracy in America",
      "Democracy in America, Vol. 1 · Tocqueville · 1835 · {heading}", r"^\s*Chapter\s+[IVXL]+[.:]?.*$"),
@@ -95,7 +107,7 @@ def _size_chunks(text: str, size: int = FALLBACK_CHUNK_CHARS) -> list[str]:
     return chunks
 
 
-def split_sections(text: str, heading_re: Optional[str]) -> list[tuple[str, str]]:
+def split_sections(text: str, heading_re: Optional[str], min_chars: int = MIN_SECTION_CHARS) -> list[tuple[str, str]]:
     """``(heading, text)`` pairs. Headings that introduce less than
     MIN_SECTION_CHARS of text (a table of contents) are dropped. Without a
     pattern, or if it finds fewer than two real sections, the text is cut into
@@ -106,7 +118,7 @@ def split_sections(text: str, heading_re: Optional[str]) -> list[tuple[str, str]
         marks = list(rx.finditer(text))
         for i, m in enumerate(marks):
             body = text[m.end(): marks[i + 1].start() if i + 1 < len(marks) else len(text)].strip()
-            if len(body) >= MIN_SECTION_CHARS:
+            if len(body) >= min_chars:
                 sections.append((m.group(0).strip(), body))
     if len(sections) < 2:
         parts = _size_chunks(text)
@@ -117,7 +129,8 @@ def split_sections(text: str, heading_re: Optional[str]) -> list[tuple[str, str]
 def citation(template: str, heading: str) -> str:
     """Fill a citation template: {n} is the section number, {heading} its heading."""
     heading = heading.strip()
-    nice = heading if heading.startswith("part ") else heading.rstrip(".").title()
+    nice = heading if heading.startswith("part ") else re.sub(
+        r"\b[IVXLivxl]+\b", lambda m: m.group(0).upper(), heading.rstrip(".").title())  # keep "IV", not "Iv"
     if "{n}" in template:
         n = re.search(r"\d+", heading)
         return template.replace("{n}", n.group(0) if n else nice)
@@ -130,10 +143,11 @@ def section_id(key: str, heading: str, n: int) -> str:
     return "lib-" + hashlib.sha256(f"{key}|{n}|{heading}".encode()).hexdigest()[:20]
 
 
-def make_sections(key: str, title_template: str, text: str, heading_re: Optional[str]) -> list[dict]:
+def make_sections(key: str, title_template: str, text: str, heading_re: Optional[str],
+                  min_chars: int = MIN_SECTION_CHARS) -> list[dict]:
     """The drawers for one document: id, citation and text."""
     out = []
-    for n, (heading, body) in enumerate(split_sections(text, heading_re)):
+    for n, (heading, body) in enumerate(split_sections(text, heading_re, min_chars)):
         cite = citation(title_template, heading)
         out.append({"id": section_id(key, heading, n), "room": key, "cite": cite,
                     "content": f"[{cite}]\n{body}"})
@@ -193,19 +207,50 @@ def fetch_gutenberg(gid: int, expect: str) -> Optional[str]:
     return strip_gutenberg(raw)
 
 
+def html_text(html: str) -> str:
+    """Readable text of a web page's main content, one block per line."""
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "nav", "header", "footer", "aside", "form"]):
+        tag.decompose()
+    root = soup.find("main") or soup.find("article") or soup.body or soup
+    lines = [ln.strip() for ln in root.get_text("\n").splitlines()]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+def fetch_html(key: str, url: str, expect: str) -> Optional[str]:
+    CACHE.mkdir(exist_ok=True)
+    path = CACHE / f"{key}.html"
+    if not path.exists():
+        print(f"  downloading {url}")
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (amy-companion library loader)"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            path.write_bytes(r.read())
+    text = html_text(path.read_text(encoding="utf-8", errors="replace"))
+    if expect.lower() not in text.lower():
+        print(f"  ! skipped: {url} doesn't mention {expect!r}")
+        return None
+    return text
+
+
 def build(extended: bool = False) -> None:
     total = 0
-    for key, gid, expect, template, heading_re in CORE + (EXTENDED if extended else []):
+    for key, source, expect, template, heading_re in CORE + (EXTENDED if extended else []):
         print(f"{key}:")
+        is_web = isinstance(source, str)
         try:
-            text = fetch_gutenberg(gid, expect)
+            text = fetch_html(key, source, expect) if is_web else fetch_gutenberg(source, expect)
         except OSError as exc:
             print(f"  ! could not download: {exc}")
             continue
         if not text:
             continue
-        sections = make_sections(key, template, text, heading_re)
-        n = store(sections, f"gutenberg:{gid}")
+        # Official transcripts have no table of contents, and some amendments are one sentence.
+        sections = make_sections(key, template, text, heading_re, min_chars=40 if is_web else MIN_SECTION_CHARS)
+        if is_web:  # trim page footers that follow the last section
+            for s in sections:
+                s["content"] = s["content"][:HTML_SECTION_MAX]
+        n = store(sections, source if is_web else f"gutenberg:{source}")
         total += n
         print(f"  {n} sections, e.g. [{sections[0]['cite']}]")
     print(f"\nDone: {total} sections in Amy's library. Restart Amy so she sees them.")
