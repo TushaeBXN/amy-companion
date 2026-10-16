@@ -13,6 +13,8 @@ Usage:
                                              # your own .txt, .md or .pdf
     python3 library.py add mandate.pdf --title "Mandate for Leadership (Project 2025)" --author "Heritage Foundation" --year 2023
                                              # e.g. Project 2025's public PDF, so Amy can quote it by chapter
+    python3 library.py conan amendment-14    # Constitution Annotated: how courts read each clause, with the cases
+                                             # (also article-1 … article-7, amendment-1 … amendment-27)
     python3 library.py list                  # what's in the library
     python3 library.py search "separation of powers"
 
@@ -218,15 +220,20 @@ def html_text(html: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
-def fetch_html(key: str, url: str, expect: str) -> Optional[str]:
-    CACHE.mkdir(exist_ok=True)
-    path = CACHE / f"{key}.html"
+def download(url: str, path: Path) -> str:
+    """The page at *url*, cached in *path*."""
     if not path.exists():
         print(f"  downloading {url}")
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (amy-companion library loader)"})
         with urllib.request.urlopen(req, timeout=60) as r:
+            path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(r.read())
-    text = html_text(path.read_text(encoding="utf-8", errors="replace"))
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+def fetch_html(key: str, url: str, expect: str) -> Optional[str]:
+    CACHE.mkdir(exist_ok=True)
+    text = html_text(download(url, CACHE / f"{key}.html"))
     if expect.lower() not in text.lower():
         print(f"  ! skipped: {url} doesn't mention {expect!r}")
         return None
@@ -313,6 +320,83 @@ def list_library() -> None:
         print(f"{room:28} {n} sections")
 
 
+# ── Constitution Annotated (Congressional Research Service) ──────────────────
+# The official, public-domain explanation of how courts have read each clause,
+# with the cases. Published at constitution.congress.gov and mirrored by
+# Cornell's Legal Information Institute; the importer tries them in order.
+CONAN_SITES = [
+    ("https://constitution.congress.gov/browse/{part}/", "/browse/essay/"),
+    ("https://www.law.cornell.edu/constitution-conan/{part}", "/constitution-conan/{part}/"),
+]
+CONAN_TITLE = "Constitution Annotated (Congressional Research Service)"
+
+
+def page_links(html: str, base: str, contains: str) -> list[str]:
+    """Absolute URLs of links on a page whose path contains *contains*, in page order."""
+    from urllib.parse import urljoin, urldefrag
+
+    from bs4 import BeautifulSoup
+    out = []
+    for a in BeautifulSoup(html, "html.parser").find_all("a", href=True):
+        url = urldefrag(urljoin(base, a["href"]))[0]
+        if contains in url and url.rstrip("/") != base.rstrip("/") and url not in out:
+            out.append(url)
+    return out
+
+
+def page_title(html: str) -> str:
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "html.parser")
+    tag = soup.find("h1") or soup.find("title")
+    return re.sub(r"\s+", " ", tag.get_text(" ")).strip() if tag else ""
+
+
+def add_conan(part: str = "amendment-14", limit: int = 300, delay: float = 0.5) -> int:
+    """Load the Constitution Annotated essays for *part* ("amendment-14", "article-1", ...).
+
+    Each essay becomes a section cited by its title, e.g.
+    "[Constitution Annotated (Congressional Research Service) · Amdt14.S1.8.1 Overview of Equal Protection]".
+    """
+    import time
+
+    key = f"conan-{part}"
+    for index_tpl, contains_tpl in CONAN_SITES:
+        index_url, contains = index_tpl.format(part=part), contains_tpl.format(part=part)
+        try:
+            index = download(index_url, CACHE / key / f"index-{hashlib.sha256(index_url.encode()).hexdigest()[:12]}.html")
+        except OSError as exc:
+            print(f"  ! {index_url}: {exc}")
+            continue
+        links = page_links(index, index_url, contains)[:limit]
+        if not links:
+            print(f"  ! no essay links found on {index_url}")
+            continue
+        print(f"  {len(links)} essays listed on {index_url}")
+        sections = []
+        for n, url in enumerate(links):
+            path = CACHE / key / (re.sub(r"[^A-Za-z0-9.-]+", "_", url.split("://", 1)[-1])[-120:] + ".html")
+            fresh = not path.exists()
+            try:
+                html = download(url, path)
+            except OSError as exc:
+                print(f"  ! {url}: {exc}")
+                continue
+            title, text = page_title(html), html_text(html)
+            if len(text) < 200:
+                continue
+            cite = f"{CONAN_TITLE} · {title}" if title else f"{CONAN_TITLE} · {part}"
+            sections.append({"id": section_id(key, url, n), "room": key, "cite": cite,
+                             "content": f"[{cite}]\n{text}"})
+            if fresh and delay:
+                time.sleep(delay)  # be polite to the server
+        if sections:
+            n = store(sections, index_url)
+            print(f"  {n} essays stored, e.g. [{sections[0]['cite']}]")
+            return n
+    print("  ! could not load the Constitution Annotated from any site; paste this output to get it fixed")
+    return 0
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -324,6 +408,9 @@ def main(argv=None) -> None:
     a.add_argument("--author", default="")
     a.add_argument("--year", default="")
     a.add_argument("--split", default=None, help="regex for section headings (one per line)")
+    c = sub.add_parser("conan", help="load Constitution Annotated essays, e.g. amendment-14 or article-1")
+    c.add_argument("part", nargs="?", default="amendment-14")
+    c.add_argument("--limit", type=int, default=300)
     sub.add_parser("list")
     s = sub.add_parser("search")
     s.add_argument("query")
@@ -332,6 +419,10 @@ def main(argv=None) -> None:
         build(args.extended)
     elif args.cmd == "add":
         add_file(args.file, args.title, args.author, args.year, args.split)
+    elif args.cmd == "conan":
+        print(f"conan {args.part}:")
+        add_conan(args.part, limit=args.limit)
+        print("Restart Amy so she sees them.")
     elif args.cmd == "list":
         list_library()
     else:

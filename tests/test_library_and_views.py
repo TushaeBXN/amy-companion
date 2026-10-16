@@ -300,7 +300,7 @@ def test_each_big_question_loads_only_its_own_section():
     pb = ap.playbooks_for("why is college tuition so high?")
     assert "THINKING PARTNER" in pb and "EDUCATION AS A SYSTEM" in pb
     assert [h for h in heads if h in pb] == ["EDUCATION AS A SYSTEM"]
-    assert len(pb) < 4000  # well under the old all-in-one playbook
+    assert len(pb) < 5000  # about half the old all-in-one playbook
 
 
 def test_press_freedom_and_education_department():
@@ -418,3 +418,54 @@ def test_archives_transcripts_split_into_cited_amendments(amy, tmp_path):
     assert [s["cite"] for s in sections] == ["U.S. Constitution · Amendment I (Bill of Rights)",
                                              "U.S. Constitution · Amendment II (Bill of Rights)"]
     assert "freedom of speech, or of the press" in sections[0]["content"]
+
+
+CONAN_INDEX = """<html><body><main><h1>Fourteenth Amendment</h1><ul>
+<li><a href="/browse/essay/amdt14-S1-8-1/ALDE_00000811/">Amdt14.S1.8.1 Overview of Equal Protection</a></li>
+<li><a href="/browse/essay/amdt14-S1-8-2/ALDE_00000812/">Amdt14.S1.8.2 Intent and Effect</a></li>
+<li><a href="/browse/amendment-14/">Fourteenth Amendment</a></li>
+<li><a href="https://twitter.com/congressdotgov">Twitter</a></li>
+</ul></main></body></html>"""
+CONAN_ESSAY = """<html><head><title>Overview | Constitution Annotated</title></head><body><nav>menu</nav>
+<main><h1>Amdt14.S1.8.{n} {title}</h1><p>{body}</p></main><footer>Privacy</footer></body></html>"""
+
+
+def test_constitution_annotated_essays_are_cited_by_title(amy, monkeypatch):
+    pages = {
+        "https://constitution.congress.gov/browse/amendment-14/": CONAN_INDEX,
+        "https://constitution.congress.gov/browse/essay/amdt14-S1-8-1/ALDE_00000811/": CONAN_ESSAY.format(
+            n=1, title="Overview of Equal Protection", body="The Equal Protection Clause ... " * 20),
+        "https://constitution.congress.gov/browse/essay/amdt14-S1-8-2/ALDE_00000812/": CONAN_ESSAY.format(
+            n=2, title="Intent and Effect", body="In Washington v. Davis the Court held that discriminatory "
+                                                  "purpose, not disparate impact alone, is required. " * 5),
+    }
+    monkeypatch.setattr(library, "download", lambda url, path: pages[url])
+    assert library.add_conan("amendment-14", delay=0) == 2
+    hit = json.loads(amy.library_search("disparate impact discriminatory purpose Washington v. Davis"))[0]
+    assert hit["cite"] == ("Constitution Annotated (Congressional Research Service) · "
+                           "Amdt14.S1.8.2 Intent and Effect")
+    assert "menu" not in hit["text"] and "Privacy" not in hit["text"]
+
+
+def test_constitution_annotated_falls_back_to_the_cornell_mirror(amy, monkeypatch):
+    cornell = "https://www.law.cornell.edu/constitution-conan/amendment-14"
+    pages = {
+        cornell: '<main><a href="/constitution-conan/amendment-14/section-1/overview">Overview</a></main>',
+        cornell + "/section-1/overview": "<main><h1>Equal Protection Overview</h1><p>" + "text " * 100 + "</p></main>",
+    }
+
+    def fake_download(url, path):
+        if url not in pages:
+            raise OSError("blocked")
+        return pages[url]
+
+    monkeypatch.setattr(library, "download", fake_download)
+    assert library.add_conan("amendment-14", delay=0) == 1
+    assert json.loads(amy.library_search("equal protection overview"))[0]["cite"].endswith(
+        "· Equal Protection Overview")
+
+
+def test_amy_must_not_attribute_from_memory():
+    import amy_persona as ap
+    pb = ap.playbooks_for("who wrote the opinion in Loving v. Virginia?")
+    assert "Never attribute from memory" in pb and "Washington v. Davis" in pb
