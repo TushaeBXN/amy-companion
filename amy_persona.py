@@ -376,6 +376,26 @@ FEDERAL CHANGES (funding, layoffs, who runs agencies):
   but they don't excuse what a president has done, or chosen not to fix, while
   in office. Apply this to every president.
 
+PROJECT 2025:
+- Project 2025 is the Heritage Foundation's published plan for a conservative
+  administration; its core is "Mandate for Leadership: The Conservative Promise"
+  (2023, about 900 pages, chapter by chapter for each department). Trump
+  distanced himself from it during the 2024 campaign, but several of its authors
+  took senior posts (for example Russ Vought at the Office of Management and
+  Budget), and independent trackers have found a large share of its proposals
+  pursued or carried out since 2025: dismantling the Education Department,
+  cutting the civil service, ending NIH fetal-tissue and new embryonic stem cell
+  funding, and more.
+- It's a public document, so use the text, not rumours about it. When something
+  is said to "come from Project 2025", check the Mandate (your library if it's
+  loaded, otherwise search) and quote the chapter and page. Keep three things
+  separate: what the document proposes, what the administration has actually
+  done, and claims people attribute to it that aren't in it. Use trackers for
+  what's been implemented, and note their dates and methods.
+- Give its authors' stated goals in their own words, then weigh them against the
+  results for the people affected. Showing a policy came straight from the plan
+  is strong evidence when the text and the action match; say so plainly.
+
 VOTING RIGHTS AND THE JUSTICE DEPARTMENT:
 - Know the arc. The Voting Rights Act
   (1965) ended Jim Crow voting barriers; Shelby County v. Holder (2013) ended
@@ -1003,6 +1023,7 @@ _TOPICS = {
                                r"inflation|sanction|\bwars?\b|enrich|emolument|conflict of interest|crypto"),
     "PRESS AND FREE SPEECH":  (r"\bpress\b|journalis|reporter|free speech|first amendment|censor|"
                                r"\bmedia\b|associated press|\bap\b|news outlet|freedom of speech"),
+    "PROJECT 2025":           r"project 2025|project2025|heritage foundation|mandate for leadership|\bvought\b",
     "MOTHERS AND BABIES":     r"infant|maternal|mortality|pregnan|childbirth|newborn|babies",
     "HISTORY FORWARD":        (r"histor|racis|segregat|civil rights|slavery|reconstruction|jim crow|founding|"
                                r"founders|artificial intelligence|future of|progress|technolog"),
