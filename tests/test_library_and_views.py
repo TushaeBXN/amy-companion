@@ -212,10 +212,11 @@ def test_money_and_health_rules_are_practical_not_just_disclaimers():
                 "how much does lobbying shape health care law"):
         pb = ap.playbooks_for(msg)
         assert "THINKING PARTNER" in pb, msg
-    pb = ap.playbooks_for("why don't we have universal healthcare")
-    assert "CD ladders" in pb and "Show the math" in pb
-    assert "single-payer" in pb and "dental, vision and hearing to Medicare" in pb
-    assert "financial adviser" not in pb  # basics are hers to help with
+    money = ap.playbooks_for("should I open a CD or buy an index fund")
+    assert "CD ladders" in money and "Show the math" in money and "financial adviser" not in money
+    health = ap.playbooks_for("why don't we have universal healthcare")
+    assert "single-payer" in health and "dental, vision and hearing to Medicare" in health
+    assert "CD ladders" not in health  # only the sections a message needs
 
 
 def test_tool_actions(monkeypatch):
@@ -240,7 +241,7 @@ def test_education_rules_load_for_tuition_and_student_loans():
     for msg in ("why isn't college free here like in Germany?", "my student loans are crushing me",
                 "should public universities charge tuition"):
         pb = ap.playbooks_for(msg)
-        assert "Education as a system" in pb, msg
+        assert "EDUCATION AS A SYSTEM" in pb, msg
     pb = ap.playbooks_for("is free tuition possible in the US")
     assert "Tennessee Promise" in pb and "Public" in pb and "FAFSA" in pb
 
@@ -254,7 +255,7 @@ def test_science_and_history_rules_have_the_facts_right():
     pb = ap.playbooks_for("stem cell research")
     assert "check the current policy" in pb and "January 2026" in pb and "Dickey-Wicker" in pb
     assert "federally funded, but limited" not in pb
-    assert "two to three" in pb and "History, forward" in pb
+    assert "two to three" in ap.playbooks_for("infant mortality") and "HISTORY FORWARD" in ap.playbooks_for("Jim Crow")
 
 
 def test_federal_changes_are_checked_not_assumed():
@@ -269,3 +270,34 @@ def test_appointee_qualifications_judged_from_the_record():
     import amy_persona as ap
     pb = ap.playbooks_for("is the new secretary of health even qualified for that agency?")
     assert "Who runs an agency matters" in pb and "same standard to every administration" in pb
+
+
+def test_voting_rights_and_doj_rules():
+    import amy_persona as ap
+    for msg in ("is the DOJ going after voting rights?", "what did the Supreme Court do to the Voting Rights Act",
+                "they're purging voter rolls before the election"):
+        pb = ap.playbooks_for(msg)
+        assert "VOTING RIGHTS AND THE JUSTICE DEPARTMENT" in pb, msg
+    pb = ap.playbooks_for("voting rights")
+    assert "Shelby County" in pb and "Louisiana v. Callais" in pb and "same test to any" in pb
+    assert "Voting rights" not in ap.playbooks_for("I'm devoted to my morning coffee")
+
+
+def test_trade_tariffs_and_conflicts_of_interest():
+    import amy_persona as ap
+    for msg in ("these tariffs are driving prices up", "the trade war with China",
+                "he's enriching his family with crypto while in office"):
+        assert "TRADE, TARIFFS AND PRICES" in ap.playbooks_for(msg), msg
+    pb = ap.playbooks_for("tariffs")
+    assert "passed on to American buyers" in pb and "emoluments" in pb and "Same standard for every president" in pb
+
+
+def test_each_big_question_loads_only_its_own_section():
+    import amy_persona as ap
+    heads = ["MONEY PARTNER", "HEALTHCARE AS A SYSTEM", "EDUCATION AS A SYSTEM", "SCIENCE AND MEDICINE",
+             "FEDERAL CHANGES", "VOTING RIGHTS AND THE JUSTICE DEPARTMENT", "TRADE, TARIFFS AND PRICES",
+             "MOTHERS AND BABIES", "HISTORY FORWARD"]
+    pb = ap.playbooks_for("why is college tuition so high?")
+    assert "THINKING PARTNER" in pb and "EDUCATION AS A SYSTEM" in pb
+    assert [h for h in heads if h in pb] == ["EDUCATION AS A SYSTEM"]
+    assert len(pb) < 4000  # well under the old all-in-one playbook
