@@ -11,6 +11,8 @@ Usage:
     python3 library.py build --extended      # plus Democracy in America and The Wealth of Nations
     python3 library.py add FILE --title "Title" [--author A] [--year Y] [--split REGEX]
                                              # your own .txt, .md or .pdf
+    python3 library.py add mandate.pdf --title "Mandate for Leadership (Project 2025)" --author "Heritage Foundation" --year 2023
+                                             # e.g. Project 2025's public PDF, so Amy can quote it by chapter
     python3 library.py list                  # what's in the library
     python3 library.py search "separation of powers"
 
@@ -207,13 +209,40 @@ def read_file(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def pdf_pages(path: Path) -> list[str]:
+    from pypdf import PdfReader
+    return [page.extract_text() or "" for page in PdfReader(str(path)).pages]
+
+
+def page_sections(key: str, template: str, pages: list[str], size: int = FALLBACK_CHUNK_CHARS) -> list[dict]:
+    """Group PDF pages into sections cited by page range ("pp. 12–14")."""
+    out, start, buf = [], 0, []
+    for i, text in enumerate(pages + [None]):
+        if text is not None and (not buf or sum(map(len, buf)) + len(text) <= size):
+            buf.append(text)
+            continue
+        if buf and "".join(buf).strip():
+            first, last = start + 1, start + len(buf)
+            pages_label = f"p. {first}" if first == last else f"pp. {first}–{last}"
+            cite = f"{template} · {pages_label}"
+            out.append({"id": section_id(key, pages_label, len(out)), "room": key, "cite": cite,
+                        "content": f"[{cite}]\n" + "\n\n".join(b.strip() for b in buf if b.strip())})
+        start, buf = i, [text] if text is not None else []
+    return out
+
+
 def add_file(path: Path, title: str, author: str = "", year: str = "", split: Optional[str] = None) -> int:
-    text = read_file(path)
-    if not text.strip():
-        raise SystemExit(f"No text found in {path}")
     key = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:60] or "document"
     template = " · ".join(x for x in (title, author, year) if x)
-    sections = make_sections(key, template, text, split)
+    if path.suffix.lower() == ".pdf" and not split:
+        sections = page_sections(key, template, pdf_pages(path))  # cite by page number
+    else:
+        text = read_file(path)
+        if not text.strip():
+            raise SystemExit(f"No text found in {path}")
+        sections = make_sections(key, template, text, split)
+    if not sections:
+        raise SystemExit(f"No text found in {path}")
     n = store(sections, f"file:{path.name}")
     print(f"Added {n} sections from {path.name}, e.g. [{sections[0]['cite']}]")
     return n
