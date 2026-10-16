@@ -10,15 +10,25 @@ import requests
 
 import web
 
-WEATHER_CITY = "Winston-Salem+NC"
+WEATHER_CITIES = {
+    "Brian":  "Charlotte+NC",
+    "Raketa": "Winston-Salem+NC+27105",
+}
+WEATHER_CITY_DEFAULT = "Charlotte+NC"
 
-SECTIONS = [
-    ("United States",           "United States top news"),
-    ("Burkina Faso",            "Burkina Faso news"),
-    ("Department of Education", "US Department of Education announcement"),
-    ("Arts",                    "arts culture news"),
-    ("Literature",              "books literature news"),
-    ("Technology",              "technology news"),
+SECTIONS_BRIAN = [
+    ("United States",           "United States top news today"),
+    ("Technology",              "technology AI news today"),
+    ("Department of Education", "US Department of Education news today"),
+]
+
+SECTIONS_RAKETA = [
+    ("United States",           "United States top news today"),
+    ("Burkina Faso",            "Burkina Faso news today"),
+    ("Department of Education", "US Department of Education news today"),
+    ("Arts",                    "arts culture news today"),
+    ("Literature",              "books literature news today"),
+    ("Technology",              "technology news today"),
 ]
 
 
@@ -40,16 +50,18 @@ def _news(query, n=4):
             return [f"(search failed: {e})"]
 
 
-def gather():
+def gather(name="Brian"):
     today = datetime.now().strftime("%A, %B %d, %Y")
     parts = [f"[BRIEF DATA — {today}]"]
+    city = WEATHER_CITIES.get(name, WEATHER_CITY_DEFAULT)
     try:
-        w = requests.get(f"https://wttr.in/{WEATHER_CITY}?format=%l:+%c+%t+(feels+%f),+%w,+rain+%p",
+        w = requests.get(f"https://wttr.in/{city}?format=%l:+%c+%t+(feels+%f),+%w,+rain+%p",
                          timeout=10).text.strip()
     except Exception as e:
         w = f"(unavailable: {e})"
     parts.append(f"\n[WEATHER]\n{w}")
-    for label, query in SECTIONS:
+    sections = SECTIONS_BRIAN if name == "Brian" else SECTIONS_RAKETA
+    for label, query in sections:
         lines = _news(query) or ["(nothing found)"]
         parts.append(f"\n[{label.upper()}]\n" + "\n".join(lines))
     return "\n".join(parts)
@@ -57,17 +69,15 @@ def gather():
 
 def write(model, name, system_prompt=""):
     """Return the finished brief text for `name`."""
-    data = gather()
+    data = gather(name)
     if name == "Brian":
         instructions = (
             "Write Brian's morning brief from ONLY the data below — no outside facts, "
             "and never invent a headline. "
-            "Format: plain text for Telegram. Each section is a bold header followed by "
-            "1-2 bullet points (use • not -) with the top story only — one line per bullet, "
-            "tight and scannable. Sections in order: Weather, United States, Burkina Faso, "
-            "Department of Education, Arts, Literature, Technology. "
-            "Translate every French headline into English. "
-            "If a section has nothing useful, skip it entirely. "
+            "Format: plain text for Telegram. One bold header per section, followed by "
+            "1-2 bullets (use • not -), tight and scannable. "
+            "Sections in order: Weather, United States, Technology, Department of Education. "
+            "Skip any section with nothing useful. "
             "Open with one warm line to Brian. No closing line."
         )
     else:
