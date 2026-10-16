@@ -46,8 +46,9 @@ _GUTENBERG = "https://www.gutenberg.org/cache/epub/{id}/pg{id}.txt"
 # (key, Gutenberg id, expected word in its title, citation, heading regex for sections)
 CORE = [
     ("declaration", 1, "Declaration", "Declaration of Independence · 1776", None),
-    ("constitution", 5, "Constitution", "U.S. Constitution and Amendments",
-     r"^\s*(?:Article\.?\s+[IVX]+\b.*|Amendment\s+[IVXL0-9]+\b.*|ARTICLE\s+[IVX]+\b.*|AMENDMENT\s+[IVXL0-9]+\b.*)$"),
+    ("constitution", 5, "Constitution", "U.S. Constitution · {heading}",
+     # Gutenberg #5 writes "Article 1", "ARTICLE 2", "ARTICLE THREE"; one heading per line.
+     r"^\s*(?:article|amendment)\.?\s+(?:[ivxl]+|\d+|[a-z]+(?:-[a-z]+)?)\.?\s*$"),
     ("gettysburg", 4, "Gettysburg", "Gettysburg Address · Lincoln · 1863", None),
     ("common-sense", 147, "Common Sense", "Common Sense · Thomas Paine · 1776",
      r"^\s*(?:OF THE ORIGIN AND DESIGN.*|OF MONARCHY AND HEREDITARY SUCCESSION.*|"
@@ -154,6 +155,14 @@ def store(sections: list[dict], source: str, palace=None, backend=None) -> int:
 
     if palace is None:
         palace, backend = _engram()
+    # Rebuilding a document: drop its old sections that the new split doesn't have.
+    from engram.indexing import unindex_drawer
+    keep = {s["id"] for s in sections}
+    for room in {s["room"] for s in sections}:
+        for old in list(palace.iter_drawers(wing=WING, room=room)):
+            if old.id not in keep:
+                unindex_drawer(backend, old.id)
+                palace.delete_drawer(old.wing, old.room, old.hall, old.id)
     items = []
     for s in sections:
         drawer = Drawer(content=s["content"], wing=WING, room=s["room"], hall=HALL, id=s["id"],
