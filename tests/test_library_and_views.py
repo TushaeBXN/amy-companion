@@ -296,7 +296,7 @@ def test_each_big_question_loads_only_its_own_section():
     import amy_persona as ap
     heads = ["MONEY PARTNER", "HEALTHCARE AS A SYSTEM", "EDUCATION AS A SYSTEM", "SCIENCE AND MEDICINE",
              "FEDERAL CHANGES", "VOTING RIGHTS AND THE JUSTICE DEPARTMENT", "TRADE, TARIFFS AND PRICES",
-             "PRESS AND FREE SPEECH", "PROJECT 2025", "FOREIGN POLICY AND US TERRITORIES", "MOTHERS AND BABIES", "HISTORY FORWARD"]
+             "PRESS AND FREE SPEECH", "PROJECT 2025", "FOREIGN POLICY AND US TERRITORIES", "WAR POWERS", "MOTHERS AND BABIES", "HISTORY FORWARD"]
     pb = ap.playbooks_for("why is college tuition so high?")
     assert "THINKING PARTNER" in pb and "EDUCATION AS A SYSTEM" in pb
     assert [h for h in heads if h in pb] == ["EDUCATION AS A SYSTEM"]
@@ -509,3 +509,12 @@ def test_positions_are_labelled_by_idea_not_people():
     pb = ap.playbooks_for("who has the power to declare war?")
     assert "Label each position by its" in pb and "not by people" in pb
     assert "War Powers Resolution of 1973" in pb
+
+
+def test_war_powers_in_practice_includes_iran():
+    import amy_persona as ap
+    for msg in ("Who has the power to declare war?", "Congress never voted on what we're doing in Iran"):
+        pb = ap.playbooks_for(msg)
+        assert "WAR POWERS" in pb and "not authorized the 2026 hostilities with Iran" in pb, msg
+        assert "FOREIGN POLICY AND US TERRITORIES" not in pb, msg
+    assert "give both" in ap.playbooks_for("declare war")
