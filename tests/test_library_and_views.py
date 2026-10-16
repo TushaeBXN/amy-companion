@@ -205,6 +205,19 @@ def test_thinking_partner_rules_load_only_for_big_questions():
     assert "THINKING PARTNER" not in ap.playbooks_for("good morning amy, how did you sleep")
 
 
+def test_money_and_health_rules_are_practical_not_just_disclaimers():
+    import amy_persona as ap
+    for msg in ("best way to grow my savings, CD or index fund?",
+                "why don't we have universal healthcare with dental and vision included",
+                "how much does lobbying shape health care law"):
+        pb = ap.playbooks_for(msg)
+        assert "THINKING PARTNER" in pb, msg
+    pb = ap.playbooks_for("why don't we have universal healthcare")
+    assert "CD ladders" in pb and "Show the math" in pb
+    assert "single-payer" in pb and "dental, vision and hearing to Medicare" in pb
+    assert "financial adviser" not in pb  # basics are hers to help with
+
+
 def test_tool_actions(monkeypatch):
     pytest.importorskip("ddgs")  # tools.py needs Amy's full dependencies
     import tools
