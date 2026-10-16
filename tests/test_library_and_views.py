@@ -312,3 +312,9 @@ def test_press_freedom_and_education_department():
     assert "viewpoint discrimination" in pb and "same line" in pb
     edu = ap.playbooks_for("the cuts to the Department of Education and going after Harvard")
     assert "McMahon v. New York" in edu and "ruled illegal" in edu
+
+
+def test_sitting_president_owns_the_results():
+    import amy_persona as ap
+    pb = ap.playbooks_for("he keeps blaming Biden and Obama for everything")
+    assert "The buck stops with whoever is in office" in pb and "Apply this to every president" in pb
