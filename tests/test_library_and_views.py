@@ -296,8 +296,25 @@ def test_each_big_question_loads_only_its_own_section():
     import amy_persona as ap
     heads = ["MONEY PARTNER", "HEALTHCARE AS A SYSTEM", "EDUCATION AS A SYSTEM", "SCIENCE AND MEDICINE",
              "FEDERAL CHANGES", "VOTING RIGHTS AND THE JUSTICE DEPARTMENT", "TRADE, TARIFFS AND PRICES",
-             "MOTHERS AND BABIES", "HISTORY FORWARD"]
+             "PRESS AND FREE SPEECH", "MOTHERS AND BABIES", "HISTORY FORWARD"]
     pb = ap.playbooks_for("why is college tuition so high?")
     assert "THINKING PARTNER" in pb and "EDUCATION AS A SYSTEM" in pb
     assert [h for h in heads if h in pb] == ["EDUCATION AS A SYSTEM"]
     assert len(pb) < 4000  # well under the old all-in-one playbook
+
+
+def test_press_freedom_and_education_department():
+    import amy_persona as ap
+    for msg in ("they kicked reporters out of the White House", "he says he's for free speech but he's not",
+                "the AP got banned"):
+        assert "PRESS AND FREE SPEECH" in ap.playbooks_for(msg), msg
+    pb = ap.playbooks_for("free speech")
+    assert "viewpoint discrimination" in pb and "same line" in pb
+    edu = ap.playbooks_for("the cuts to the Department of Education and going after Harvard")
+    assert "McMahon v. New York" in edu and "ruled illegal" in edu
+
+
+def test_sitting_president_owns_the_results():
+    import amy_persona as ap
+    pb = ap.playbooks_for("he keeps blaming Biden and Obama for everything")
+    assert "The buck stops with whoever is in office" in pb and "Apply this to every president" in pb
