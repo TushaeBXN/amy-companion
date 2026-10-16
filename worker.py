@@ -34,7 +34,7 @@ QUIET_START, QUIET_END = 23, 7
 SPONTANEOUS = True         # Amy sends unprompted thoughts during idle time
 SPONT_MIN   = 45 * 60      # earliest a spontaneous thought fires (45 min idle)
 SPONT_MAX   = 3 * 60 * 60  # latest window (3 hours idle)
-CTX_WINDOW  = 32768
+CTX_WINDOW  = 65536
 
 ALLOWED_TOOLS = {
     "web_search", "read_article",
@@ -573,11 +573,12 @@ def _run_task(task):
             closing = ("When finished, reply with a short, natural note to Brian: "
                        "what you did and where you saved it.")
         system = (
-            (_memory.wake_up() if _memory else "") + WORK_PERSONA + scope_rules(task_hops) +
+            (_memory.wake_up_static() if _memory else "") + WORK_PERSONA + scope_rules(task_hops) +
             "\n\n[Work time] Brian isn't talking to you right now. This is your own "
             "scheduled work. Use your tools to actually do the task — don't describe "
             f"what you would do. Today is {datetime.now():%A, %B %d, %Y}. Save files under "
-            f"{WORK_DIR}/ (use full paths). {closing}"
+            f"{WORK_DIR}/ (use full paths). {closing}" +
+            ("\n\n" + _memory.wake_up_dynamic() if _memory and _memory.wake_up_dynamic() else "")
         )
         allowed = [t for t in tools.TOOLS if t["function"]["name"] in ALLOWED_TOOLS]
         messages = [{"role": "system", "content": system},
@@ -773,7 +774,7 @@ def _propose_next_goal(goal: dict):
             for g in existing[:8]
         ) or "None"
 
-        system = (_memory.wake_up() if _memory else "") + WORK_PERSONA
+        system = (_memory.wake_up_static() if _memory else "") + WORK_PERSONA
         prompt = (
             f"You just completed this goal:\n"
             f"  Objective: {goal['objective']}\n"
@@ -954,7 +955,7 @@ def _load_learned_patterns() -> str:
 
 def _execute_goal_planning(goal_id: str, goal: dict):
     """Ask Amy to break the objective into steps + verification criteria."""
-    system = (_memory.wake_up() if _memory else "") + WORK_PERSONA
+    system = (_memory.wake_up_static() if _memory else "") + WORK_PERSONA
     learned = _load_learned_patterns()
     # Step 1: get the plan
     plan_prompt = (
@@ -1075,7 +1076,7 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
     goal_max_hops = goal.get("max_hops", MAX_HOPS)
     context = _goals.goal_summary(goal)
     system = (
-        (_memory.wake_up() if _memory else "") + WORK_PERSONA + scope_rules(goal_max_hops) +
+        (_memory.wake_up_static() if _memory else "") + WORK_PERSONA + scope_rules(goal_max_hops) +
         f"\n\n[Active goal context]\n{context}"
     )
     prompt = (
@@ -1278,7 +1279,7 @@ def _verify_step(goal: dict, step_idx: int, step_desc: str,
             "Marking as failed — needs a different approach."
         )
 
-    system = (_memory.wake_up() if _memory else "") + WORK_PERSONA
+    system = (_memory.wake_up_static() if _memory else "") + WORK_PERSONA
     prompt = (
         f"Goal: {goal['objective']}\n"
         f"Step {step_idx + 1}: {step_desc}\n"
@@ -1347,7 +1348,7 @@ def _classify_and_learn(goal_id: str):
     if not failures:
         return   # no failures — nothing to learn from
 
-    system = (_memory.wake_up() if _memory else "") + WORK_PERSONA
+    system = (_memory.wake_up_static() if _memory else "") + WORK_PERSONA
     failure_summary = "\n".join(
         f"Step {f['step'] + 1} ({f.get('decision', '?')}): {f.get('observed', '')[:200]}"
         for f in failures[:5]

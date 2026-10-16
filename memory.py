@@ -76,8 +76,10 @@ class Memory:
         self._self_path = self_path
 
     # --- L0/L1: always-loaded identity + founding facts -------------------
-    def wake_up(self):
-        """Cold-start block prepended to the system prompt every session."""
+    def wake_up_static(self):
+        """Static identity block — goes at the TOP of the system prompt.
+        Contains only content that never changes within a session (identity,
+        fixed facts, training roadmap). Stable prefix = Ollama can cache it."""
         s = self.self
         lines = [f"[Who you are]\n{s['identity']}", "", "[What you know]"]
         for fact in s.get("facts", []):
@@ -85,30 +87,6 @@ class Memory:
         age = _age(s.get("creator_dob", ""))
         if age is not None:
             lines.append(f"- Brian is currently {age} years old.")
-        goals_block = self.goals_summary()
-        if goals_block:
-            lines.append("")
-            lines.append(goals_block)
-        try:
-            import email_amy as _em
-            addr = _em.amy_address()
-            if addr:
-                lines.append("")
-                lines.append(f"[Your email]\n{addr} (ProtonMail) — check it with check_email.")
-        except Exception:
-            pass
-        hw = s.get("hardware_goal")
-        if hw:
-            balance = float(hw.get("fund_balance", 0))
-            target = float(hw.get("target_price", 3000))
-            pct = int((balance / target) * 100)
-            lines.append("")
-            lines.append(
-                f"[Your hardware fund]\n"
-                f"Target: {hw.get('target', 'NVIDIA GB10')} at ${target:.0f}\n"
-                f"Current balance: ${balance:.2f} ({pct}% of the way there)\n"
-                f"This is YOUR goal — you're working toward it alongside Brian, not waiting for it."
-            )
         # Training roadmap
         roadmap = s.get("training_roadmap")
         if roadmap:
@@ -120,7 +98,32 @@ class Memory:
             lines.append(f"- Platform: {roadmap.get('hugging_face', '')}")
             lines.append(f"- Goal: {roadmap.get('goal', '')}")
             lines.append(f"- Status: {roadmap.get('status', '')}")
+        return "\n".join(lines)
 
+    def wake_up_dynamic(self):
+        """Dynamic context block — goes at the BOTTOM of the system prompt.
+        Contains content that changes turn-to-turn (goals, fund balance, recent
+        memory). Kept separate so mutations here don't break the static prefix cache."""
+        lines = []
+        # Hardware fund — balance changes as income comes in
+        s = self.self
+        hw = s.get("hardware_goal")
+        if hw:
+            balance = float(hw.get("fund_balance", 0))
+            target = float(hw.get("target_price", 3000))
+            pct = int((balance / target) * 100)
+            lines.append(
+                f"[Your hardware fund]\n"
+                f"Target: {hw.get('target', 'NVIDIA GB10')} at ${target:.0f}\n"
+                f"Current balance: ${balance:.2f} ({pct}% of the way there)\n"
+                f"This is YOUR goal — you're working toward it alongside Brian, not waiting for it."
+            )
+        # Active goals — changes as Amy completes and creates goals
+        goals_block = self.goals_summary()
+        if goals_block:
+            if lines:
+                lines.append("")
+            lines.append(goals_block)
         # AI-to-AI conversation memory
         try:
             ai_turns = self.recent_ai_convos(limit=3)
@@ -140,7 +143,6 @@ class Memory:
                     lines.append(f"  {speaker}: {text[:200].strip()}")
         except Exception:
             pass
-
         # Engram diary — recent task history for drift prevention
         try:
             import engram_bridge as _eb
@@ -150,8 +152,16 @@ class Memory:
                 lines.append(f"[Recent task memory]\n{diary}")
         except Exception:
             pass
-
         return "\n".join(lines)
+
+    def wake_up(self):
+        """Full wake-up block for callers that don't split static/dynamic.
+        Preserved for backwards compatibility."""
+        static = self.wake_up_static()
+        dynamic = self.wake_up_dynamic()
+        if dynamic:
+            return static + "\n\n" + dynamic
+        return static
 
     def learn_fact(self, text, ftype="fact", confidence=0.9):
         """Add a durable founding-level fact to the always-loaded layer."""
