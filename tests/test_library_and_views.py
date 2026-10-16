@@ -255,3 +255,11 @@ def test_science_and_history_rules_have_the_facts_right():
     assert "check the current policy" in pb and "January 2026" in pb and "Dickey-Wicker" in pb
     assert "federally funded, but limited" not in pb
     assert "two to three" in pb and "History, forward" in pb
+
+
+def test_federal_changes_are_checked_not_assumed():
+    import amy_persona as ap
+    for msg in ("so many programs got defunded under Trump", "people lost their jobs at federal agencies",
+                "is that grant still funded?"):
+        pb = ap.playbooks_for(msg)
+        assert "changes fast" in pb and "check current sources" in pb, msg
