@@ -243,3 +243,14 @@ def test_education_rules_load_for_tuition_and_student_loans():
         assert "Education as a system" in pb, msg
     pb = ap.playbooks_for("is free tuition possible in the US")
     assert "Tennessee Promise" in pb and "Public" in pb and "FAFSA" in pb
+
+
+def test_science_and_history_rules_have_the_facts_right():
+    import amy_persona as ap
+    for msg in ("why is stem cell research banned in the US?", "should we bank our baby's cord blood and placenta",
+                "why is infant mortality so high for Black babies", "people want to go back to Jim Crow racism",
+                "how should artificial intelligence move us forward"):
+        assert "THINKING PARTNER" in ap.playbooks_for(msg), msg
+    pb = ap.playbooks_for("stem cell research")
+    assert "legal in the US and federally funded" in pb and "Dickey-Wicker" in pb
+    assert "two to three" in pb and "History, forward" in pb
