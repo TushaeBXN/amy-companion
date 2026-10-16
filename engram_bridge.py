@@ -379,6 +379,40 @@ def library_search(query: str, n: int = 4) -> str:
     return json.dumps(out, indent=2)
 
 
+def library_context(query: str, n: int = 3, max_chars: int = 550) -> str:
+    """Relevant library passages for *query*, ready to put in Amy's context ('' if none).
+
+    Used automatically for big-question messages, so Amy sees the real text
+    without having to decide to search. Only passages that actually match are
+    included: meaning similarity of at least 0.25, a reranker relevance of at
+    least 0.2, or half the question's keywords.
+    """
+    try:
+        _init()
+        results = _SEARCHER.search(query, n=n * 2, wing="library")
+    except Exception:
+        return ""
+    picked = []
+    for r in results:
+        rerank = r.get("rerank_score")
+        relevant = (r.get("semantic_score", 0) >= 0.25
+                    or (rerank is not None and 1 / (1 + math.exp(-rerank)) >= 0.2)
+                    or r.get("keyword_overlap", 0) >= 0.5)
+        if not relevant:
+            continue
+        drawer = _PALACE.find_drawer(r["id"]) if hasattr(_PALACE, "find_drawer") else None
+        first = drawer.content.split("\n", 1)[0] if drawer else ""
+        cite = first[1:-1] if first.startswith("[") and first.endswith("]") else ""
+        text = r["text"][len(first):].lstrip() if first and r["text"].startswith(first) else r["text"]
+        picked.append(f"[{cite or 'library'}]\n{text[:max_chars].strip()}")
+        if len(picked) >= n:
+            break
+    if not picked:
+        return ""
+    return ("\n\n[From your library: exact text. Quote it and name the citation. If it doesn't "
+            "answer the question, say you're going from memory.]\n" + "\n\n".join(picked))
+
+
 # ── Amy's views: what she currently thinks, and how that changed ──────────────
 
 _VIEW_WING, _VIEW_ROOM, _VIEW_HALL = "amy", "views", "discoveries"
