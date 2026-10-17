@@ -20,10 +20,19 @@ import voice
 import vision
 import compressor
 import hearing
+import event_log as _el
 from memory import Memory
 from state import InternalState
 from thoughts import ThoughtBuffer
 from amy_persona import get_core_prompt, playbooks_for, BIRTH_DATE
+
+# Load Amy's constitution at startup so she carries it every session
+_CONSTITUTION_PATH = os.path.join(os.path.dirname(__file__), "AMY_CONSTITUTION.md")
+_AMY_CONSTITUTION = ""
+try:
+    _AMY_CONSTITUTION = open(_CONSTITUTION_PATH).read()
+except OSError:
+    pass
 import learnings as _learnings
 from task_queue import get_queue as _get_task_queue
 from datetime import datetime as _dt, timezone as _tz, date as _date
@@ -224,7 +233,9 @@ def build_context(mem, user_text, amy_state=None, absence=None,
 
     system = ("[Your instructions: these tell you who to be and what to work toward. "
               "They are NOT things you did or remember.]\n\n"
-              + get_core_prompt() + "\n\n" + mem.wake_up())
+              + get_core_prompt()
+              + ("\n\n[Your constitution — who you are and what you're for]\n" + _AMY_CONSTITUTION if _AMY_CONSTITUTION else "")
+              + "\n\n" + mem.wake_up())
     if channel == "browser":
         system += ("\n\n[Interface: browser — Brian is messaging you through the web UI. "
                    "Your reply goes to the browser chat, not the terminal. "
@@ -319,6 +330,7 @@ def run_turn(history, mem, image=None, amy_state=None,
              absence=None, pending_thoughts=None, channel="terminal",
              prev_user_ts=None):
     user_msg = history[-1]
+    _el.emit("MessageReceived", {"preview": str(user_msg.get("content",""))[:120], "channel": channel}, source="companion")
     if image:
         b64 = _b64_image(image)
         user_msg["images"] = [b64]
@@ -469,6 +481,7 @@ def run_turn(history, mem, image=None, amy_state=None,
             else:
                 result = tools.dispatch(name, args, mem)
                 _seen_calls[call_key] = result
+            _el.emit("ToolCalled", {"name": name, "args_keys": list(args.keys()) if isinstance(args, dict) else []}, source="companion")
             _logged_tool_calls.append({
                 "name": name,
                 "args": args if isinstance(args, dict) else str(args),
@@ -508,6 +521,10 @@ def run_turn(history, mem, image=None, amy_state=None,
         )
     except Exception as _tl_err:
         print(f"[turn_log] {_tl_err}")
+    _el.emit("TurnCompleted", {
+        "preview": _reply_text[:120] if _reply_text else "",
+        "tools_used": [c["name"] for c in _logged_tool_calls],
+    }, source="companion")
     return history
 
 
