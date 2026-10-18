@@ -57,7 +57,7 @@ _BRIEFING_TRIGGER_RE = re.compile(
 )
 
 MODEL = os.environ.get("AMY_MODEL", "gemma12-test")       # tool-calling + vision engine (Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M)
-VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "amy-vl")  # same model handles vision natively
+VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "qwen2.5vl:7b")  # multimodal vision model
 CODE_MODEL = os.environ.get("AMY_CODE_MODEL", "")  # code routing paused — set to e.g. deepseek-coder:6.7b to re-enable
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
 HISTORY_WINDOW = 16     # keep last N messages (user+assistant) to prevent context bloat
@@ -337,7 +337,7 @@ def run_turn(history, mem, image=None, amy_state=None,
         if channel == "terminal":
             print(f"  [vision] image attached ({len(b64)//1024}KB b64)")
 
-    # Strip images from history to keep context lean — amy-vl handles vision per-turn
+    # Strip images from history to keep context lean — vision model handles vision per-turn
     messages = build_context(mem, user_msg["content"], amy_state,
                              absence=absence,
                              pending_thoughts=pending_thoughts,
