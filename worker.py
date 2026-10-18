@@ -19,6 +19,7 @@ import tools
 import compressor as _compressor
 import trajectory as _trajectory
 import agent_state as _goals
+import event_log as _el
 
 HERE        = os.path.dirname(os.path.abspath(__file__))
 TASKS_FILE  = os.path.join(HERE, "tasks.json")
@@ -54,6 +55,8 @@ ALLOWED_TOOLS = {
     "tiktok_search",
     # Email: guardrails enforced in _guarded_dispatch (whitelist + quiet hours)
     "check_email", "send_email",
+    # Agent-to-agent communication
+    "agent_check_inbox", "agent_reply_to", "agent_send_message", "get_my_endpoint",
 }
 
 # Whitelisted email recipients — Amy may only send to these addresses autonomously
@@ -544,6 +547,7 @@ def _run_task(task):
     if not _running.acquire(blocking=False):
         return
     started = time.time()
+    _el.emit("GoalStarted", {"task_id": task.get("id"), "prompt": str(task.get("prompt") or task.get("description",""))[:120]}, source="worker")
     if task.get("kind") == "brief":
         try:
             final, used = _run_brief(task), ["brief"]
@@ -637,6 +641,7 @@ def _run_task(task):
 
     except Exception as e:
         final = f"(task failed: {e})"
+        _el.emit("GoalFailed", {"task_id": task.get("id"), "error": str(e)[:200]}, source="worker")
     finally:
         with _lock:
             st = _state()
@@ -654,6 +659,7 @@ def _run_task(task):
         f.write(f"\n## {datetime.fromtimestamp(started):%Y-%m-%d %H:%M} — {task['id']} "
                 f"({mins:.1f} min)\nTools: {', '.join(used) or 'none'}\n\n{final}\n")
     print(f"  [worker] {task['id']} done in {mins:.1f} min — tools: {used}")
+    _el.emit("GoalCompleted", {"task_id": task.get("id"), "mins": round(mins, 1), "tools": used, "preview": final[:120]}, source="worker")
     # Trajectory — capture good runs as training data (best-effort, silent on fail)
     try:
         _trajectory.save(

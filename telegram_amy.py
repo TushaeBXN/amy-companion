@@ -8,6 +8,7 @@ load_dotenv(os.path.join(_here, ".env"))
 load_dotenv(os.path.join(_here, ".env.amy"), override=False)
 
 import json, re, tempfile, time, ollama
+import event_log as _el
 from datetime import datetime as _dt, timezone as _tz, date as _date
 try:
     from zoneinfo import ZoneInfo as _ZoneInfo
@@ -572,6 +573,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = update.message.text if update.message else None
     if not text:
         return
+    _el.emit("MessageReceived", {"preview": text[:120], "channel": "telegram"}, source="telegram")
     person, intro = _identify(update.effective_chat.id, text)
     if not person:
         if intro:
