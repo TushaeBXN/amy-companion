@@ -191,6 +191,23 @@ class Memory:
         except Exception as e:
             print(f"[memory] embed failed, storing without vector: {e}")
             emb_blob = None
+
+        # Dedup facts: skip insert if a near-identical fact already exists (>90% similarity).
+        # Conversation turns are always stored regardless of similarity.
+        if role == "fact" and emb_blob is not None:
+            rows = self.db.execute(
+                "SELECT text, emb FROM mem WHERE role='fact' AND emb IS NOT NULL"
+            ).fetchall()
+            q = np.frombuffer(emb_blob, dtype=np.float32)
+            q = q / (np.linalg.norm(q) + 1e-9)
+            for existing_text, blob in rows:
+                if existing_text.strip() == text.strip():
+                    return  # exact duplicate
+                v = _from_blob(blob)
+                v = v / (np.linalg.norm(v) + 1e-9)
+                if float(np.dot(q, v)) >= 0.90:
+                    return  # near-duplicate — skip
+
         ts_now = _dt.now().astimezone().strftime("%Y-%m-%d %H:%M:%S%z")
         cols = "role, text, emb, ts, source" if source else "role, text, emb, ts"
         vals = (role, text, emb_blob, ts_now, source) if source else (role, text, emb_blob, ts_now)
