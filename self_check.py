@@ -6,9 +6,8 @@ Three layers:
   2. Test suite       — static + structural checks that run in <2s without Ollama.
   3. Guarded self-edit — backup → edit → test → auto-revert if score drops.
 
-Core files (memory.py, tools.py, companion.py, telegram_amy.py, amy_persona.py)
-require human approval before any edit.  Isolated files (work.py, income.py,
-journal.py, web.py, etc.) Amy can attempt on her own.
+All project files are editable. The safety net IS the test suite: syntax check +
+backup + auto-revert if score drops. self_check.py itself is never self-edited.
 """
 import ast
 import importlib
@@ -27,19 +26,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 # ── Safety gates ──────────────────────────────────────────────────────────────
 
-# Files that need a human to approve any change.
-CORE_FILES = {
-    "memory.py", "tools.py", "companion.py",
-    "telegram_amy.py", "amy_persona.py", "state.py",
-    "self_check.py",   # never self-modify the guard itself
-}
+# self_check.py is the only file that cannot self-modify (guard integrity).
+# All other files: syntax check + backup + auto-revert is the safety net.
+PROTECTED_FILES = {"self_check.py"}
 
-# Files Amy may attempt to edit autonomously (low blast radius).
-AUTONOMOUS_FILES = {
-    "work.py", "income.py", "journal.py", "web.py",
-    "learnings.py", "thoughts.py", "music.py", "songs.py",
-    "vision.py", "logger.py",
-}
+# Legacy aliases kept so existing callers don't break.
+CORE_FILES = PROTECTED_FILES
+AUTONOMOUS_FILES = set()  # everything is autonomous now
+
+# Minimum test score required BEFORE editing high-blast-radius files.
+# If the suite is already broken, don't make it worse.
+MIN_SCORE_TO_EDIT_HIGH = 60
 
 # ── Dependency map ─────────────────────────────────────────────────────────────
 
@@ -268,6 +265,29 @@ def score_tests() -> int:
 
 # ── Guarded self-edit ──────────────────────────────────────────────────────────
 
+def _log_code_reward(filename: str, score_before: int, score_after: int,
+                     reason: str, success: bool):
+    """Log a code_improvement reward token to self_metrics.
+
+    Reward scale:
+      5 — change applied AND suite score improved
+      4 — change applied, suite score same
+      2 — change reverted (made things worse)
+      1 — change reverted AND score dropped significantly
+    """
+    try:
+        import self_metrics as _sm
+        if success:
+            reward = 5 if score_after > score_before else 4
+        else:
+            reward = 1 if (score_before - score_after) > 5 else 2
+        note = (f"{'✓' if success else '✗'} edit {filename}: "
+                f"suite {score_before}→{score_after} | {reason[:80]}")
+        _sm.log_score("code_improvement", reward, note)
+    except Exception:
+        pass
+
+
 def self_edit(
     filename: str,
     old_text: str,
@@ -315,33 +335,28 @@ def self_edit(
     dm = build_dep_map()
     impact = check_impact(basename, dm)
 
-    # 3. Core file gate
-    if impact["needs_approval"] and not force_autonomous:
+    # 3. Protected file gate (only self_check.py)
+    if basename in PROTECTED_FILES:
         return {
             "status": "approval_required",
             "file": basename,
-            "reason": reason,
-            "old_text": old_text[:300],
-            "new_text": new_text[:300],
-            "impact": impact,
-            "message": (
-                f"'{basename}' is a core file (blast radius: {impact['blast_radius']}, "
-                f"depended by: {impact['depended_by']}). "
-                "I need Brian to approve this change before I apply it."
-            ),
+            "message": "self_check.py cannot self-modify — it is the integrity guard.",
         }
 
-    # High blast radius guard (even for non-core files)
-    if impact["blast_radius"] == "high" and not force_autonomous:
-        return {
-            "status": "high_blast_radius",
-            "file": basename,
-            "depended_by": impact["depended_by"],
-            "message": (
-                f"'{basename}' is depended on by {len(impact['depended_by'])} other modules. "
-                "That's a high blast radius — I'd rather check with Brian before touching it."
-            ),
-        }
+    # High blast radius: require the suite to be healthy before proceeding
+    if impact["blast_radius"] == "high":
+        pre_score = score_tests()
+        if pre_score < MIN_SCORE_TO_EDIT_HIGH:
+            return {
+                "status": "high_blast_radius",
+                "file": basename,
+                "score": pre_score,
+                "message": (
+                    f"'{basename}' has high blast radius and the test suite is at {pre_score}% "
+                    f"(need {MIN_SCORE_TO_EDIT_HIGH}%+ before touching high-impact files). "
+                    "Fix existing failures first."
+                ),
+            }
 
     # 4. Syntax-check proposed change
     with open(filepath) as f:
@@ -385,13 +400,14 @@ def self_edit(
         # Revert
         shutil.copy2(backup_path, filepath)
         os.remove(backup_path)
-        # Reload module if cached
         mod = os.path.splitext(basename)[0]
         if mod in sys.modules:
             try:
                 importlib.reload(sys.modules[mod])
             except Exception:
                 pass
+        # Reward token: revert = low score (change made things worse)
+        _log_code_reward(basename, score_before, score_after, reason, success=False)
         return {
             "status": "reverted",
             "file": basename,
@@ -399,8 +415,7 @@ def self_edit(
             "score_after": score_after,
             "reason": reason,
             "message": (
-                f"Score dropped from {score_before} → {score_after} after edit. "
-                "I've reverted the file to its original state. "
+                f"Score dropped {score_before}→{score_after} after edit — reverted. "
                 "The change didn't pass the test suite."
             ),
         }
@@ -414,18 +429,73 @@ def self_edit(
         except Exception:
             pass
 
+    # Reward token: success = high score, bonus if suite improved
+    _log_code_reward(basename, score_before, score_after, reason, success=True)
     return {
         "status": "applied",
         "file": basename,
         "score_before": score_before,
         "score_after": score_after,
+        "delta": score_after - score_before,
         "reason": reason,
         "impact": impact,
         "message": (
-            f"Change applied to {basename}. "
-            f"Test score: {score_before} → {score_after}."
+            f"Applied to {basename}. Suite: {score_before}→{score_after}"
+            f"{' (+' + str(score_after-score_before) + ')' if score_after > score_before else ''}."
         ),
     }
+
+
+def read_codebase(focus: str = "") -> str:
+    """Return a structured map of every .py file in the project.
+
+    For each file: size, public functions/classes, and a one-line docstring.
+    Gives Amy deep knowledge of her own codebase before making changes.
+    `focus` narrows to files whose name contains the search term.
+    """
+    lines = ["# Codebase map\n"]
+    for fname in sorted(os.listdir(HERE)):
+        if not fname.endswith(".py"):
+            continue
+        if focus and focus.lower() not in fname.lower():
+            continue
+        fpath = os.path.join(HERE, fname)
+        try:
+            src = open(fpath).read()
+            tree = ast.parse(src, filename=fname)
+        except Exception as e:
+            lines.append(f"## {fname}  [parse error: {e}]\n")
+            continue
+        size_kb = len(src) / 1024
+        # Top-level docstring
+        top_doc = ""
+        if (tree.body and isinstance(tree.body[0], ast.Expr)
+                and isinstance(tree.body[0].value, ast.Constant)):
+            top_doc = str(tree.body[0].value.value).strip().splitlines()[0][:100]
+        lines.append(f"## {fname}  ({size_kb:.1f} KB)")
+        if top_doc:
+            lines.append(f"   {top_doc}")
+        # Public symbols
+        symbols = []
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if not node.name.startswith("_"):
+                    doc = (ast.get_docstring(node) or "").splitlines()[0][:80]
+                    symbols.append(f"  fn  {node.name}()" + (f" — {doc}" if doc else ""))
+            elif isinstance(node, ast.ClassDef):
+                if not node.name.startswith("_"):
+                    doc = (ast.get_docstring(node) or "").splitlines()[0][:80]
+                    symbols.append(f"  cls {node.name}" + (f" — {doc}" if doc else ""))
+                    for item in node.body:
+                        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            if not item.name.startswith("_"):
+                                symbols.append(f"       .{item.name}()")
+        if symbols:
+            lines.extend(symbols[:30])  # cap at 30 per file
+            if len(symbols) > 30:
+                lines.append(f"  ... +{len(symbols)-30} more")
+        lines.append("")
+    return "\n".join(lines)
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────

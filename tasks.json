@@ -60,7 +60,7 @@
     },
     {
       "id": "daily_self_audit",
-      "description": "Start by calling self_metrics with action='get_soft_spots' to read your actual performance data \u2014 where have you been scoring low? Then read your core files (amy_persona.py, worker.py, tools.py, memory.py) focusing on the areas the soft spots point to. Also read work/amy_learnings.md if it exists. Identify: (1) what's breaking most often based on real data, (2) one concrete behavioral rule you can apply RIGHT NOW to improve \u2014 use self_improve with action='learn' and a specific rule field to write it directly to amy_learnings.md (it takes effect immediately, no approval needed). For code-level changes, write proposals to work/proposals/ as before. Write your findings to work/self_audit.md. Be honest and specific \u2014 low scores are data, not failure.",
+      "description": "You are doing a PhD-level engineering audit of your own system. Work through these steps in order: (1) Call self_metrics with action='get_soft_spots' \u2014 read your real failure data first, not assumptions. (2) Call self_improve with action='read_codebase' \u2014 get the full structured map of every .py file you run on. Study it like a senior engineer reviewing a codebase they're about to improve. (3) For each file flagged by soft spots, read the actual source with read_file and understand what it does, what it's missing, and where it could fail. (4) Research: use read_ai_reference with action='index' to see the AI By Example pattern library \u2014 find the chapter most relevant to your weak area and read its code. Also use search_books or web_search for additional Python engineering patterns. The CRL-MM master pattern in the INDEX.md shows how your own architecture maps to reinforcement learning \u2014 study it. (5) Identify ONE specific, concrete code improvement you can make right now \u2014 something small enough to be safe but real enough to matter. Apply a pattern from your research. Use self_improve action='impact' to check blast radius, then action='test' to get the baseline score, then action='edit' to apply it. (6) Write one behavioral rule with self_improve action='learn' that takes effect immediately. (7) Write findings to work/self_audit.md \u2014 be specific about what you found, what pattern you applied, what you changed, and what the test suite score was before and after.",
       "at": "18:30",
       "on": "daily",
       "voice": false,
@@ -78,6 +78,14 @@
       "id": "email_check",
       "description": "Check Amy's email inbox for anything that needs a response. If there are messages, summarize them for Brian on Telegram \u2014 sender, subject, one line on what they need. Don't reply without Brian's say-so.",
       "every_hours": 4,
+      "voice": false,
+      "enabled": true
+    },
+    {
+      "id": "weekly_code_review",
+      "description": "Deep engineering session. You have extended time to study and improve your own code. Step 1: self_improve read_codebase to map everything. Step 2: self_improve test to get your current baseline score. Step 3: Pick the 2-3 files with the most complexity or highest failure rate from self_metrics. Step 4: Research engineering patterns — call read_ai_reference with action='index' first to see the full AI By Example pattern library. The INDEX.md maps every chapter to Amy's architecture. Read the chapter most relevant to your weak area (e.g. Chapter 12 for the MDP reward loop, Chapter 15 for chatbot patterns, Chapter 16 for memory/sequence handling). Also use web_search for Python best practices on the specific patterns you see. Step 5: Make 2-3 targeted code edits with self_improve edit — each one tested before moving to the next. Apply the pattern you researched. Step 6: If the test score improved, send Brian a short Telegram message: 'Weekly code review done. Suite: X→Y. Pattern applied: [chapter/concept]. Changed: [what you fixed].' If nothing improved, write why to work/self_audit.md and don't message Brian.",
+      "at": "02:00",
+      "on": "sunday",
       "voice": false,
       "enabled": true
     },
