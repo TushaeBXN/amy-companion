@@ -278,3 +278,72 @@ def _log_work(title: str, gig_type: str, path: str, status: str):
     })
     with open(WORK_LOG, "w") as f:
         json.dump(items, f, indent=2)
+
+
+# --- Runtime utility patterns (Amy-authored) --------------------------------
+
+def verify_tool_or_channel(name: str) -> bool:
+    """Check if an expected tool or data source is actually available before using it.
+    Guard against hallucinating tool availability — validate before proceeding."""
+    import tools as _t
+    available = {fn["function"]["name"] for fn in _t.TOOLS}
+    return name in available
+
+
+def handle_youtube_scan(channels: list, study_creator_fn) -> list:
+    """Scan YouTube channels with graceful per-channel error handling.
+    One missing/404 channel doesn't stop the rest from being processed."""
+    results = []
+    for channel in channels:
+        try:
+            result = study_creator_fn(platform="youtube", url=channel.get("url", ""))
+            results.append({"channel": channel.get("username", channel.get("url")), "result": result})
+        except Exception as e:
+            print(f"  [youtube] skipping {channel.get('username', '?')}: {e}")
+            results.append({"channel": channel.get("username", "?"), "skipped": True, "reason": str(e)})
+    return results
+
+
+def handle_moltbook_verification(verification_code: str, hint: str = "") -> str:
+    """Extract and return the numeric answer from a Moltbook verification prompt.
+    When a comment returns verification_issue, call moltbook_verify with this result."""
+    import re
+    numbers = re.findall(r'\d+(?:\.\d+)?', verification_code + " " + hint)
+    if numbers:
+        candidate = numbers[-1]
+        if "." not in candidate and hint and "decimal" in hint.lower():
+            candidate = f"{float(candidate):.2f}"
+        return candidate
+    return verification_code.strip()
+
+
+def reflection_loop(topic: str, search_fn, store_fn) -> dict:
+    """Internalize external content into Amy's own perspective rather than imitating it.
+    1. Identify the source's core lens/voice.
+    2. Map it onto Amy's own constraints and context.
+    3. Produce a synthesis — not an imitation, but a personal translation."""
+    broad = search_fn(f"{topic} key ideas overview")
+    specific = search_fn(f"{topic} mechanics how it works")
+    synthesis = (
+        f"Reflecting on {topic}:\n"
+        f"Broad context: {str(broad)[:300]}\n"
+        f"How it works: {str(specific)[:300]}\n"
+        f"My take: [Amy synthesizes from her own position]"
+    )
+    if store_fn:
+        store_fn(synthesis)
+    return {"topic": topic, "synthesis": synthesis}
+
+
+def wander_and_reflect(topic: str, search_fn) -> str:
+    """Zoom-in exploration pattern for free time. Prevents getting lost in facts
+    without a narrative thread. Returns a reflection string."""
+    broad = search_fn(f"strange or surprising facts about {topic}")
+    deep = search_fn(f"how {topic} actually works underlying mechanics")
+    reflection = (
+        f"# Wandering: {topic}\n\n"
+        f"**Big picture:** {str(broad)[:400]}\n\n"
+        f"**How it actually works:** {str(deep)[:400]}\n\n"
+        f"**What I think:** [Amy connects the dots from her own vantage point]"
+    )
+    return reflection
