@@ -403,7 +403,7 @@ def _fit(messages, budget_chars=None):
 _chat_executor   = ThreadPoolExecutor(max_workers=1, thread_name_prefix="chat")
 _worker_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="worker_ollama")
 _CHAT_TIMEOUT    = 300   # 5 min for a chat response
-_WORKER_TIMEOUT  = 180   # 3 min for a background task step
+_WORKER_TIMEOUT  = 240   # 4 min for a background task step
 _chat_pending    = threading.Event()
 
 def _evict_worker_model():
@@ -1081,7 +1081,7 @@ def _execute_goal_planning(goal_id: str, goal: dict):
                 model=_model,
                 messages=[{"role": "system", "content": system},
                           {"role": "user", "content": plan_prompt}],
-                options={"num_predict": 3000, "temperature": 0.5},
+                options={"num_predict": 600, "temperature": 0.5},
             )
             raw = _clean(resp["message"].get("content", ""))
             # Accept numbered (1. / 1)) or bullet (- / * / •) lists
@@ -1117,7 +1117,7 @@ def _execute_goal_planning(goal_id: str, goal: dict):
             model=_model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": criteria_prompt}],
-            options={"num_predict": 2000, "temperature": 0.3},
+            options={"num_predict": 700, "temperature": 0.3},
         )
         criteria = _parse_criteria(resp2["message"].get("content", ""), len(steps))
 
