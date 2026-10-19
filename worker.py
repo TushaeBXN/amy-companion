@@ -723,6 +723,9 @@ def _run_task(task):
         f.write(f"\n## {datetime.fromtimestamp(started):%Y-%m-%d %H:%M} — {task['id']} "
                 f"({mins:.1f} min)\nTools: {', '.join(used) or 'none'}\n\n{final}\n")
     print(f"  [worker] {task['id']} done in {mins:.1f} min — tools: {used}")
+    # Learn from repeated tool errors in scheduled tasks
+    if tool_errors >= 2:
+        _classify_and_learn_task(task["id"], tool_errors, used, final)
     _el.emit("GoalCompleted", {"task_id": task.get("id"), "mins": round(mins, 1), "tools": used, "preview": final[:120]}, source="worker")
     # Trajectory — capture good runs as training data (best-effort, silent on fail)
     try:
@@ -1390,6 +1393,65 @@ _FAILURE_CATEGORIES = {
 }
 
 
+_AUTO_APPROVE_CATEGORIES = {"strategy", "search", "communication", "planning", "timing"}
+
+def _auto_approve_if_safe(fpath: str, data: dict):
+    """Auto-approve behavioral/strategy patterns — no code changes, no persona edits.
+    High-risk proposals (code_change, persona_edit) still require Brian's review."""
+    category = data.get("category", "").lower()
+    if category in _AUTO_APPROVE_CATEGORIES and not data.get("approved"):
+        data["approved"] = True
+        data["approved_at"] = datetime.now().isoformat()
+        data["approved_by"] = "auto"
+        _save(fpath, data)
+        print(f"  [learn] auto-approved pattern ({category}): {data.get('pattern','')[:60]}",
+              flush=True)
+
+
+def _classify_and_learn_task(task_id: str, tool_errors: int, tools_used: list, outcome: str):
+    """Generate a learned pattern from a scheduled task that had repeated tool errors."""
+    system = (_memory.wake_up_static() if _memory else "") + WORK_PERSONA
+    prompt = (
+        f"Scheduled task '{task_id}' just completed with {tool_errors} tool errors.\n"
+        f"Tools used: {', '.join(tools_used) or 'none'}\n"
+        f"Outcome: {outcome[:300]}\n\n"
+        "Propose ONE reusable pattern that would reduce errors in this type of task.\n"
+        "Format:\nCATEGORY: <strategy|search|communication|planning|timing|execution>\n"
+        "PATTERN: <one concrete rule>\nAPPLIES WHEN: <when this should activate>"
+    )
+    try:
+        resp = ollama_chat(
+            model=_model,
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": prompt}],
+            options={"num_predict": 200, "temperature": 0.3},
+        )
+        raw = _clean(resp["message"].get("content", ""))
+        cat_m = re.search(r"CATEGORY:\s*(\w+)", raw, re.IGNORECASE)
+        pat_m = re.search(r"PATTERN:\s*(.+)", raw, re.IGNORECASE)
+        when_m = re.search(r"APPLIES WHEN:\s*(.+)", raw, re.IGNORECASE)
+        if pat_m:
+            category = cat_m.group(1).strip().lower() if cat_m else "execution"
+            pattern = pat_m.group(1).strip()
+            applies_when = when_m.group(1).strip() if when_m else "always"
+            os.makedirs(PROPOSALS, exist_ok=True)
+            fname = f"{datetime.now():%Y-%m-%d_%H%M}_task_{task_id}_{category}.json"
+            fpath = os.path.join(PROPOSALS, fname)
+            data = {
+                "type": "learned_pattern",
+                "task_id": task_id,
+                "category": category,
+                "pattern": pattern,
+                "applies_when": applies_when,
+                "tool_errors": tool_errors,
+                "ts": datetime.now().isoformat(),
+            }
+            _save(fpath, data)
+            _auto_approve_if_safe(fpath, data)
+    except Exception as e:
+        print(f"  [learn] classify_task failed ({task_id}): {e}", flush=True)
+
+
 def _classify_and_learn(goal_id: str):
     """After a goal finishes or blocks, classify what failed and propose a reusable pattern.
 
@@ -1452,7 +1514,8 @@ def _classify_and_learn(goal_id: str):
             applies_when = when_m.group(1).strip() if when_m else "always"
             os.makedirs(PROPOSALS, exist_ok=True)
             fname = f"{datetime.now():%Y-%m-%d_%H%M}_goal_{goal_id}_{category}.json"
-            _save(os.path.join(PROPOSALS, fname), {
+            fpath = os.path.join(PROPOSALS, fname)
+            data = {
                 "type": "learned_pattern",
                 "goal_id": goal_id,
                 "category": category,
@@ -1460,7 +1523,9 @@ def _classify_and_learn(goal_id: str):
                 "applies_when": applies_when,
                 "failures": len(failures),
                 "ts": datetime.now().isoformat(),
-            })
+            }
+            _save(fpath, data)
+            _auto_approve_if_safe(fpath, data)
             print(f"  [learn] classified '{goal_id}' as {category} — pattern saved to proposals/",
                   flush=True)
     except Exception as e:
