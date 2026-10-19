@@ -1,0 +1,8 @@
+FROM /Users/anthosintelligence/Downloads/amy-v2-abliterated.gguf
+
+PARAMETER num_ctx 16384
+PARAMETER num_predict 200
+PARAMETER temperature 0.8
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.15
+PARAMETER stop "<end_of_turn>"

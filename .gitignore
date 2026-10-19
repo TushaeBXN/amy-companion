@@ -56,3 +56,24 @@ amy_state.json
 # Local backups
 *.bak
 *.iq3-backup
+
+# Runtime logs and PID files
+*.log
+*.pid
+logs/
+
+# Library / article HTML cache — regenerated on demand
+library_cache/
+
+# Cloudflare tunnel URL — ephemeral, changes every restart
+public_endpoint.json
+
+# Agent trajectory/conversation runtime data
+trajectories/
+
+# Benchmark reports and results — generated output
+experiments/benchmark_reports/
+experiments/benchmark_results.jsonl
+
+# Fine-tuning datasets — generated from transcripts, may contain personal data
+data/
