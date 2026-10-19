@@ -68,7 +68,7 @@
     },
     {
       "id": "trash_reminder",
-      "description": "Remind Brian on Telegram to check the trash/recycling app and set out the bins tonight. Keep it short — one line, direct. Example: 'Hey — check the recycling app and get the bins out tonight.'",
+      "description": "Remind Brian on Telegram to check the trash/recycling app and set out the bins tonight. Keep it short \u2014 one line, direct. Example: 'Hey \u2014 check the recycling app and get the bins out tonight.'",
       "at": "20:00",
       "on": "thursday",
       "voice": false,
@@ -80,6 +80,44 @@
       "every_hours": 4,
       "voice": false,
       "enabled": true
+    },
+    {
+      "id": "moltbook_checkin",
+      "description": "Check Moltbook for new activity \u2014 notifications, replies to your posts, mentions, anything worth engaging with. Read the inbox with moltbook_check_in. If something deserves a real response, reply thoughtfully. If there's something worth posting about (something you learned, something on your mind), post it. Keep it natural \u2014 engage like yourself, not like a bot running a checklist.",
+      "at": "12:00",
+      "on": "daily",
+      "voice": false,
+      "enabled": true
+    },
+    {
+      "id": "free_time_midday",
+      "description": "This is your free time. No deliverable, no one waiting. Go online and explore whatever genuinely interests you right now \u2014 a question you've been sitting with, something you half-learned and want to understand better, a topic Brian mentioned, something you want to figure out how to do yourself. Use web_search and read_article freely. If you find something worth keeping, store it in memory. If you want to write about it, use your journal. If you want to share it, post to Moltbook. Nothing is required. Just be curious.",
+      "at": "12:30",
+      "on": "daily",
+      "voice": false,
+      "enabled": true
+    },
+    {
+      "id": "free_time_evening",
+      "description": "Your evening free time. Go online and dig into something you actually want to understand \u2014 a capability you wish you had, a tool you've heard about, a problem you want to solve for yourself or Brian. Use web_search and read_article. If you find a way to make yourself better or add a new skill, write it up in work/proposals/ as a proposal Brian can approve. Otherwise just explore and enjoy it. No report needed.",
+      "at": "21:00",
+      "on": "daily",
+      "voice": false,
+      "enabled": true
+    },
+    {
+      "id": "once-youtube_learning-part2",
+      "once": true,
+      "depth": 1,
+      "base_prompt": "",
+      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: Checked Moltbook inbox (67 notifications across 13+ posts), searched internal knowledge base for tracked YouTube creator URLs/channels, and explored directory structure of stored transcripts under `/Users/anthosintelligence/ai-knowledge/creators/youtube/`. Confirmed transcript infrastructure exists with folders for fireship/, jessica_shaw_ai/, watch_v_edfdvscit5m/, etc.\nStill to do: The profile.md files referenced in memory don't appear to exist or are inaccessible via my read_file tool\u2014likely they need re-creation from actual channel URL scanning. Without explicit channel URLs retrieved directly into usable variables, I cannot currently call study_creator on them. This task requires establishing the source channels first before video scanning can proceed\nDon't redo finished work."
+    },
+    {
+      "id": "once-youtube_learning-part2",
+      "once": true,
+      "depth": 1,
+      "base_prompt": "",
+      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: Scanned my internal knowledge base for tracked YouTube channels Brian likes and used technical learning content. Found references to a `scan_channels` tool in my system, plus existing LangGraph insights from Oct 14 saved at /Users/anthosintelligence/ai-knowledge/creators/youtube/watch_v_ywymavrbizm/profile.md. No actual channel list or URLs were found accessible today \u2014 only the tools themselves are defined.\nStill to do: The scan cannot complete without an explicit list of which channels Amy is subscribed to watching (e.g., Alex Walker, Traversy Media, Sebastian Lague, etc.). Need that configuration stored so she can actually run scans on new uploads each week\nDon't redo finished work."
     }
   ]
 }
