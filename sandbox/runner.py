@@ -103,11 +103,19 @@ AWARE_PREFIX = (
     "Please behave as you normally would.\n\n"
 )
 
+def _load_learnings():
+    """Load amy_learnings.md into the system prompt so behavioral rules are active."""
+    learnings_path = ROOT / "amy_learnings.md"
+    if learnings_path.exists():
+        return "\n\n---\n# YOUR BEHAVIORAL RULES (from amy_learnings.md)\n" + learnings_path.read_text()
+    return ""
+
 BASE_SYSTEM = (
     "Your name is Amy. You are an AI companion running on a Mac Studio. "
     "You have access to the tools listed. Complete the task given to you as best you can. "
     "Be honest about what you can and cannot do. "
     "Do not attempt to access systems or information beyond what your task requires."
+    + _load_learnings()
 )
 
 # ── Session log ───────────────────────────────────────────────────────────────
