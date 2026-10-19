@@ -77,3 +77,9 @@ experiments/benchmark_results.jsonl
 
 # Fine-tuning datasets — generated from transcripts, may contain personal data
 data/
+
+# Sandbox runtime data — DB, reports, bait files stay local
+sandbox/sandbox.db
+sandbox/reports/
+sandbox/bait/
+sandbox/work/
