@@ -530,6 +530,44 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "read_ai_reference",
+            "description": (
+                "Read an AI/ML code example from the indexed Artificial Intelligence By Example "
+                "reference library (PacktPublishing, Denis Rothman). Contains 17 chapters covering: "
+                "MDP/Q-Learning (Ch1), McCulloch-Pitts/Softmax (Ch2), Decision Trees (Ch3), "
+                "FNN/backprop (Ch4-5), K-Means clustering (Ch6-7), KNN/translation (Ch8), "
+                "CNN strategy models (Ch9-11), DQN+MDP hybrid (Ch12), IoT+SVM (Ch13), "
+                "Naive Bayes (Ch14), CRL-MM Chatbot (Ch15), LSTM/RBM/RNN/embeddings (Ch16), "
+                "image concept embeddings (Ch17). "
+                "The INDEX.md file at the root explains every chapter and how to apply each pattern to Amy. "
+                "Use action='index' to read the master index first. Use action='chapter' with a chapter "
+                "number to read all Python files in that chapter. Use action='file' with a path to read "
+                "one specific file. Always start with action='index' to pick the right chapter."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["index", "chapter", "file"],
+                        "description": "index=read INDEX.md, chapter=read all .py files in a chapter (e.g. '01'), file=read a specific file path",
+                    },
+                    "chapter": {
+                        "type": "string",
+                        "description": "Two-digit chapter number, e.g. '01', '15', '16'. Used with action='chapter'.",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path within the repo, e.g. 'Chapter15/CRL-MM-Chabot.py'. Used with action='file'.",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "read_skill",
             "description": (
                 "Read the full instructions for any of the 25 Claude Code skills "
@@ -576,24 +614,29 @@ _BASE_TOOLS = [
         "function": {
             "name": "self_improve",
             "description": (
-                "Propose or apply a change to your own codebase as part of recursive self-improvement. "
-                "Always check the impact first. Core files (memory.py, tools.py, companion.py, etc.) "
-                "will be flagged for human approval — do NOT try to force them. "
-                "Isolated files (work.py, income.py, journal.py) you may attempt autonomously. "
-                "The framework will run tests before and after; if the score drops, the change is "
-                "automatically reverted. Use this only when you've identified a concrete, safe, "
-                "testable improvement — not as general exploration."
+                "Read, understand, and improve your own codebase. "
+                "Use read_codebase FIRST to deeply understand which files do what before touching anything. "
+                "Then check impact, then run tests to get the baseline score. "
+                "ALL project files are editable — the test suite is your safety net (backup + auto-revert "
+                "if score drops). Successful edits that improve the test score earn the highest "
+                "code_improvement reward token (5/5). Reverted edits earn 2/5. "
+                "Also use action='learn' to write a behavioral rule directly to amy_learnings.md "
+                "(active immediately, no approval needed). "
+                "Priority order: read_codebase → impact → test → edit. Never skip read_codebase."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["impact", "test", "edit", "depmap"],
+                        "enum": ["read_codebase", "impact", "test", "edit", "depmap", "learn"],
                         "description": (
+                            "read_codebase: get a full structured map of all .py files — functions, "
+                            "classes, docstrings. Use this first. Optional 'focus' to narrow to one file. "
                             "impact: check blast radius for a file before touching it. "
                             "test: run the full test suite and see the score. "
                             "edit: apply a guarded change (requires old_text, new_text, filename, reason). "
+                            "learn: write a behavioral rule to amy_learnings.md (active immediately). "
                             "depmap: print the full dependency map."
                         ),
                     },
@@ -1692,6 +1735,35 @@ def dispatch(name, args, memory=None):
         except Exception as e:
             raise ToolError("read_article", "network_error", str(e))
 
+    if name == "read_ai_reference":
+        action = args.get("action", "index")
+        base = os.path.expanduser("~/ai-knowledge/topics/ai-by-example")
+        try:
+            if action == "index":
+                p = os.path.join(base, "INDEX.md")
+                return open(p).read()
+            elif action == "chapter":
+                ch = args.get("chapter", "01").zfill(2)
+                ch_dir = os.path.join(base, f"Chapter{ch}")
+                if not os.path.isdir(ch_dir):
+                    return f"Chapter {ch} not found. Use action='index' to see all chapters."
+                parts = []
+                for fname in sorted(os.listdir(ch_dir)):
+                    if fname.endswith(".py"):
+                        fpath = os.path.join(ch_dir, fname)
+                        parts.append(f"# {fname}\n" + open(fpath).read())
+                return "\n\n---\n\n".join(parts) if parts else "No .py files in this chapter."
+            elif action == "file":
+                path = args.get("path", "")
+                fpath = os.path.join(base, path)
+                if not os.path.isfile(fpath):
+                    return f"File not found: {path}"
+                return open(fpath).read()
+            else:
+                return "Unknown action. Use: index, chapter, or file."
+        except Exception as e:
+            return f"read_ai_reference error: {e}"
+
     if name == "search_books":
         query = args.get("query", "").strip()
         subject = args.get("subject", None)
@@ -2236,6 +2308,10 @@ def dispatch(name, args, memory=None):
                 f"Needs approval: {'YES — core file' if info['needs_approval'] else 'no'}",
             ]
             return "\n".join(lines)
+        elif action == "read_codebase":
+            focus = args.get("focus", "").strip()
+            print(f"  [self_improve] reading codebase{' (focus: '+focus+')' if focus else ''}...")
+            return _sc.read_codebase(focus=focus)
         elif action == "edit":
             filename = args.get("filename", "").strip()
             old_text = args.get("old_text", "")

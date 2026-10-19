@@ -14,6 +14,7 @@ IMPROVEMENTS_FILE = METRICS_DIR / "improvements.md"
 
 DIMENSIONS = [
     "task_completion",    # did scheduled tasks finish without failing?
+    "code_improvement",   # did self-edits pass tests and improve the suite?
     "income_progress",    # is money actually moving?
     "content_quality",    # engagement, real responses, not ignored
     "accuracy",           # claims that turned out wrong
