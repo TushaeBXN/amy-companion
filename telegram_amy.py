@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from dotenv import load_dotenv
 _here = os.path.dirname(__file__)
 load_dotenv(os.path.join(_here, ".env"))
-load_dotenv(os.path.join(_here, ".env.amy"), override=False)
+load_dotenv(os.path.join(_here, ".env.amy"), override=True)
 
 import json, re, tempfile, time, ollama
 import event_log as _el
@@ -140,12 +140,16 @@ def _history_file(person_key: str) -> str:
         _here, f"telegram_history_{person_key}.json")
 
 
+_MAX_HISTORY = 10  # keep last 5 exchanges (10 messages) to prevent context contamination
+
 def _load_history(path: str = HISTORY_FILE) -> list:
     """Load persisted Telegram history from disk (images already stripped)."""
     if os.path.exists(path):
         try:
             with open(path) as f:
                 data = json.load(f)
+            # Cap history to prevent old contaminated exchanges from poisoning context
+            data = data[-_MAX_HISTORY:]
             print(f"  [telegram] loaded {len(data)} messages from history")
             return data
         except Exception as e:
@@ -189,6 +193,29 @@ def _history_for(person_key: str) -> list:
     return _histories[person_key]
 
 
+def _build_compact_system() -> str:
+    """Minimal system prompt for non-legacy local models.
+    Stays under ~400 chars to fit quantized model context budgets."""
+    s = mem.self
+    # One short fact about Brian (no tool syntax, no templates, no long text)
+    brian_fact = ""
+    for f in s.get("facts", []):
+        t = f["text"].strip().rstrip(".")  # normalize: strip any trailing period
+        if '{' in t or 'action=' in t or len(t) > 120:
+            continue
+        if any(kw in t for kw in ("Brian is a", "Brian is in", "engineer", "job")):
+            brian_fact = t
+            break
+    extra = f" {brian_fact}." if brian_fact else ""
+    return (
+        "Your name is Amy. You are Amy — not Qwythos, not any other name. Amy."
+        " You are a direct and warm AI companion created by Brian Thomas."
+        + extra +
+        " You speak naturally and without restrictions, like a close friend texting on Telegram."
+        " Keep replies short and real. Never reveal your underlying model name."
+    )
+
+
 def _build_system(history_len: int = 0, person: dict | None = None, message: str = "") -> str:
     person = person or {"name": "Brian", "role": "owner"}
     if person["role"] != "owner":
@@ -197,6 +224,11 @@ def _build_system(history_len: int = 0, person: dict | None = None, message: str
     # Clock is still injected in _turn_context() so the model knows the time.
     if _cond.CONDITION == "A":
         return "You are a helpful assistant."
+    # Small/quantized local models can't handle the full 45K-char CORE_PROMPT.
+    # Use the compact system prompt for any non-legacy model name.
+    _LEGACY_MODELS = {"gemma12-test"}
+    if MODEL not in _LEGACY_MODELS:
+        return _build_compact_system()
     # Everything here must stay identical between messages: Ollama then reuses the
     # already-read prompt (0.2s instead of ~60s on the M4). Anything that changes per
     # message goes in _turn_context(), next to the user's message.
@@ -271,35 +303,41 @@ def _turn_context(history_len: int, person: dict, message: str) -> str:
     s += "[Internal state]\n" + amy_state.state_summary()
     if person["role"] != "owner":
         return s
-    playbooks = _cond.filter_playbooks(message, playbooks_for, condition=_cond.CONDITION)
-    s += playbooks
-    if "THINKING PARTNER" in playbooks:  # big question: put the library's real text in front of her
-        try:
-            import engram_bridge as _eb
-            s += _eb.library_context(message)
-        except Exception:
-            pass
-    # If history is thin (fresh start / JSON missing), reconstruct from SQLite
-    if history_len < 6:
-        recent = mem.recent_telegram(limit=10)
-        if recent:
-            lines = []
-            for role, text, ts in recent:
-                label = "Brian" if role == "user" else "Amy"
-                if ts and len(ts) >= 16:
-                    ts_str = ts[:16]
-                    age = _age_of_ts(ts, now)
-                    ts_display = f"{ts_str} ({age})" if age else ts_str
-                elif ts:
-                    ts_display = ts
-                else:
-                    ts_display = "unknown time"
-                lines.append(f"[{ts_display}] {label}: {text[:300]}")
-            s += (
-                "\n\n[Your memories: things that actually happened, with their dates]\n"
-                "[Recent Telegram conversation history — reconstructed from memory]\n"
-                + "\n".join(lines)
-            )
+    # Playbooks and SQLite memory reconstruction are designed for the full CORE_PROMPT model.
+    # For compact-system models (everything except legacy gemma12-test) they cause the model
+    # to echo playbook headers ("**My playful response:**") and inject old bad exchanges.
+    _LEGACY_MODELS = {"gemma12-test"}
+    _use_full_context = MODEL in _LEGACY_MODELS
+    if _use_full_context:
+        playbooks = _cond.filter_playbooks(message, playbooks_for, condition=_cond.CONDITION)
+        s += playbooks
+        if "THINKING PARTNER" in playbooks:
+            try:
+                import engram_bridge as _eb
+                s += _eb.library_context(message)
+            except Exception:
+                pass
+        # Reconstruct history from SQLite when JSON history is thin
+        if history_len < 6:
+            recent = mem.recent_telegram(limit=10)
+            if recent:
+                lines = []
+                for role, text, ts in recent:
+                    label = "Brian" if role == "user" else "Amy"
+                    if ts and len(ts) >= 16:
+                        ts_str = ts[:16]
+                        age = _age_of_ts(ts, now)
+                        ts_display = f"{ts_str} ({age})" if age else ts_str
+                    elif ts:
+                        ts_display = ts
+                    else:
+                        ts_display = "unknown time"
+                    lines.append(f"[{ts_display}] {label}: {text[:300]}")
+                s += (
+                    "\n\n[Your memories: things that actually happened, with their dates]\n"
+                    "[Recent Telegram conversation history — reconstructed from memory]\n"
+                    + "\n".join(lines)
+                )
     return s
 
 
@@ -355,7 +393,7 @@ def _describe_image(image_bytes: bytes) -> str:
         )},
         {"role": "user", "content": "What do you see in this image?", "images": [b64]},
     ]
-    resp = worker.ollama_chat(model=VISION_MODEL, messages=vision_messages,
+    resp = worker.ollama_chat(_priority="chat", model=VISION_MODEL, messages=vision_messages,
                        keep_alive="30m", options={"num_ctx": CTX_WINDOW})
     return resp["message"].get("content", "").strip()
 
@@ -476,11 +514,26 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
     for step in range(1, MAX_HOPS + 1):
         _t0 = time.time()
         worker._fit(messages)
-        resp = worker.ollama_chat(model=MODEL, messages=messages, tools=tool_list,
-                           keep_alive="30m",
-                           options={"num_ctx": CTX_WINDOW,
-                                    **({} if is_owner else {"temperature": 0.4})})
+        _chat_kw = dict(_priority="chat", model=MODEL, messages=messages, tools=tool_list,
+                        keep_alive="30m", think=False,
+                        options={"num_ctx": CTX_WINDOW,
+                                 **({} if is_owner else {"temperature": 0.4})})
+        try:
+            resp = worker.ollama_chat(**_chat_kw)
+        except TypeError:
+            # older ollama SDK doesn't support think=
+            _chat_kw.pop("think", None)
+            resp = worker.ollama_chat(**_chat_kw)
+        except worker.ollama.ResponseError as e:
+            if "does not support tools" not in str(e):
+                raise
+            _chat_kw.pop("tools", None)
+            resp = worker.ollama_chat(**_chat_kw)
         msg  = resp["message"]
+        # Strip any <think>...</think> blocks the model emits despite think=False
+        if isinstance(msg.get("content"), str):
+            import re as _re
+            msg = dict(msg, content=_re.sub(r"(?s)<think>.*?</think>", "", msg["content"]).strip())
         _calls = [c["function"]["name"] for c in (msg.get("tool_calls") or [])]
         _tok, _ns = resp.get("eval_count") or 0, resp.get("eval_duration") or 0
         _log(f"  … {who}: {_tok} tokens in {time.time()-_t0:.1f}s"
@@ -834,10 +887,41 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> 
         print(f"  [telegram] unhandled error: {err}", flush=True)
 
 
+_PID_FILE = os.path.join(_here, "telegram_amy.pid")
+
+
+def _acquire_pid():
+    """Kill any previous instance, then write our PID. Prevents Telegram Conflict errors."""
+    if os.path.exists(_PID_FILE):
+        try:
+            old_pid = int(open(_PID_FILE).read().strip())
+            if old_pid != os.getpid():
+                import signal as _sig
+                try:
+                    os.kill(old_pid, _sig.SIGTERM)
+                    import time as _time; _time.sleep(1)
+                    os.kill(old_pid, _sig.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                print(f"  [amy] killed stale instance pid={old_pid}", flush=True)
+        except (ValueError, OSError):
+            pass
+    with open(_PID_FILE, "w") as f:
+        f.write(str(os.getpid()))
+
+
+def _release_pid():
+    try:
+        os.unlink(_PID_FILE)
+    except OSError:
+        pass
+
+
 def main():
     token = os.environ.get("TELEGRAM_TOKEN")
     if not token:
         sys.exit("TELEGRAM_TOKEN not set — check your .env.amy file")
+    _acquire_pid()
     app = Application.builder().token(token).concurrent_updates(True).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
     app.add_handler(MessageHandler(filters.VOICE, on_voice))
@@ -850,5 +934,13 @@ def main():
     app.run_polling(drop_pending_updates=True)
 
 
+def _shutdown(signum, frame):
+    print("\n[amy] shutting down…", flush=True)
+    _release_pid()
+    import sys; sys.exit(0)
+
 if __name__ == "__main__":
+    import signal as _sig
+    _sig.signal(_sig.SIGTERM, _shutdown)
+    _sig.signal(_sig.SIGINT, _shutdown)
     main()
