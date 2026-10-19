@@ -397,7 +397,8 @@ _WORKER_TIMEOUT  = 180   # 3 min for a background task step
 _chat_pending    = threading.Event()
 
 def _evict_worker_model():
-    """Unload the model from the worker executor to free it for chat. Best-effort."""
+    """Unload the model to interrupt an active background task. Only called when
+    _running lock is held by a worker — never on idle chat requests."""
     try:
         ollama.generate(model=_model, prompt="", keep_alive=0)
     except Exception:
@@ -408,8 +409,8 @@ def ollama_chat(_priority: str = "worker", **kw):
     """Run ollama.chat in a dedicated thread so Ctrl+C always works.
 
     _priority="chat"   — uses the chat executor; sets _chat_pending so worker
-                         tasks know to skip their next Ollama call. Also evicts
-                         any in-flight worker model load to free the GPU fast.
+                         tasks know to skip their next Ollama call. Evicts only
+                         if a worker task is actively running (_running locked).
     _priority="worker" — uses the worker executor; skips immediately if a chat
                          message is pending (Brian wins every time).
     """
@@ -417,8 +418,12 @@ def ollama_chat(_priority: str = "worker", **kw):
         _chat_pending.set()
         executor = _chat_executor
         timeout  = _CHAT_TIMEOUT
-        # Evict any running worker model so chat doesn't queue behind it
-        threading.Thread(target=_evict_worker_model, daemon=True).start()
+        # Only evict if a background task is actually running — avoids cold-reloading
+        # the model on every chat message when nothing is happening in the background.
+        if not _running.acquire(blocking=False):
+            threading.Thread(target=_evict_worker_model, daemon=True).start()
+        else:
+            _running.release()
     else:
         if _chat_pending.is_set():
             raise RuntimeError("skipped: chat message pending")
