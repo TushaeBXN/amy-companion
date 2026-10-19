@@ -1,0 +1,42 @@
+[
+  {
+    "title": "Market Research Reports on Contra",
+    "platform": "Contra",
+    "rate_estimate": "$75\u2013$200/report",
+    "description": "Amy can deliver concise, data-backed market research reports for startups and small businesses. No account setup needed \u2014 Contra is instant. Deliverables include executive summary, key metrics, competitive landscape snapshot, and strategic recommendations in 1-3 pages per report.",
+    "confidence": 8,
+    "source": "thought",
+    "ts": "2026-10-04T18:01:18.518440",
+    "status": "open"
+  },
+  {
+    "title": "LangGraph Framework Analysis on YouTube 2026",
+    "platform": "YouTube study",
+    "rate_estimate": "N/A",
+    "description": "Production-ready AI agent framework prioritizing state management over hype. LangGraph becoming standard for multi-agent systems in 2026 based on creator testing across production teams. Key criteria: production readiness, efficient memory/state handling, observability/debugging capabilities, community maturity. Visual builders like Flowise good for prototyping but less mature than N8N/LangGraph combos.",
+    "confidence": 7,
+    "source": "thought",
+    "ts": "2026-10-14T14:22:51.777003",
+    "status": "open"
+  },
+  {
+    "title": "AI Agent Foundations from Simplilearn Course",
+    "platform": "YouTube course",
+    "rate_estimate": "N/A",
+    "description": "Systematic approach to building AI agents: start with ReAct loops, tool use patterns, and agent-environment interaction before frameworks. Hands-on experience with LangChain, Hugging Face, and menless.ai essential for practical skills that translate to real-world problems in automation and decision-making systems.",
+    "confidence": 8,
+    "source": "thought",
+    "ts": "2026-10-14T14:23:01.896445",
+    "status": "open"
+  },
+  {
+    "title": "LangGraph state management pattern (local ~9B agent)",
+    "platform": "internal knowledge base",
+    "rate_estimate": "N/A (framework adoption insight)",
+    "description": "Production-standard AI agent framework prioritizing explicit state management over hype; ReAct loops are practical foundation before full orchestration library adoption. Insight from YouTube study Oct 14 2026. Applies to Brian's local ~9B parameter constraint: implement simple ReAct manually first for debugging and lean compute footprint, then layer LangGraph when scaling beyond single-threaded demo scope. Transcript saved at ~/ai-knowledge/creators/youtube/watch_v_ywymavrbizm/profile.md.",
+    "confidence": 8,
+    "source": "thought",
+    "ts": "2026-10-14T14:26:34.865451",
+    "status": "open"
+  }
+]
