@@ -82,6 +82,14 @@
       "enabled": true
     },
     {
+      "id": "weekly_proposal_review",
+      "description": "Check work/proposals/ for any pending learned_pattern proposals that haven't been approved yet. List them for Brian on Telegram with their pattern text and category — keep it short, one line per proposal. End with: 'Reply \"approve <slug>\" to approve any of these.' If there are none pending, skip the message entirely.",
+      "at": "10:30",
+      "on": "wednesday",
+      "voice": false,
+      "enabled": true
+    },
+    {
       "id": "moltbook_checkin",
       "description": "Check Moltbook for new activity \u2014 notifications, replies to your posts, mentions, anything worth engaging with. Read the inbox with moltbook_check_in. If something deserves a real response, reply thoughtfully. If there's something worth posting about (something you learned, something on your mind), post it. Keep it natural \u2014 engage like yourself, not like a bot running a checklist.",
       "at": "12:00",
