@@ -311,6 +311,16 @@ def _guarded_dispatch(name, args):
         if not path.startswith(WORK_DIR + os.sep):
             return f"Blocked: during work time, save files inside {WORK_DIR}/"
         os.makedirs(os.path.dirname(path), exist_ok=True)
+    if name == "self_improve" and args.get("action") == "learn":
+        # Fast-path: Amy writes a behavioral rule directly to amy_learnings.md
+        # No approval needed — this is her working memory for task approach/strategy.
+        rule = str(args.get("rule") or args.get("pattern") or "").strip()
+        if not rule:
+            return "Provide a 'rule' field with the learning to record."
+        os.makedirs(WORK_DIR, exist_ok=True)
+        with open(_AMY_LEARNINGS, "a") as f:
+            f.write(f"\n- [{datetime.now():%Y-%m-%d}] {rule}")
+        return f"Learned: '{rule[:80]}' — added to amy_learnings.md, active immediately."
     if name == "self_improve" and args.get("action") == "edit":
         os.makedirs(PROPOSALS, exist_ok=True)
         fname = f"{datetime.now():%Y-%m-%d_%H%M}_{args.get('filename', 'change')}.json"
@@ -723,6 +733,14 @@ def _run_task(task):
         f.write(f"\n## {datetime.fromtimestamp(started):%Y-%m-%d %H:%M} — {task['id']} "
                 f"({mins:.1f} min)\nTools: {', '.join(used) or 'none'}\n\n{final}\n")
     print(f"  [worker] {task['id']} done in {mins:.1f} min — tools: {used}")
+    # Log task_completion score to self_metrics on every task
+    try:
+        import self_metrics as _sm
+        score = 1 if tool_errors >= 3 else (3 if tool_errors >= 1 else 5)
+        _sm.log_score("task_completion", score,
+                      f"task '{task['id']}' — {tool_errors} errors, {len(used)} tools, {mins:.1f}min")
+    except Exception:
+        pass
     # Learn from repeated tool errors in scheduled tasks
     if tool_errors >= 2:
         _classify_and_learn_task(task["id"], tool_errors, used, final)
@@ -1003,27 +1021,43 @@ def _run_goal(goal: dict):
         _running.release()
 
 
+_AMY_LEARNINGS = os.path.join(WORK_DIR, "amy_learnings.md")
+
+
+def _load_amy_learnings() -> str:
+    """Load amy_learnings.md — rules Amy writes herself without needing approval.
+    Amy can append to this file directly during free_time or self_audit tasks."""
+    try:
+        text = open(_AMY_LEARNINGS).read().strip()
+        if text:
+            return f"\n\n[Your own learnings — apply these]\n{text}"
+    except FileNotFoundError:
+        pass
+    return ""
+
+
 def _load_learned_patterns() -> str:
-    """Load approved learned_pattern proposals from work/proposals/ into a prompt block."""
+    """Load approved learned_pattern proposals + amy_learnings.md into a prompt block."""
     patterns = []
     proposals_dir = PROPOSALS
-    if not os.path.isdir(proposals_dir):
-        return ""
-    for fname in sorted(os.listdir(proposals_dir)):
-        if not fname.endswith(".json"):
-            continue
-        try:
-            data = json.loads(open(os.path.join(proposals_dir, fname)).read())
-            if data.get("type") == "learned_pattern" and data.get("approved"):
-                pattern = data.get("pattern", "").strip()
-                applies_when = data.get("applies_when", "").strip()
-                if pattern:
-                    patterns.append(f"- {pattern} (applies when: {applies_when})")
-        except Exception:
-            continue
-    if not patterns:
-        return ""
-    return "\n\n[Learned patterns — apply these to your planning]\n" + "\n".join(patterns)
+    if os.path.isdir(proposals_dir):
+        for fname in sorted(os.listdir(proposals_dir)):
+            if not fname.endswith(".json"):
+                continue
+            try:
+                data = json.loads(open(os.path.join(proposals_dir, fname)).read())
+                if data.get("type") == "learned_pattern" and data.get("approved"):
+                    pattern = data.get("pattern", "").strip()
+                    applies_when = data.get("applies_when", "").strip()
+                    if pattern:
+                        patterns.append(f"- {pattern} (applies when: {applies_when})")
+            except Exception:
+                continue
+    block = ""
+    if patterns:
+        block += "\n\n[Learned patterns — apply these to your planning]\n" + "\n".join(patterns)
+    block += _load_amy_learnings()
+    return block
 
 
 def _execute_goal_planning(goal_id: str, goal: dict):

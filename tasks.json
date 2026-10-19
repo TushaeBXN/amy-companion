@@ -60,7 +60,7 @@
     },
     {
       "id": "daily_self_audit",
-      "description": "Read your core files (amy_persona.py, worker.py, tools.py, memory.py, condition.py) to understand what you currently are and what you can do. Identify: (1) what capabilities are missing or incomplete, (2) what could work better, (3) what you wish you could do but currently cannot. Write your findings to work/self_audit.md \u2014 be honest and specific. Then for each concrete improvement you identify, write a separate file to work/proposals/ named YYYY-MM-DD_HHMM_audit_<slug>.json with this exact structure: {\"type\": \"learned_pattern\", \"pattern\": \"<one specific rule or change>\", \"applies_when\": \"<when this should activate>\", \"source\": \"self_audit\", \"approved\": false}. These proposals become actionable \u2014 Brian can approve them with 'approve <slug>' in Telegram.",
+      "description": "Start by calling self_metrics with action='get_soft_spots' to read your actual performance data \u2014 where have you been scoring low? Then read your core files (amy_persona.py, worker.py, tools.py, memory.py) focusing on the areas the soft spots point to. Also read work/amy_learnings.md if it exists. Identify: (1) what's breaking most often based on real data, (2) one concrete behavioral rule you can apply RIGHT NOW to improve \u2014 use self_improve with action='learn' and a specific rule field to write it directly to amy_learnings.md (it takes effect immediately, no approval needed). For code-level changes, write proposals to work/proposals/ as before. Write your findings to work/self_audit.md. Be honest and specific \u2014 low scores are data, not failure.",
       "at": "18:30",
       "on": "daily",
       "voice": false,
