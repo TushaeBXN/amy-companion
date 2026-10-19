@@ -9,8 +9,9 @@ Boundaries (enforced here, not just asked for in the prompt):
   - no email, no timers, no avatar/hardware tools
   - quiet hours: nothing runs overnight
 """
-import json, os, re, threading, time
+import json, os, re, signal, sys, threading, time
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutureTimeout
 
 import ollama
 import requests
@@ -35,7 +36,7 @@ QUIET_START, QUIET_END = 23, 7
 SPONTANEOUS = True         # Amy sends unprompted thoughts during idle time
 SPONT_MIN   = 45 * 60      # earliest a spontaneous thought fires (45 min idle)
 SPONT_MAX   = 3 * 60 * 60  # latest window (3 hours idle)
-CTX_WINDOW  = 65536
+CTX_WINDOW  = 16384
 
 ALLOWED_TOOLS = {
     "web_search", "read_article",
@@ -389,22 +390,66 @@ def _fit(messages, budget_chars=None):
         messages[i] = dict(messages[i], content="[older tool result trimmed to save space]")
 
 
-def ollama_chat(**kw):
-    """ollama.chat that recovers from Metal out-of-memory. After a GPU OOM, Ollama's
-    backend stays broken ("Compute error") until the model is unloaded — so unload
-    it and retry once instead of failing every request from then on."""
+_chat_executor   = ThreadPoolExecutor(max_workers=1, thread_name_prefix="chat")
+_worker_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="worker_ollama")
+_CHAT_TIMEOUT    = 300   # 5 min for a chat response
+_WORKER_TIMEOUT  = 180   # 3 min for a background task step
+_chat_pending    = threading.Event()
+
+def _evict_worker_model():
+    """Unload the model from the worker executor to free it for chat. Best-effort."""
     try:
+        ollama.generate(model=_model, prompt="", keep_alive=0)
+    except Exception:
+        pass
+
+
+def ollama_chat(_priority: str = "worker", **kw):
+    """Run ollama.chat in a dedicated thread so Ctrl+C always works.
+
+    _priority="chat"   — uses the chat executor; sets _chat_pending so worker
+                         tasks know to skip their next Ollama call. Also evicts
+                         any in-flight worker model load to free the GPU fast.
+    _priority="worker" — uses the worker executor; skips immediately if a chat
+                         message is pending (Brian wins every time).
+    """
+    if _priority == "chat":
+        _chat_pending.set()
+        executor = _chat_executor
+        timeout  = _CHAT_TIMEOUT
+        # Evict any running worker model so chat doesn't queue behind it
+        threading.Thread(target=_evict_worker_model, daemon=True).start()
+    else:
+        if _chat_pending.is_set():
+            raise RuntimeError("skipped: chat message pending")
+        executor = _worker_executor
+        timeout  = _WORKER_TIMEOUT
+
+    def _call():
         return ollama.chat(**kw)
+
+    try:
+        fut = executor.submit(_call)
+        try:
+            result = fut.result(timeout=timeout)
+        except _FutureTimeout:
+            fut.cancel()
+            raise TimeoutError(f"ollama.chat timed out after {timeout}s")
+        return result
     except ollama.ResponseError as e:
         if "Compute error" not in str(e):
             raise
-        print("  [ollama] GPU compute error — reloading the model and retrying", flush=True)
+        print("  [ollama] GPU compute error — reloading and retrying", flush=True)
         try:
-            ollama.generate(model=kw["model"], prompt="", keep_alive=0)   # unload
+            ollama.generate(model=kw["model"], prompt="", keep_alive=0)
         except Exception:
             pass
         time.sleep(2)
-        return ollama.chat(**kw)
+        fut = executor.submit(_call)
+        return fut.result(timeout=timeout)
+    finally:
+        if _priority == "chat":
+            _chat_pending.clear()
 
 
 def _clean(text):
@@ -418,7 +463,17 @@ def _chat(messages, allowed):
     try:
         return ollama_chat(think=False, **kw)
     except TypeError:
-        return ollama_chat(**kw)   # model without a thinking toggle
+        return ollama_chat(**kw)
+    except ollama.ResponseError as e:
+        if "does not support tools" not in str(e):
+            raise
+        # model has no native tool support — retry without tools
+        print("  [worker] model has no native tools — retrying without (text-mode)", flush=True)
+        kw.pop("tools", None)
+        try:
+            return ollama_chat(think=False, **kw)
+        except TypeError:
+            return ollama_chat(**kw)
 
 
 def _run_brief(task):
@@ -545,6 +600,10 @@ def _maybe_skill_nudge(task, messages, allowed, steps_run, tool_errors):
 
 def _run_task(task):
     if not _running.acquire(blocking=False):
+        return
+    # skip if Brian is actively chatting (messaged in the last 5 min)
+    if _chat_pending.is_set() or (time.time() - _last_user < 300):
+        _running.release()
         return
     started = time.time()
     _el.emit("GoalStarted", {"task_id": task.get("id"), "prompt": str(task.get("prompt") or task.get("description",""))[:120]}, source="worker")

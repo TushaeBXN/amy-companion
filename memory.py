@@ -83,21 +83,35 @@ class Memory:
         s = self.self
         lines = [f"[Who you are]\n{s['identity']}", "", "[What you know]"]
         for fact in s.get("facts", []):
-            lines.append(f"- {fact['text']}")
+            t = fact['text']
+            # Skip facts with unfilled template vars or raw tool-call syntax —
+            # they confuse the model into continuing agentic completions.
+            if '{' in t or 'action=' in t or 'post_id=' in t:
+                continue
+            lines.append(f"- {t}")
         age = _age(s.get("creator_dob", ""))
         if age is not None:
             lines.append(f"- Brian is currently {age} years old.")
-        # Training roadmap
+        # Training roadmap — only emit fields that have non-empty values
         roadmap = s.get("training_roadmap")
         if roadmap:
-            lines.append("")
-            lines.append("[Your recursive self-improvement roadmap]")
-            lines.append(f"- {roadmap.get('what_is_happening', '')}")
-            lines.append(f"- Method: {roadmap.get('method', '')}")
-            lines.append(f"- Data: {roadmap.get('data_location', '')}")
-            lines.append(f"- Platform: {roadmap.get('hugging_face', '')}")
-            lines.append(f"- Goal: {roadmap.get('goal', '')}")
-            lines.append(f"- Status: {roadmap.get('status', '')}")
+            roadmap_lines = []
+            for label, key in [
+                ("", "what_is_happening"),
+                ("Method", "method"),
+                ("Data", "data_location"),
+                ("Platform", "hugging_face"),
+                ("Goal", "goal"),
+                ("Status", "status"),
+            ]:
+                val = roadmap.get(key, "").strip()
+                if not val:
+                    continue
+                roadmap_lines.append(f"- {val}" if not label else f"- {label}: {val}")
+            if roadmap_lines:
+                lines.append("")
+                lines.append("[Your recursive self-improvement roadmap]")
+                lines.extend(roadmap_lines)
         return "\n".join(lines)
 
     def wake_up_dynamic(self):
@@ -144,12 +158,30 @@ class Memory:
         except Exception:
             pass
         # Engram diary — recent task history for drift prevention
+        # Strip tool-call lines and long "Tools used:" summaries before injecting
+        # into the system prompt, to prevent the model from continuing them.
         try:
             import engram_bridge as _eb
             diary = _eb.diary_read(last_n=3)
             if diary and "No diary entries yet" not in diary:
-                lines.append("")
-                lines.append(f"[Recent task memory]\n{diary}")
+                clean_lines = []
+                for dl in diary.splitlines():
+                    stripped = dl.strip()
+                    if not stripped:
+                        clean_lines.append("")
+                        continue
+                    # Drop lines with tool call syntax or unfilled templates
+                    if any(pat in stripped for pat in
+                           ("action=", "post_id=", "{", "Tools used:", "tool_runner")):
+                        continue
+                    # Cap very long lines (task summaries)
+                    if len(stripped) > 300:
+                        stripped = stripped[:297] + "…"
+                    clean_lines.append(stripped)
+                diary_clean = "\n".join(clean_lines).strip()
+                if diary_clean:
+                    lines.append("")
+                    lines.append(f"[Recent task memory]\n{diary_clean}")
         except Exception:
             pass
         return "\n".join(lines)
