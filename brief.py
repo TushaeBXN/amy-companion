@@ -74,17 +74,22 @@ def write(model, name, system_prompt=""):
         instructions = (
             "Write Brian's morning brief from ONLY the data below — no outside facts, "
             "and never invent a headline. "
-            "Format: plain text for Telegram. One bold header per section, followed by "
-            "1-2 bullets (use • not -), tight and scannable. "
+            "Format: plain text for Telegram. "
+            "Start with the date from [BRIEF DATA] on its own line (e.g. Tuesday, October 20, 2026). "
+            "Then one bold header per section, followed by 1-2 bullets (use • not -), tight and scannable. "
             "Sections in order: Weather, United States, Technology, Department of Education. "
-            "Skip any section with nothing useful. "
-            "Open with one warm line to Brian. No closing line."
+            "Weather is NEVER skipped — always show it even if conditions look plain. "
+            "Skip only news sections with nothing useful. "
+            "Open with one warm line to Brian before the date. No closing line."
         )
     else:
         instructions = (
             f"Write {name}'s morning brief from ONLY the data below — no outside facts, "
-            "and never invent a headline. Sections in this order: Weather, United States, "
+            "and never invent a headline. "
+            "Start with the date from [BRIEF DATA] on its own line (e.g. Tuesday, October 20, 2026). "
+            "Sections in this order: Weather, United States, "
             "Burkina Faso, Department of Education, Arts, Literature, Technology. "
+            "Weather is NEVER skipped — always show it even if conditions look plain. "
             "2-3 short bullets per section; translate every French headline into English (never leave French text). "
             "Burkina Faso ALWAYS gets its own section — if there is no new news, write '• Quiet today.' under it. "
             "When a story connects across sections (e.g. a protest in Burkina tied to a broader regional trend), "
