@@ -77,6 +77,71 @@ def unverified(reply: str, sources: str, library_has: Optional[Callable[[str], b
     return missing
 
 
+# ── case names she can't source ──────────────────────────────────────────────
+
+_CASE = re.compile(
+    r"\b((?:[A-Z][\w'&-]*\s+){0,3}[A-Z][\w'&-]*)\s+v\.\s+((?:[A-Z][\w'&-]*\s+){0,2}[A-Z][\w'&-]*)")
+_NOT_NAMES = {"the", "in", "see", "under", "and", "but", "also", "that", "this", "as", "of", "per", "from", "with"}
+
+
+def case_names(reply: str) -> list[str]:
+    """Case names like "Washington v. Davis" in *reply*, as written."""
+    out = []
+    for m in _CASE.finditer(reply):
+        left = [w for w in m.group(1).split() if w.lower() not in _NOT_NAMES or w[0].isupper()]
+        # keep the capitalised run directly before "v." (drops a leading "In"/"Under")
+        while left and left[0].lower() in _NOT_NAMES:
+            left.pop(0)
+        if left:
+            out.append(f"{' '.join(left)} v. {m.group(2).strip()}")
+    return list(dict.fromkeys(out))
+
+
+def unsourced_cases(reply: str, sources: str, library_has: Optional[Callable[[str], bool]] = None) -> list[str]:
+    """Case names in *reply* that appear neither in *sources* nor in the library."""
+    haystack = normalize(sources)
+    missing = []
+    for name in case_names(reply):
+        norm = normalize(name)
+        if norm in haystack:
+            continue
+        try:
+            if library_has is not None and library_has(norm):
+                continue
+        except Exception:
+            pass
+        missing.append(name)
+    return missing
+
+
+# ── does the passage she cited belong to the claim she is defending? ─────────
+
+_LIB_ID = re.compile(r"\blib-[0-9a-f]{8,20}\b")
+
+
+def cited_ids(reply: str) -> list[str]:
+    """Library passage IDs mentioned in *reply* (as shown to her: 'lib-' plus hex digits)."""
+    return list(dict.fromkeys(_LIB_ID.findall(reply)))
+
+
+def unsupported_citations(reply: str, claim: str, ids_for: Callable[[str], list[str]]) -> list[str]:
+    """IDs cited in *reply* that don't turn up when the library is searched for *claim*.
+
+    *claim* is what she said before (the thing being challenged); *ids_for(text)*
+    returns the IDs of the library passages that best match *text*. A passage
+    that supports a claim should be among the closest passages to that claim; if
+    it isn't, she probably pulled whatever matched the challenge's wording.
+    """
+    ids = cited_ids(reply)
+    if not ids or not (claim or "").strip():
+        return []
+    try:
+        found = ids_for(claim)
+    except Exception:
+        return []
+    return [i for i in ids if not any(f.startswith(i) or i.startswith(f) for f in found)]
+
+
 def footnote(missing: list[str]) -> str:
     """The note appended to a reply that quotes something she can't back up."""
     if not missing:
@@ -85,3 +150,16 @@ def footnote(missing: list[str]) -> str:
     plural = "these quotations" if len(missing) > 1 else "this quotation"
     return (f"\n\n⚠️ I couldn't find {plural} word for word in my library or the sources I just read, "
             f"so treat {'them' if len(missing) > 1 else 'it'} as unconfirmed:\n{shown}")
+
+
+def notes(unverified_quotes: list[str], cases: list[str], weak_ids: list[str]) -> str:
+    """One note covering everything she couldn't back up ('' when there is nothing)."""
+    out = footnote(unverified_quotes)
+    if cases:
+        out += ("\n\n⚠️ I couldn't find " + ("these case names" if len(cases) > 1 else "this case name")
+                + " in my library or the sources I just read, so I may be going from memory: "
+                + "; ".join(cases[:4]) + ".")
+    if weak_ids:
+        out += ("\n\n⚠️ The passage I cited (" + ", ".join(weak_ids[:3]) + ") did not come up when I searched my "
+                "library for what I'd just said, so it may not support that claim. Check it before relying on it.")
+    return out

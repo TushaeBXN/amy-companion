@@ -80,3 +80,38 @@ def test_library_has_finds_real_passages_and_rejects_made_up_ones(tmp_path, monk
     assert eb.library_has(real) and not eb.library_has(fake)
     reply = f'The Fifth Amendment says "{FIFTH_REAL}" and also "nor deny to any person in the United States equally protected rights, under the laws"'
     assert len(qc.unverified(reply, "", library_has=eb.library_has)) == 1
+
+
+# ── case names and citations that don't match the claim ───────────────────────
+
+def test_case_names_are_found_even_after_a_lead_in_word():
+    reply = ("In Washington v. Davis the Court held X. Under Chapman v. Meier, 420 U.S. 1, a deviation matters, "
+             "and the recent Louisiana v. Callais moved toward intent. See also Baker v. Carr.")
+    names = qc.case_names(reply)
+    assert "Washington v. Davis" in names and "Chapman v. Meier" in names
+    assert "Louisiana v. Callais" in names and "Baker v. Carr" in names
+    assert not any(n.startswith(("In ", "Under ", "See ")) for n in names)
+
+
+def test_only_case_names_with_no_source_are_flagged():
+    sources = "Under Washington v. Davis, the challenger must prove purpose. Chapman v. Meier is about deviations."
+    reply = "Washington v. Davis, Chapman v. Meier and Louisiana v. Callais all matter."
+    assert qc.unsourced_cases(reply, sources) == ["Louisiana v. Callais"]
+    assert qc.unsourced_cases(reply, sources, library_has=lambda n: n == "louisiana v callais") == []
+    assert qc.unsourced_cases("No cases here.", sources) == []
+
+
+def test_a_cited_passage_that_is_not_near_the_claim_is_flagged():
+    reply = 'The passage is lib-2f8867ec: "a deviation of such magnitude"'
+    claim = "Unequal effects without discriminatory purpose do not violate equal protection."
+    assert qc.cited_ids(reply) == ["lib-2f8867ec"]
+    assert qc.unsupported_citations(reply, claim, lambda text: ["lib-5c82efe9", "lib-7786351e"]) == ["lib-2f8867ec"]
+    assert qc.unsupported_citations(reply, claim, lambda text: ["lib-2f8867ec12345"]) == []   # a longer ID of the same passage
+    assert qc.unsupported_citations(reply, "", lambda text: []) == []
+    assert qc.unsupported_citations(reply, claim, lambda text: (_ for _ in ()).throw(RuntimeError())) == []
+
+
+def test_notes_cover_all_three_kinds_and_stay_empty_when_all_is_well():
+    assert qc.notes([], [], []) == ""
+    text = qc.notes([], ["Louisiana v. Callais"], ["lib-2f8867ec"])
+    assert "Louisiana v. Callais" in text and "lib-2f8867ec" in text and "may not support" in text
