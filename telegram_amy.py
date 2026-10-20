@@ -654,9 +654,13 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
             _seen_text = "\n".join(str((_msg_to_dict(m) if not isinstance(m, dict) else m).get("content") or "")
                                    for m in messages)
             _bad = _qc.unverified(_reply_text, _seen_text, library_has=_eb.library_has)
-            if _bad:
-                _log(f"  [quotes] {len(_bad)} quotation(s) not found in her sources or library")
-                _reply_text += _qc.footnote(_bad)
+            _cases = _qc.unsourced_cases(_reply_text, _seen_text, library_has=_eb.library_has)
+            _weak = (_qc.unsupported_citations(_reply_text, _prior, _eb.library_ids)
+                     if _prior and _eb._FOLLOW_UP.search(user_text) else [])
+            if _bad or _cases or _weak:
+                _log(f"  [quotes] not backed up: {len(_bad)} quotation(s), {len(_cases)} case name(s), "
+                     f"{len(_weak)} citation(s) that don't match her earlier claim")
+                _reply_text += _qc.notes(_bad, _cases, _weak)
         except Exception as _qe:
             _log(f"  [quotes] check skipped: {type(_qe).__name__}: {_qe}")
     _outcome = "ok" if _reply_text else "no_content"
