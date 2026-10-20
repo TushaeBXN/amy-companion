@@ -40,7 +40,7 @@ except ModuleNotFoundError:
 MODEL        = os.environ.get("AMY_MODEL", "gemma12-test")
 VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "gemma12-test")
 MAX_HOPS     = 10
-CTX_WINDOW   = 32768
+CTX_WINDOW   = 16384
 HISTORY_FILE = os.path.join(_here, "telegram_history.json")
 HISTORY_KEEP = 60   # messages to persist across restarts
 PEOPLE_FILE  = os.path.join(_here, "people.json")
