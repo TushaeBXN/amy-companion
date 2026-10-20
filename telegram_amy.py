@@ -38,6 +38,10 @@ except ModuleNotFoundError:
     _learnings = None
 
 MODEL        = os.environ.get("AMY_MODEL", "gemma12-test")
+# Longest reply, in tokens. Without this the model's own default applied, which cut long answers off
+# mid-sentence at about 300 tokens. At roughly 11 tokens a second, 1200 is at most a couple of minutes,
+# and she stops sooner when she's done. Override with AMY_MAX_REPLY_TOKENS.
+MAX_REPLY_TOKENS = int(os.environ.get("AMY_MAX_REPLY_TOKENS", "1200"))
 VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "gemma12-test")
 MAX_HOPS     = 10
 CTX_WINDOW   = 16384
@@ -538,7 +542,7 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
         worker._fit(messages)
         _chat_kw = dict(_priority="chat", model=MODEL, messages=messages, tools=tool_list,
                         keep_alive="30m", think=False,
-                        options={"num_ctx": CTX_WINDOW,
+                        options={"num_ctx": CTX_WINDOW, "num_predict": MAX_REPLY_TOKENS,
                                  **({} if is_owner else {"temperature": 0.4})})
         try:
             resp = worker.ollama_chat(**_chat_kw)
@@ -620,14 +624,14 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
         try:
             resp = worker.ollama_chat(_priority="chat", think=False, model=MODEL,
                                messages=messages, keep_alive="30m",
-                               options={"num_ctx": CTX_WINDOW,
+                               options={"num_ctx": CTX_WINDOW, "num_predict": MAX_REPLY_TOKENS,
                                         **({} if is_owner else {"temperature": 0.4})})
             msg = dict(_msg_to_dict(resp["message"]))
             msg["content"] = worker.strip_tool_text(msg.get("content", ""))
         except TypeError:
             resp = worker.ollama_chat(_priority="chat", model=MODEL,
                                messages=messages, keep_alive="30m",
-                               options={"num_ctx": CTX_WINDOW,
+                               options={"num_ctx": CTX_WINDOW, "num_predict": MAX_REPLY_TOKENS,
                                         **({} if is_owner else {"temperature": 0.4})})
             msg = dict(_msg_to_dict(resp["message"]))
             msg["content"] = worker.strip_tool_text(msg.get("content", ""))
