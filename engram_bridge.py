@@ -530,6 +530,17 @@ def library_search(query: str, n: int = 4) -> str:
     return json.dumps(out, indent=2)
 
 
+def library_has(fragment: str) -> bool:
+    """True if the (already normalized) *fragment* appears word for word in a library passage."""
+    _init()
+    for r in _SEARCHER.search(fragment, n=6, wing="library"):
+        drawer = _PALACE.find_drawer(r["id"]) if hasattr(_PALACE, "find_drawer") else None
+        from quote_check import normalize
+        if fragment in normalize(drawer.text() if drawer is not None else r["text"]):
+            return True
+    return False
+
+
 def library_context(query: str, n: int = 3, max_chars: int = 550) -> str:
     """Relevant library passages for *query*, ready to put in Amy's context ('' if none).
 
