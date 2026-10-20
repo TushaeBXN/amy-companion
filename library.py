@@ -164,8 +164,15 @@ def _engram():
     return eb._PALACE, eb._SEARCHER.backend
 
 
-def store(sections: list[dict], source: str, palace=None, backend=None) -> int:
-    """Save and index sections in the library wing. Returns how many."""
+def store(sections: list[dict], source: str, palace=None, backend=None, kind: str = "primary") -> int:
+    """Save and index sections in the library wing. Returns how many.
+
+    With Engram 1.9+ each section also records what kind of source it is
+    (*kind*: "primary" for the documents themselves, "secondary" for
+    commentary such as the Constitution Annotated) and its citation, so
+    Amy's views can point at it as evidence and `why` can tell text from
+    explanation.
+    """
     from engram.chateau import Drawer
     from engram.indexing import index_drawers
 
@@ -181,8 +188,10 @@ def store(sections: list[dict], source: str, palace=None, backend=None) -> int:
                 palace.delete_drawer(old.wing, old.room, old.hall, old.id)
     items = []
     for s in sections:
+        extra = ({"source": kind, "source_ref": s.get("cite", "")}
+                 if kind and "source" in Drawer.__dataclass_fields__ else {})
         drawer = Drawer(content=s["content"], wing=WING, room=s["room"], hall=HALL, id=s["id"],
-                        tags=["library", f"source:{source}"])
+                        tags=["library", f"source:{source}"], **extra)
         palace.save_drawer(drawer)
         items.append((drawer.id, drawer.content,
                       {"wing": WING, "room": s["room"], "hall": HALL,
@@ -304,7 +313,7 @@ def add_file(path: Path, title: str, author: str = "", year: str = "", split: Op
         sections = make_sections(key, template, text, split)
     if not sections:
         raise SystemExit(f"No text found in {path}")
-    n = store(sections, f"file:{path.name}")
+    n = store(sections, f"file:{path.name}", kind="")  # could be anything: don't guess
     print(f"Added {n} sections from {path.name}, e.g. [{sections[0]['cite']}]")
     return n
 
@@ -390,7 +399,7 @@ def add_conan(part: str = "amendment-14", limit: int = 300, delay: float = 0.5) 
             if fresh and delay:
                 time.sleep(delay)  # be polite to the server
         if sections:
-            n = store(sections, index_url)
+            n = store(sections, index_url, kind="secondary")  # official explanation, not the text
             print(f"  {n} essays stored, e.g. [{sections[0]['cite']}]")
             return n
     print("  ! could not load the Constitution Annotated from any site; paste this output to get it fixed")
