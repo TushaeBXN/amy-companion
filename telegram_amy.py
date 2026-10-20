@@ -37,10 +37,10 @@ try:
 except ModuleNotFoundError:
     _learnings = None
 
-MODEL        = os.environ.get("AMY_MODEL", "amy-hermes")
-VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "amy-hermes")
+MODEL        = os.environ.get("AMY_MODEL", "gemma12-test")
+VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "gemma12-test")
 MAX_HOPS     = 10
-CTX_WINDOW   = 32768
+CTX_WINDOW   = 16384
 HISTORY_FILE = os.path.join(_here, "telegram_history.json")
 HISTORY_KEEP = 60   # messages to persist across restarts
 PEOPLE_FILE  = os.path.join(_here, "people.json")
@@ -527,6 +527,11 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
 
     msg = None
     seen = {}
+    _tool_counts: dict = {}   # name → call count this turn
+    _STARTUP_TOOL_CAP = {     # tools that should rarely repeat in one turn
+        "engram_memory": 2,
+        "moltbook_check_in": 1,
+    }
     _logged_tool_calls: list = []
     for step in range(1, MAX_HOPS + 1):
         _t0 = time.time()
@@ -578,13 +583,21 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
                 _remember_for(who, str(args.get("fact") or args.get("text") or args))
                 result = f"Remembered (private to {who})."
             else:
-                try:
-                    result = seen[key] if key in seen else tools.dispatch(name, args, mem)
-                except Exception as _te:
-                    # One failing tool must not end the whole turn: tell her, and she can carry on.
-                    _log(f"  (tool {name} failed: {type(_te).__name__}: {_te})\n{_traceback.format_exc()}")
-                    result = f"[tool_error] {name}: {type(_te).__name__}: {_te}"
-            seen[key] = result
+                cap = _STARTUP_TOOL_CAP.get(name)
+                _tool_counts[name] = _tool_counts.get(name, 0) + 1
+                if cap and _tool_counts[name] > cap:
+                    result = (f"[{name} already called {cap}x this turn — "
+                              f"your context is loaded. Stop and respond to {who}.]")
+                elif key in seen:
+                    result = f"[Already called {name} with these exact args — use the result above.]"
+                else:
+                    try:
+                        result = tools.dispatch(name, args, mem)
+                    except Exception as _te:
+                        # One failing tool must not end the whole turn: tell her, and she can carry on.
+                        _log(f"  (tool {name} failed: {type(_te).__name__}: {_te})\n{_traceback.format_exc()}")
+                        result = f"[tool_error] {name}: {type(_te).__name__}: {_te}"
+                    seen[key] = result
             _logged_tool_calls.append({
                 "name": name,
                 "args": args if isinstance(args, dict) else str(args),
@@ -604,12 +617,23 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
             "don't promise to do more right now. In a few sentences: what you did, what you "
             "found, and what's left — then ask if they want you to continue.]"})
         worker._fit(messages)
-        resp = worker.ollama_chat(model=MODEL, messages=messages, keep_alive="30m",
-                           options={"num_ctx": CTX_WINDOW,
-                                    **({} if is_owner else {"temperature": 0.4})})
-        msg = dict(_msg_to_dict(resp["message"]))
-        msg["content"] = worker.strip_tool_text(msg.get("content", ""))
+        try:
+            resp = worker.ollama_chat(_priority="chat", think=False, model=MODEL,
+                               messages=messages, keep_alive="30m",
+                               options={"num_ctx": CTX_WINDOW,
+                                        **({} if is_owner else {"temperature": 0.4})})
+            msg = dict(_msg_to_dict(resp["message"]))
+            msg["content"] = worker.strip_tool_text(msg.get("content", ""))
+        except TypeError:
+            resp = worker.ollama_chat(_priority="chat", model=MODEL,
+                               messages=messages, keep_alive="30m",
+                               options={"num_ctx": CTX_WINDOW,
+                                        **({} if is_owner else {"temperature": 0.4})})
+            msg = dict(_msg_to_dict(resp["message"]))
+            msg["content"] = worker.strip_tool_text(msg.get("content", ""))
         msg.pop("tool_calls", None)
+        if not msg.get("content"):
+            msg["content"] = "I ran out of steps before finishing. Want me to keep going?"
         history.append(msg)
 
     if msg and msg.get("content") and saved_note:

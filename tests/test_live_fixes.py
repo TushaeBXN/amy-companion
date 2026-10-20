@@ -84,3 +84,14 @@ def test_a_failed_history_save_leaves_the_old_file_intact(tmp_path, monkeypatch)
         with open(tmp, "w") as f:
             json.dump([{"role": "assistant", "content": "x", "tool_calls": [object()]}], f)   # fails part-way
     assert json.loads(path.read_text()) == [{"role": "user", "content": "kept"}]               # untouched
+
+
+def test_conversation_logs_in_the_default_wing_are_not_recalled_as_memories(amy):
+    amy.add_memory("Brian's favorite bakery is Rosewater Bakery and he always gets the lemon scone.",
+                   wing="brian", room="preference", hall="preferences")
+    amy.add_memory("Working on the plan for tomorrow before work, where should we go next? Maybe the bakery.",
+                   wing="default", room="chat", hall="discoveries")
+    amy._SEARCHER.config["recall_min_relevance"] = 0.0
+    note = amy.memory_context("Where should I go for a bakery treat tomorrow?")
+    assert "Rosewater" in note and "Working on the plan" not in note
+    assert amy.MEMORY_CONTEXT_SKIP_WINGS == ("library", "default")

@@ -29,6 +29,11 @@ WORK_DIR    = os.path.join(HERE, "work")
 LOG_FILE    = os.path.join(WORK_DIR, "worker_log.md")
 PROPOSALS   = os.path.join(WORK_DIR, "proposals")
 
+# Compact core rules — loaded once at startup, injected inline into every planning prompt.
+# Full curricula live in sandbox/; this is the distilled live version (~300 tokens).
+_CORE_RULES_PATH = os.path.join(HERE, "amy_core_rules.md")
+_CORE_RULES = open(_CORE_RULES_PATH).read() if os.path.exists(_CORE_RULES_PATH) else ""
+
 TICK_SECS   = 60
 MAX_HOPS    = 8
 IDLE_GRACE  = 120          # don't start a task while Brian is mid-conversation
@@ -368,6 +373,10 @@ def scope_rules(max_steps):
     return (
         f"\n\n[How you work — your limits]\n"
         f"- You have {max_steps} tool steps per request. Each tool result shows 'step N of {max_steps}'.\n"
+        "- Your memory, Moltbook status, and context are already loaded in your system prompt. "
+        "Do NOT call engram_memory or moltbook_check_in to 'warm up' — jump straight to the task.\n"
+        "- Each tool once per turn. Calling the same tool with the same args twice is a bug.\n"
+        "- Before each tool call, state in one sentence what you're doing and why — then do it.\n"
         "- Do exactly what was asked — no more. 'Check X' means look and report back; "
         "don't comment, post, engage, or start extra work unless asked.\n"
         "- Before starting, judge whether the request fits in your steps. If it clearly "
@@ -441,16 +450,31 @@ def ollama_chat(_priority: str = "worker", **kw):
         timeout  = _WORKER_TIMEOUT
 
     def _call():
+        opts = kw.get("options") or {}
+        if isinstance(opts, dict):
+            opts.setdefault("flash_attn", True)
+            kw["options"] = opts
         return ollama.chat(**kw)
 
-    try:
-        fut = executor.submit(_call)
+    def _attempt(exec_):
+        fut = exec_.submit(_call)
         try:
-            result = fut.result(timeout=timeout)
+            return fut.result(timeout=timeout)
         except _FutureTimeout:
             fut.cancel()
             raise TimeoutError(f"ollama.chat timed out after {timeout}s")
-        return result
+
+    try:
+        try:
+            return _attempt(executor)
+        except TimeoutError:
+            if _priority != "worker":
+                raise
+            # Worker timed out — model may have been evicted mid-run; retry once.
+            print("  [ollama] worker timeout — retrying once", flush=True)
+            if _chat_pending.is_set():
+                raise RuntimeError("skipped: chat message pending")
+            return _attempt(executor)
     except ollama.ResponseError as e:
         if "Compute error" not in str(e):
             raise
@@ -460,8 +484,7 @@ def ollama_chat(_priority: str = "worker", **kw):
         except Exception:
             pass
         time.sleep(2)
-        fut = executor.submit(_call)
-        return fut.result(timeout=timeout)
+        return _attempt(executor)
     finally:
         if _priority == "chat":
             _chat_pending.clear()
@@ -652,6 +675,7 @@ def _run_task(task):
                        "what you did and where you saved it.")
         system = (
             (_memory.wake_up_static() if _memory else "") + WORK_PERSONA + scope_rules(task_hops) +
+            ("\n\n" + _CORE_RULES if _CORE_RULES else "") +
             "\n\n[Work time] Brian isn't talking to you right now. This is your own "
             "scheduled work. Use your tools to actually do the task — don't describe "
             f"what you would do. Today is {datetime.now():%A, %B %d, %Y}. Save files under "
@@ -1186,6 +1210,7 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
     context = _goals.goal_summary(goal)
     system = (
         (_memory.wake_up_static() if _memory else "") + WORK_PERSONA + scope_rules(goal_max_hops) +
+        ("\n\n" + _CORE_RULES if _CORE_RULES else "") +
         f"\n\n[Active goal context]\n{context}"
     )
     prompt = (

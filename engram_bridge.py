@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from pathlib import Path
 from typing import Optional
@@ -563,6 +564,14 @@ def library_context(query: str, n: int = 3, max_chars: int = 550) -> str:
             "answer the question, say you're going from memory.]\n" + "\n\n".join(picked))
 
 
+# Wings that automatic memory lookup never draws from: the reference library (quoted on request, not
+# recalled), and "default", where mined conversation logs land. Her own chat transcripts ("That's kind of you
+# to say…", task status lines) are not memories Brian saved, and they match everyday questions better than
+# the memories that should answer them. Override with AMY_MEMORY_SKIP_WINGS="library,default,other".
+MEMORY_CONTEXT_SKIP_WINGS = tuple(
+    w.strip() for w in os.environ.get("AMY_MEMORY_SKIP_WINGS", "library,default").split(",") if w.strip())
+
+
 def memory_context(query: str) -> str:
     """Saved memories that clearly match *query*, ready to put in Amy's context ('' if none).
 
@@ -577,7 +586,7 @@ def memory_context(query: str) -> str:
         _init()
         from engram.recall import recall
         cfg = {**_SEARCHER.config, "recall": True, "recall_max": 3,
-               "recall_exclude_wings": ["library"]}
+               "recall_exclude_wings": list(MEMORY_CONTEXT_SKIP_WINGS)}
         note = recall(query, searcher=_SEARCHER, cfg=cfg, remember=False)
     except Exception:  # older Engram, or the index is unavailable: carry on without it
         return ""
