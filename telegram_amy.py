@@ -180,11 +180,17 @@ def _save_history(history: list, path: str = HISTORY_FILE):
         clean = {k: v for k, v in d.items() if k != "images"}
         if clean.get("role") in ("user", "assistant", "tool"):
             trimmed.append(clean)
-    try:
-        with open(path, "w") as f:
+    tmp = f"{path}.tmp"
+    try:  # write beside it and swap in, so a failed save can never leave a half-written history
+        with open(tmp, "w") as f:
             json.dump(trimmed, f, default=_json_default)
+        os.replace(tmp, path)
     except Exception as e:
         print(f"  [telegram] could not save history: {e}")
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 
 _histories: dict = {}
