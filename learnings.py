@@ -206,7 +206,7 @@ def compress_learnings() -> None:
         return
     to_archive, to_keep = entries[:_ARCHIVE_BATCH], entries[_ARCHIVE_BATCH:]
     block = [f"## ARCHIVED LEARNINGS (through {to_archive[-1][0]})"]
-    block += [f"- [{d}] {b.splitlines()[0]}" for d, b in to_archive]
+    block += [f"- [{d}] {(b.splitlines() or [''])[0]}" for d, b in to_archive]
     cut = text.find(_ARCHIVE_HEADER)
     existing = text[cut:].strip() if cut != -1 else ""
     raw_kept = "\n".join(f"\n## {d}\n{b}" for d, b in to_keep)
