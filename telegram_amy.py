@@ -582,12 +582,23 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
             "don't promise to do more right now. In a few sentences: what you did, what you "
             "found, and what's left — then ask if they want you to continue.]"})
         worker._fit(messages)
-        resp = worker.ollama_chat(model=MODEL, messages=messages, keep_alive="30m",
-                           options={"num_ctx": CTX_WINDOW,
-                                    **({} if is_owner else {"temperature": 0.4})})
-        msg = dict(_msg_to_dict(resp["message"]))
-        msg["content"] = worker.strip_tool_text(msg.get("content", ""))
+        try:
+            resp = worker.ollama_chat(_priority="chat", think=False, model=MODEL,
+                               messages=messages, keep_alive="30m",
+                               options={"num_ctx": CTX_WINDOW,
+                                        **({} if is_owner else {"temperature": 0.4})})
+            msg = dict(_msg_to_dict(resp["message"]))
+            msg["content"] = worker.strip_tool_text(msg.get("content", ""))
+        except TypeError:
+            resp = worker.ollama_chat(_priority="chat", model=MODEL,
+                               messages=messages, keep_alive="30m",
+                               options={"num_ctx": CTX_WINDOW,
+                                        **({} if is_owner else {"temperature": 0.4})})
+            msg = dict(_msg_to_dict(resp["message"]))
+            msg["content"] = worker.strip_tool_text(msg.get("content", ""))
         msg.pop("tool_calls", None)
+        if not msg.get("content"):
+            msg["content"] = "I ran out of steps before finishing. Want me to keep going?"
         history.append(msg)
 
     if msg and msg.get("content") and saved_note:
