@@ -280,6 +280,11 @@ def build_context(mem, user_text, amy_state=None, absence=None,
             system += _eb.library_context(user_text)
         except Exception:
             pass
+    try:  # what her saved memories say about this message (silent when nothing clearly matches)
+        import engram_bridge as _eb
+        system += _eb.memory_context(user_text)
+    except Exception:
+        pass
     system += ("\n\n[Your memories: things that actually happened, with their dates]")
 
     # Time estimation for absence
