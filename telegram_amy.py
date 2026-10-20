@@ -527,6 +527,11 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
 
     msg = None
     seen = {}
+    _tool_counts: dict = {}   # name → call count this turn
+    _STARTUP_TOOL_CAP = {     # tools that should rarely repeat in one turn
+        "engram_memory": 2,
+        "moltbook_check_in": 1,
+    }
     _logged_tool_calls: list = []
     for step in range(1, MAX_HOPS + 1):
         _t0 = time.time()
@@ -578,8 +583,13 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
                 _remember_for(who, str(args.get("fact") or args.get("text") or args))
                 result = f"Remembered (private to {who})."
             else:
-                if key in seen:
-                    result = f"[Already called {name} this turn — use the result above. Do not call it again.]"
+                cap = _STARTUP_TOOL_CAP.get(name)
+                _tool_counts[name] = _tool_counts.get(name, 0) + 1
+                if cap and _tool_counts[name] > cap:
+                    result = (f"[{name} already called {cap}x this turn — "
+                              f"your context is loaded. Stop and respond to {who}.]")
+                elif key in seen:
+                    result = f"[Already called {name} with these exact args — use the result above.]"
                 else:
                     try:
                         result = tools.dispatch(name, args, mem)
