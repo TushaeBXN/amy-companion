@@ -37,8 +37,8 @@ try:
 except ModuleNotFoundError:
     _learnings = None
 
-MODEL        = os.environ.get("AMY_MODEL", "amy-hermes")
-VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "amy-hermes")
+MODEL        = os.environ.get("AMY_MODEL", "gemma12-test")
+VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "gemma12-test")
 MAX_HOPS     = 10
 CTX_WINDOW   = 32768
 HISTORY_FILE = os.path.join(_here, "telegram_history.json")
