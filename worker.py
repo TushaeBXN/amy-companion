@@ -783,6 +783,8 @@ def _run_task(task):
     if task.get("to"):
         chat, name = _recipient(task["to"])
         _send(final or "(finished, nothing to say)", chat=chat)
+    elif (final or "").startswith("(task failed: skipped:"):
+        print(f"  [worker] {task['id']} skipped, not worth a message: {final}", flush=True)
     else:
         _send(f"🛠 {task['id']}\n\n{final or '(finished, nothing to say)'}")
 
