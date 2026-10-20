@@ -306,7 +306,7 @@ def _last_message_line(now: "_dt") -> str:
     return f"\nLast message from Brian: {age}" if age else ""
 
 
-def _turn_context(history_len: int, person: dict, message: str) -> str:
+def _turn_context(history_len: int, person: dict, message: str, prior: str = "") -> str:
     """Per-message context (clock, mood, playbooks, recovered history) — sent with
     the user's message instead of in the system prompt, so the prompt cache survives."""
     now = _dt.now()
@@ -335,7 +335,7 @@ def _turn_context(history_len: int, person: dict, message: str) -> str:
         if "THINKING PARTNER" in playbooks:
             try:
                 import engram_bridge as _eb
-                s += _eb.library_context(message)
+                s += _eb.library_context(_eb.follow_up_query(message, prior))
             except Exception:
                 pass
         # Reconstruct history from SQLite when JSON history is thin
@@ -483,7 +483,10 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
     if not is_owner:
         recent = [dict(_msg_to_dict(m), content=(_msg_to_dict(m).get("content") or "")[:3000])
                   for m in recent]
-    ctx = _turn_context(len(history), person, user_text)
+    _prior = next((str(_d.get("content") or "") for _d in
+                   (_msg_to_dict(m) if not isinstance(m, dict) else m for m in reversed(history))
+                   if _d.get("role") == "assistant" and _d.get("content")), "")
+    ctx = _turn_context(len(history), person, user_text, _prior)
     model_msg = dict(model_msg, content=f"{ctx}\n\n[Message from {who}]\n{model_msg['content']}")
     messages = [{"role": "system", "content": _build_system(len(history), person)}] + recent + [model_msg]
     history.append(user_msg)
