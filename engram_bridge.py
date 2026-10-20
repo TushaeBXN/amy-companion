@@ -118,17 +118,34 @@ def add_memory(
     room: str = "general",
     hall: str = "facts",
     pinned: bool = False,
+    source: str = "",
+    source_ref: str = "",
+    evidence=None,
 ) -> str:
     """Store a new memory. Content is sanitized before storage.
 
     With Engram 1.6+ the reply also lists "possible_updates": existing
     memories this one may replace. If it does, call correct_memory on the old
     one instead of keeping both.
+
+    With Engram 1.9+, *source* says where it came from (user, primary,
+    secondary, tool, inference), *source_ref* gives the citation or URL, and
+    *evidence* lists IDs of memories it rests on. Older Engram ignores them.
     """
     _init()
     from engram.chateau import Drawer
     safe = _sanitize(content)
-    drawer = Drawer(content=safe, wing=wing, room=room, hall=hall, pinned=pinned)
+    rel = _relations()
+    links = []
+    if rel is not None:
+        try:
+            links = rel.resolve_evidence(_PALACE, based_on=_id_list(evidence))
+            extra = {"source": rel.check_source(source), "source_ref": _sanitize(source_ref)}
+        except Exception as e:  # checked before anything is saved
+            return json.dumps({"stored": False, "error": str(e)})
+    else:
+        extra = {}
+    drawer = Drawer(content=safe, wing=wing, room=room, hall=hall, pinned=pinned, **extra)
     _PALACE.save_drawer(drawer)
     _SEARCHER.backend.add(
         id=drawer.id,
@@ -137,6 +154,9 @@ def add_memory(
                   "timestamp": drawer.timestamp, "pinned": pinned},
     )
     out = {"stored": True, "id": drawer.id, "wing": wing, "room": room, "hall": hall}
+    if links:
+        rel.attach_evidence(_PALACE, drawer.id, links, by="amy")
+        out["evidence"] = [target[:8] for _, target in links]
     try:
         from engram.lineage import possible_updates
     except ImportError:
@@ -220,6 +240,24 @@ def _lineage():
     return lineage
 
 
+def _relations():
+    """engram.relations (Engram 1.9+: evidence, sources, why), or None on older Engram."""
+    import importlib
+    try:
+        return importlib.import_module("engram.relations")
+    except ImportError:
+        return None
+
+
+def _id_list(ids) -> list:
+    """Evidence IDs from a list, or a comma/space separated string."""
+    if not ids:
+        return []
+    if isinstance(ids, str):
+        ids = re.split(r"[,\s]+", ids)
+    return [str(i).strip() for i in ids if str(i).strip()]
+
+
 def correct_memory(memory_id: str, content: str, reason: str = "") -> str:
     """Replace an outdated memory with corrected information.
 
@@ -253,6 +291,104 @@ def memory_history(memory_id: str) -> str:
         "history": [{"on": s["at"][:10], "old_id": s["old"], "new_id": s["new"],
                      "why": s.get("reason", ""), "was": s.get("old_text"), "now": s.get("new_text")}
                     for s in h["history"]],
+    }, indent=2)
+
+
+# ── evidence: why a memory says what it says (Engram 1.9+) ───────────────────
+
+_NEEDS_19 = json.dumps({"error": "evidence and explanations need Engram 1.9 or newer "
+                                 "(pip install -U engram-chateau)"})
+
+
+def _brief(item: dict) -> dict:
+    out = {"id": item["id"][:8]}
+    if item.get("missing"):
+        return {**out, "missing": True}
+    text = item.get("text", "")
+    drawer = _PALACE.find_drawer(item["id"]) if len(text) >= 300 else None
+    if drawer is not None:  # Engram trims; give enough of a passage to quote
+        text = drawer.text().strip()
+    first = text.split("\n", 1)[0]
+    if first.startswith("[") and first.endswith("]") and "\n" in text:
+        text = text.split("\n", 1)[1]  # the citation is already in "cite"
+    out["text"] = text[:700]
+    out["source"] = item.get("source") or "not recorded"
+    if item.get("source_ref"):
+        out["cite"] = item["source_ref"]
+    if item.get("status") == "superseded":
+        out["status"] = f"OUTDATED, replaced by {item.get('current_id', '')[:8]}"
+    elif item.get("status") == "disputed":
+        out["status"] = "DISPUTED"
+    if item.get("relation"):
+        out["relation"] = item["relation"]
+    if item.get("evidence"):
+        out["rests_on"] = [_brief(e) for e in item["evidence"]]
+    return out
+
+
+def explain_memory(memory_id: str, query: str = "") -> str:
+    """Why a memory says what it says: its source, the evidence it rests on (and
+    whether that evidence was since corrected), earlier versions, conflicts, and
+    what needs review. Use it when challenged on a view or before relying on one.
+    """
+    _init()
+    rel = _relations()
+    if rel is None:
+        return _NEEDS_19
+    try:
+        w = rel.explain(_PALACE, memory_id, query=query or None, searcher=_SEARCHER if query else None)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+    m = w["memory"]
+    out = {
+        "id": m["id"][:8], "text": m["text"][:600], "saved": m["timestamp"][:10],
+        "source": w["source"], "kind": {"direct": "recorded as given", "supported": "conclusion resting on evidence",
+                                        "inference": "inference"}[w["claim"]],
+        "rests_on": [_brief(e) for e in w["evidence"]],
+        "earlier_versions": [{"id": h["id"][:8], "was": h.get("text", "")[:240],
+                              "replaced": h["replaced_at"][:10], "why": h.get("reason") or "",
+                              "rested_on": [_brief(e) for e in h.get("evidence", [])]}
+                             for h in w["history"]],
+        "conflicts_with": [_brief(c) for c in w["conflicts"]],
+        "needs_review": w["concerns"],
+    }
+    if m.get("source_ref"):
+        out["cite"] = m["source_ref"]
+    if w.get("relevance"):
+        out["relevance"] = w["relevance"]
+    return json.dumps(out, indent=2)
+
+
+def link_memories(memory_id: str, relation: str, target_id: str, reason: str = "") -> str:
+    """Record how two memories relate: based_on (target is evidence for memory),
+    derived_from, contradicts, supersedes."""
+    _init()
+    rel = _relations()
+    if rel is None:
+        return _NEEDS_19
+    try:
+        out = rel.link_memories(_PALACE, memory_id, relation, target_id, reason=_sanitize(reason), by="amy")
+    except Exception as e:
+        return json.dumps({"linked": False, "error": str(e)})
+    return json.dumps({"linked": True, "already": not out["created"], "memory": out["memory"]["id"][:8],
+                       "relation": relation, "target": out["target"]["id"][:8]})
+
+
+def check_memory() -> str:
+    """What needs review: views resting on corrected or disputed evidence,
+    inferences with no evidence, unresolved conflicts. Changes nothing."""
+    _init()
+    rel = _relations()
+    if rel is None:
+        return _NEEDS_19
+    r = rel.check(_PALACE)
+    return json.dumps({
+        "ok": r["ok"],
+        "evidence_changed": [{"memory": _brief(i["memory"]), "evidence": _brief(i["evidence"])}
+                             for i in r["stale_support"]],
+        "no_evidence": [_brief(m) for m in r["unsupported_inferences"]],
+        "unresolved_conflicts": [{"a": _brief(c["a"]), "b": _brief(c["b"])} for c in r["unresolved_conflicts"]],
+        "broken_links": len(r["broken_links"]),
     }, indent=2)
 
 
@@ -404,7 +540,7 @@ def library_context(query: str, n: int = 3, max_chars: int = 550) -> str:
         first = drawer.content.split("\n", 1)[0] if drawer else ""
         cite = first[1:-1] if first.startswith("[") and first.endswith("]") else ""
         text = r["text"][len(first):].lstrip() if first and r["text"].startswith(first) else r["text"]
-        picked.append(f"[{cite or 'library'}]\n{text[:max_chars].strip()}")
+        picked.append(f"[{cite or 'library'} · id {r['id'][:8]}]\n{text[:max_chars].strip()}")
         if len(picked) >= n:
             break
     if not picked:
@@ -432,40 +568,65 @@ def _current_view(key: str):
     return None
 
 
-def record_view(topic: str, view: str, reason: str = "") -> str:
+def record_view(topic: str, view: str, reason: str = "", evidence=None) -> str:
     """Write down what Amy currently thinks about *topic*.
 
     If she already had a view on it, the new one replaces it (Engram keeps the
-    old one as history, with *reason*). Recording the same view again changes
-    nothing.
+    old one as history, with *reason* and the evidence it rested on).
+    Recording the same view again changes nothing, except to add evidence.
+
+    *evidence* lists IDs of the library passages or memories the view rests
+    on (Engram 1.9+). The view itself is saved as an inference, so it is never
+    mistaken for a source.
     """
     _init()
     lineage = _lineage()
+    rel = _relations()
     key = _topic_key(topic)
     if not key or not view.strip():
         return json.dumps({"recorded": False, "error": "a topic and a view are both needed"})
+    links = []
+    if rel is not None:
+        try:
+            links = rel.resolve_evidence(_PALACE, based_on=_id_list(evidence))
+        except Exception as e:  # checked before anything is saved
+            return json.dumps({"recorded": False, "error": str(e)})
     content = f"My view on {topic.strip()}: {_sanitize(view.strip())}"
     old = _current_view(key)
+
+    def done(out: dict, view_id: str) -> str:
+        if links:
+            rel.attach_evidence(_PALACE, view_id, links, by="amy")
+            out["evidence"] = [target[:8] for _, target in links]
+        elif rel is not None:
+            out["note"] = (out.get("note", "") + " No evidence linked: pass evidence=[ids of the "
+                           "library passages or memories this view rests on].").strip()
+        elif evidence:
+            out["note"] = "evidence links need Engram 1.9 or newer; the view was saved without them"
+        return json.dumps(out)
+
     if old is None:
         from engram.chateau import Drawer
         from engram.indexing import index_drawer
+        extra = {"source": "inference"} if rel is not None else {}
         drawer = Drawer(content=content, wing=_VIEW_WING, room=_VIEW_ROOM, hall=_VIEW_HALL,
-                        tags=["view", f"view:{key}"])
+                        tags=["view", f"view:{key}"], **extra)
         _PALACE.save_drawer(drawer)
         index_drawer(_SEARCHER.backend, drawer.id, drawer.content,
                      {"wing": _VIEW_WING, "room": _VIEW_ROOM, "hall": _VIEW_HALL,
                       "timestamp": drawer.timestamp, "pinned": False})
-        return json.dumps({"recorded": True, "changed": False, "id": drawer.id, "topic": key})
+        return done({"recorded": True, "changed": False, "id": drawer.id, "topic": key}, drawer.id)
     if old.content.split(": ", 1)[-1].strip() == _sanitize(view.strip()):
-        return json.dumps({"recorded": True, "changed": False, "id": old.id, "topic": key,
-                           "note": "same as your current view"})
+        return done({"recorded": True, "changed": False, "id": old.id, "topic": key,
+                     "note": "same as your current view."}, old.id)
     try:
+        extra = {"source": "inference"} if rel is not None else {}
         res = lineage.correct_memory(_PALACE, _SEARCHER.backend, old.id, content,
-                                     reason=_sanitize(reason), by="amy")
+                                     reason=_sanitize(reason), by="amy", **extra)
     except lineage.LineageError as e:
         return json.dumps({"recorded": False, "error": str(e)})
-    return json.dumps({"recorded": True, "changed": True, "id": res["new"]["id"], "topic": key,
-                       "previous_view": old.content, "since": old.timestamp[:10]})
+    return done({"recorded": True, "changed": True, "id": res["new"]["id"], "topic": key,
+                 "previous_view": old.content, "since": old.timestamp[:10]}, res["new"]["id"])
 
 
 def get_views(topic: str = "") -> str:
@@ -478,14 +639,24 @@ def get_views(topic: str = "") -> str:
             return json.dumps({"topic": _topic_key(topic), "view": None,
                                "note": "You haven't recorded a view on this yet."})
         h = lineage.memory_history(_PALACE, current.id)
-        return json.dumps({
-            "topic": _topic_key(topic), "view": current.content, "since": current.timestamp[:10],
+        out = {
+            "topic": _topic_key(topic), "id": current.id[:8], "view": current.content,
+            "since": current.timestamp[:10],
             "how_it_changed": [{"on": s["at"][:10], "was": s.get("old_text"), "became": s.get("new_text"),
                                 "why": s.get("reason", "")} for s in h["history"]],
-        }, indent=2)
+        }
+        rel = _relations()
+        if rel is not None:
+            w = rel.explain(_PALACE, current.id, depth=1)
+            out["rests_on"] = [_brief(e) for e in w["evidence"]]
+            out["earlier_views_rested_on"] = {v["id"][:8]: [_brief(e) for e in v.get("evidence", [])]
+                                              for v in w["history"] if v.get("evidence")}
+            if w["concerns"]:
+                out["needs_review"] = w["concerns"]
+        return json.dumps(out, indent=2)
     led = lineage.Lineage(_PALACE.path)
     views = [{"topic": next((t[5:] for t in d.tags if t.startswith("view:")), ""),
-              "view": d.content, "since": d.timestamp[:10]}
+              "id": d.id[:8], "view": d.content, "since": d.timestamp[:10]}
              for d in _PALACE.iter_drawers(wing=_VIEW_WING, room=_VIEW_ROOM)
              if "view" in d.tags and led.status(d.id)["status"] != "superseded"]
     return json.dumps(sorted(views, key=lambda v: v["topic"]), indent=2)
