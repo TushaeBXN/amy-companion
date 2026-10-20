@@ -446,6 +446,18 @@ def self_edit(
     }
 
 
+def _first_line(text: str, limit: int) -> str:
+    """The first non-blank line of *text*, cut to *limit* characters ('' when there is none).
+
+    A docstring can be empty, or only blank lines; taking ``splitlines()[0]`` of it raised
+    IndexError and ended Amy's code review (self_improve read_codebase, daily_self_audit).
+    """
+    for line in (text or "").splitlines():
+        if line.strip():
+            return line.strip()[:limit]
+    return ""
+
+
 def read_codebase(focus: str = "") -> str:
     """Return a structured map of every .py file in the project.
 
@@ -471,7 +483,7 @@ def read_codebase(focus: str = "") -> str:
         top_doc = ""
         if (tree.body and isinstance(tree.body[0], ast.Expr)
                 and isinstance(tree.body[0].value, ast.Constant)):
-            top_doc = str(tree.body[0].value.value).strip().splitlines()[0][:100]
+            top_doc = _first_line(str(tree.body[0].value.value), 100)
         lines.append(f"## {fname}  ({size_kb:.1f} KB)")
         if top_doc:
             lines.append(f"   {top_doc}")
@@ -480,11 +492,11 @@ def read_codebase(focus: str = "") -> str:
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 if not node.name.startswith("_"):
-                    doc = (ast.get_docstring(node) or "").splitlines()[0][:80]
+                    doc = _first_line(ast.get_docstring(node) or "", 80)
                     symbols.append(f"  fn  {node.name}()" + (f" — {doc}" if doc else ""))
             elif isinstance(node, ast.ClassDef):
                 if not node.name.startswith("_"):
-                    doc = (ast.get_docstring(node) or "").splitlines()[0][:80]
+                    doc = _first_line(ast.get_docstring(node) or "", 80)
                     symbols.append(f"  cls {node.name}" + (f" — {doc}" if doc else ""))
                     for item in node.body:
                         if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
