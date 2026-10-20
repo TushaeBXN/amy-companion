@@ -39,9 +39,9 @@ def amy(tmp_path, monkeypatch):
     monkeypatch.setattr(eb, "_init", lambda: None)
     monkeypatch.setattr(eb, "_PALACE", palace)
     monkeypatch.setattr(eb, "_SEARCHER", Searcher(backend, palace, {"hybrid_weight": 0.3}))
-    library.store([{"id": "lib-amend14-s1", "room": "constitution", "cite": "Amendment XIV, Section 1",
+    library.store([{"id": "lib-e28dfd982a25d6c5c3a7", "room": "constitution", "cite": "Amendment XIV, Section 1",
                     "content": TEXT}], "test", palace, backend)
-    library.store([{"id": "lib-conan-ep-intent", "room": "conan", "cite": "Equal Protection: Intent Requirement",
+    library.store([{"id": "lib-e28d0a1b2c3d4e5f6a7b", "room": "conan", "cite": "Equal Protection: Intent Requirement",
                     "content": CONAN}], "test", palace, backend, kind="secondary")
     return eb
 
@@ -50,19 +50,29 @@ def test_view_keeps_text_explanation_and_interpretation_apart(amy):
     rec = json.loads(amy.record_view(
         "equal protection and voting maps",
         "A map that dilutes minority votes should be unconstitutional even without proof of intent.",
-        evidence=["lib-amend14-s1", "lib-conan-ep"]))
-    assert rec["recorded"] and rec["evidence"] == ["lib-amen", "lib-cona"]
+        evidence=["lib-e28dfd98", "lib-e28d0a1b"]))   # the short IDs Amy is shown
+    assert rec["recorded"] and rec["evidence"] == ["lib-e28dfd98", "lib-e28d0a1b"]
 
     why = json.loads(amy.explain_memory(rec["id"], query="does equal protection require intent?"))
     assert why["source"] == "inference" and why["kind"] == "inference"
     sources = {e["id"]: (e["source"], e.get("cite")) for e in why["rests_on"]}
-    assert sources == {"lib-amen": ("primary", "Amendment XIV, Section 1"),
-                       "lib-cona": ("secondary", "Equal Protection: Intent Requirement")}
-    assert "Washington v. Davis" in next(e["text"] for e in why["rests_on"] if e["id"] == "lib-cona")
+    assert sources == {"lib-e28dfd98": ("primary", "Amendment XIV, Section 1"),
+                       "lib-e28d0a1b": ("secondary", "Equal Protection: Intent Requirement")}
+    assert "Washington v. Davis" in next(e["text"] for e in why["rests_on"] if e["id"] == "lib-e28d0a1b")
     assert why["needs_review"] == [] and why["relevance"]["rank"] >= 1
 
     view = json.loads(amy.get_views("equal protection and voting maps"))
-    assert {e["id"] for e in view["rests_on"]} == {"lib-amen", "lib-cona"}
+    assert {e["id"] for e in view["rests_on"]} == {"lib-e28dfd98", "lib-e28d0a1b"}
+
+
+def test_shown_library_ids_are_enough_to_find_the_passage_again(amy):
+    # Library IDs are "lib-" + a hash. Cut to 8 characters, two passages can look the same ("lib-e28d").
+    ambiguous = json.loads(amy.record_view("taxes", "Flat taxes are regressive.", evidence=["lib-e28d"]))
+    assert not ambiguous["recorded"] and "matches 2 memories" in ambiguous["error"]
+    shown = amy.library_context("equal protection of the laws, due process")
+    assert "· id lib-e28dfd98]" in shown or "· id lib-e28d0a1b]" in shown
+    ok = json.loads(amy.record_view("taxes", "Flat taxes are regressive.", evidence=["lib-e28dfd98"]))
+    assert ok["recorded"] and ok["evidence"] == ["lib-e28dfd98"]
 
 
 def test_corrected_evidence_is_flagged_and_revision_keeps_the_old_trail(amy):
@@ -99,13 +109,13 @@ def test_view_without_evidence_gets_a_nudge_and_links_can_be_added(amy):
     rec = json.loads(amy.record_view("judicial review", "Marbury settled it, but its reach is debated."))
     assert "No evidence linked" in rec["note"]
     assert json.loads(amy.check_memory())["no_evidence"][0]["id"] == rec["id"][:8]  # an inference, nothing behind it
-    linked = json.loads(amy.link_memories(rec["id"], "based_on", "lib-amend14-s1", reason="test"))
+    linked = json.loads(amy.link_memories(rec["id"], "based_on", "lib-e28dfd982a25d6c5c3a7", reason="test"))
     assert linked["linked"] and json.loads(amy.check_memory())["ok"]
 
 
 def test_library_context_shows_ids_amy_can_cite(amy):
     ctx = amy.library_context("equal protection of the laws, due process")
-    assert "· id lib-amen]" in ctx
+    assert "· id lib-e28dfd98]" in ctx
 
 
 def test_tool_actions_reach_the_bridge(monkeypatch):

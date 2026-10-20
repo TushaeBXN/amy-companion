@@ -35,6 +35,20 @@ _SECRET_RE = re.compile(
 )
 
 
+def _sid(memory_id: str) -> str:
+    """The part of an ID to show: enough to look the memory up again.
+
+    Library passages have IDs like "lib-<20 hex>", so 8 characters would keep
+    only 4 hex digits and collide across a few hundred passages; Engram's own
+    short form keeps the prefix plus 8 characters.
+    """
+    try:
+        from engram.lineage import short_id
+        return short_id(memory_id)
+    except ImportError:  # Engram older than 1.6
+        return memory_id[:8]
+
+
 def _sanitize(text: str) -> str:
     """Replace anything that looks like a secret with [REDACTED]."""
     return _SECRET_RE.sub("[REDACTED]", text)
@@ -156,7 +170,7 @@ def add_memory(
     out = {"stored": True, "id": drawer.id, "wing": wing, "room": room, "hall": hall}
     if links:
         rel.attach_evidence(_PALACE, drawer.id, links, by="amy")
-        out["evidence"] = [target[:8] for _, target in links]
+        out["evidence"] = [_sid(target) for _, target in links]
     try:
         from engram.lineage import possible_updates
     except ImportError:
@@ -209,7 +223,7 @@ def search(query: str, n: int = 8, wing: Optional[str] = None) -> str:
                 item["replaced_on"] = r["replaced_at"][:10]
             if r.get("reason"):
                 item["why"] = r["reason"]
-            text = f"[OUTDATED, replaced by {current[:8]}; do not use as current fact] {text}"
+            text = f"[OUTDATED, replaced by {_sid(current)}; do not use as current fact] {text}"
         elif status == "disputed":
             item["status"] = "DISPUTED"
             item["disputed_with"] = r.get("disputed_with", [])
@@ -301,7 +315,7 @@ _NEEDS_19 = json.dumps({"error": "evidence and explanations need Engram 1.9 or n
 
 
 def _brief(item: dict) -> dict:
-    out = {"id": item["id"][:8]}
+    out = {"id": _sid(item["id"])}
     if item.get("missing"):
         return {**out, "missing": True}
     text = item.get("text", "")
@@ -316,7 +330,7 @@ def _brief(item: dict) -> dict:
     if item.get("source_ref"):
         out["cite"] = item["source_ref"]
     if item.get("status") == "superseded":
-        out["status"] = f"OUTDATED, replaced by {item.get('current_id', '')[:8]}"
+        out["status"] = f"OUTDATED, replaced by {_sid(item.get('current_id', ''))}"
     elif item.get("status") == "disputed":
         out["status"] = "DISPUTED"
     if item.get("relation"):
@@ -341,11 +355,11 @@ def explain_memory(memory_id: str, query: str = "") -> str:
         return json.dumps({"error": str(e)})
     m = w["memory"]
     out = {
-        "id": m["id"][:8], "text": m["text"][:600], "saved": m["timestamp"][:10],
+        "id": _sid(m["id"]), "text": m["text"][:600], "saved": m["timestamp"][:10],
         "source": w["source"], "kind": {"direct": "recorded as given", "supported": "conclusion resting on evidence",
                                         "inference": "inference"}[w["claim"]],
         "rests_on": [_brief(e) for e in w["evidence"]],
-        "earlier_versions": [{"id": h["id"][:8], "was": h.get("text", "")[:240],
+        "earlier_versions": [{"id": _sid(h["id"]), "was": h.get("text", "")[:240],
                               "replaced": h["replaced_at"][:10], "why": h.get("reason") or "",
                               "rested_on": [_brief(e) for e in h.get("evidence", [])]}
                              for h in w["history"]],
@@ -370,8 +384,8 @@ def link_memories(memory_id: str, relation: str, target_id: str, reason: str = "
         out = rel.link_memories(_PALACE, memory_id, relation, target_id, reason=_sanitize(reason), by="amy")
     except Exception as e:
         return json.dumps({"linked": False, "error": str(e)})
-    return json.dumps({"linked": True, "already": not out["created"], "memory": out["memory"]["id"][:8],
-                       "relation": relation, "target": out["target"]["id"][:8]})
+    return json.dumps({"linked": True, "already": not out["created"], "memory": _sid(out["memory"]["id"]),
+                       "relation": relation, "target": _sid(out["target"]["id"])})
 
 
 def check_memory() -> str:
@@ -540,7 +554,7 @@ def library_context(query: str, n: int = 3, max_chars: int = 550) -> str:
         first = drawer.content.split("\n", 1)[0] if drawer else ""
         cite = first[1:-1] if first.startswith("[") and first.endswith("]") else ""
         text = r["text"][len(first):].lstrip() if first and r["text"].startswith(first) else r["text"]
-        picked.append(f"[{cite or 'library'} · id {r['id'][:8]}]\n{text[:max_chars].strip()}")
+        picked.append(f"[{cite or 'library'} · id {_sid(r['id'])}]\n{text[:max_chars].strip()}")
         if len(picked) >= n:
             break
     if not picked:
@@ -597,7 +611,7 @@ def record_view(topic: str, view: str, reason: str = "", evidence=None) -> str:
     def done(out: dict, view_id: str) -> str:
         if links:
             rel.attach_evidence(_PALACE, view_id, links, by="amy")
-            out["evidence"] = [target[:8] for _, target in links]
+            out["evidence"] = [_sid(target) for _, target in links]
         elif rel is not None:
             out["note"] = (out.get("note", "") + " No evidence linked: pass evidence=[ids of the "
                            "library passages or memories this view rests on].").strip()
@@ -640,7 +654,7 @@ def get_views(topic: str = "") -> str:
                                "note": "You haven't recorded a view on this yet."})
         h = lineage.memory_history(_PALACE, current.id)
         out = {
-            "topic": _topic_key(topic), "id": current.id[:8], "view": current.content,
+            "topic": _topic_key(topic), "id": _sid(current.id), "view": current.content,
             "since": current.timestamp[:10],
             "how_it_changed": [{"on": s["at"][:10], "was": s.get("old_text"), "became": s.get("new_text"),
                                 "why": s.get("reason", "")} for s in h["history"]],
@@ -649,14 +663,14 @@ def get_views(topic: str = "") -> str:
         if rel is not None:
             w = rel.explain(_PALACE, current.id, depth=1)
             out["rests_on"] = [_brief(e) for e in w["evidence"]]
-            out["earlier_views_rested_on"] = {v["id"][:8]: [_brief(e) for e in v.get("evidence", [])]
+            out["earlier_views_rested_on"] = {_sid(v["id"]): [_brief(e) for e in v.get("evidence", [])]
                                               for v in w["history"] if v.get("evidence")}
             if w["concerns"]:
                 out["needs_review"] = w["concerns"]
         return json.dumps(out, indent=2)
     led = lineage.Lineage(_PALACE.path)
     views = [{"topic": next((t[5:] for t in d.tags if t.startswith("view:")), ""),
-              "id": d.id[:8], "view": d.content, "since": d.timestamp[:10]}
+              "id": _sid(d.id), "view": d.content, "since": d.timestamp[:10]}
              for d in _PALACE.iter_drawers(wing=_VIEW_WING, room=_VIEW_ROOM)
              if "view" in d.tags and led.status(d.id)["status"] != "superseded"]
     return json.dumps(sorted(views, key=lambda v: v["topic"]), indent=2)
