@@ -541,6 +541,27 @@ def library_has(fragment: str) -> bool:
     return False
 
 
+_FOLLOW_UP = re.compile(
+    r"\b(you (just )?(said|wrote|claimed)|your (answer|claim|view|last)|that (sounds|claim|answer|passage)|"
+    r"supports? (that|this|it|what)|which (exact )?(passage|source|case|part)|what (about )?(that|this|it)\b|"
+    r"back (that|it) up|prove (that|it)|are you sure|where (does|did) (that|it) come from)", re.I)
+
+
+def follow_up_query(message: str, prior: str = "") -> str:
+    """What to search the library for: *message*, plus her last answer when it only makes sense with it.
+
+    "Which exact passage supports what you just said?" names no topic, so searching for those words alone
+    returns whatever happens to match them. A short message, or one that points back at her last answer,
+    is searched together with the tail of that answer.
+    """
+    prior = " ".join((prior or "").split())
+    if not prior or not message:
+        return message
+    if len(message) < 120 or _FOLLOW_UP.search(message):
+        return f"{prior[-600:]} {message}"
+    return message
+
+
 def library_context(query: str, n: int = 3, max_chars: int = 550) -> str:
     """Relevant library passages for *query*, ready to put in Amy's context ('' if none).
 
