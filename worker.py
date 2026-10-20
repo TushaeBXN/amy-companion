@@ -449,14 +449,25 @@ def ollama_chat(_priority: str = "worker", **kw):
     def _call():
         return ollama.chat(**kw)
 
-    try:
-        fut = executor.submit(_call)
+    def _attempt(exec_):
+        fut = exec_.submit(_call)
         try:
-            result = fut.result(timeout=timeout)
+            return fut.result(timeout=timeout)
         except _FutureTimeout:
             fut.cancel()
             raise TimeoutError(f"ollama.chat timed out after {timeout}s")
-        return result
+
+    try:
+        try:
+            return _attempt(executor)
+        except TimeoutError:
+            if _priority != "worker":
+                raise
+            # Worker timed out — model may have been evicted mid-run; retry once.
+            print("  [ollama] worker timeout — retrying once", flush=True)
+            if _chat_pending.is_set():
+                raise RuntimeError("skipped: chat message pending")
+            return _attempt(executor)
     except ollama.ResponseError as e:
         if "Compute error" not in str(e):
             raise
@@ -466,8 +477,7 @@ def ollama_chat(_priority: str = "worker", **kw):
         except Exception:
             pass
         time.sleep(2)
-        fut = executor.submit(_call)
-        return fut.result(timeout=timeout)
+        return _attempt(executor)
     finally:
         if _priority == "chat":
             _chat_pending.clear()
