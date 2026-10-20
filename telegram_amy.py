@@ -640,6 +640,18 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
         msg = dict(_msg_to_dict(msg), content=saved_note + msg["content"])
 
     _reply_text = (msg.get("content") or "") if msg else ""
+    if _reply_text:
+        try:  # a quotation she can't find word for word in what she was given is flagged, not trusted
+            import engram_bridge as _eb
+            import quote_check as _qc
+            _seen_text = "\n".join(str((_msg_to_dict(m) if not isinstance(m, dict) else m).get("content") or "")
+                                   for m in messages)
+            _bad = _qc.unverified(_reply_text, _seen_text, library_has=_eb.library_has)
+            if _bad:
+                _log(f"  [quotes] {len(_bad)} quotation(s) not found in her sources or library")
+                _reply_text += _qc.footnote(_bad)
+        except Exception as _qe:
+            _log(f"  [quotes] check skipped: {type(_qe).__name__}: {_qe}")
     _outcome = "ok" if _reply_text else "no_content"
 
     # Always log — captures tool-error and no-content turns too.
