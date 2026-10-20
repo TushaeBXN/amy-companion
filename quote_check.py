@@ -22,6 +22,22 @@ _EDIT = re.compile(r"\w*\[[^\]]*\]\w*")          # th[e], [sic], [the Court] : a
 _SPLIT = re.compile(r"\.{3}|…|\s\.\s\.\s\.")
 
 
+def sources_text(messages: list) -> str:
+    """The text a reply may legitimately quote: everything she was given, never her own earlier words.
+
+    That is the system prompt, Brian's messages (with the memory and library blocks attached to
+    them) and tool results. Her own earlier replies are left out: if she invented a case name or a
+    quotation last turn, repeating it must not count as having a source.
+    """
+    parts = []
+    for m in messages:
+        data = m if isinstance(m, dict) else (m.model_dump() if hasattr(m, "model_dump") else dict(m))
+        if data.get("role") == "assistant":
+            continue
+        parts.append(str(data.get("content") or ""))
+    return "\n".join(parts)
+
+
 def quoted_passages(reply: str) -> list[str]:
     """Quotations in *reply*: text in quotation marks, and lines starting with '>'."""
     found = [m.group(1) for m in _QUOTED.finditer(reply)]
