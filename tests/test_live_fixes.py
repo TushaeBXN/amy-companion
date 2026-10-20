@@ -95,3 +95,33 @@ def test_conversation_logs_in_the_default_wing_are_not_recalled_as_memories(amy)
     note = amy.memory_context("Where should I go for a bakery treat tomorrow?")
     assert "Rosewater" in note and "Working on the plan" not in note
     assert amy.MEMORY_CONTEXT_SKIP_WINGS == ("library", "default")
+
+
+# ── a follow-up like "which passage supports that?" must search with her last answer ──
+
+def test_follow_up_questions_are_searched_together_with_her_last_answer():
+    prior = "Unequal effects alone do not violate equal protection; the challenger must prove discriminatory purpose."
+    q = "That sounds very confident. Which exact passage supports what you just said? Quote it."
+    assert eb.follow_up_query(q, prior).endswith(q) and "discriminatory purpose" in eb.follow_up_query(q, prior)
+    assert eb.follow_up_query("ok", prior) == prior + " ok"                                # a short message
+    long_new_topic = "Now tell me about the history of the Electoral College and how its rules changed over time " \
+                     "since the founding, including the Twelfth Amendment and later reforms in detail please."
+    assert eb.follow_up_query(long_new_topic, prior) == long_new_topic                  # a new topic is left alone
+    assert eb.follow_up_query(q, "") == q and eb.follow_up_query("", prior) == ""
+
+
+def test_the_challenge_question_finds_the_passage_it_is_about(amy):
+    import library
+    from engram.indexing import index_drawers  # noqa: F401  (library.store indexes)
+    library.store([
+        {"id": "lib-davis", "room": "conan", "cite": "Facially Neutral Laws Implicating Suspect Classifications",
+         "content": "[Facially Neutral Laws]\nUnder Washington v. Davis the Court held that a challenger claiming harm from the "
+                    "disparate impact of a race-neutral law must prove the government's intent, a discriminatory purpose."},
+        {"id": "lib-chapman", "room": "conan", "cite": "Equality Standard and Vote Dilution",
+         "content": "[Vote Dilution]\nA population deviation of twenty percent cannot be permissible without significant "
+                    "state policies, the Court said in Chapman v. Meier about legislative districts."},
+    ], "test", amy._PALACE, amy._SEARCHER.backend)
+    prior = "Unequal effects without discriminatory purpose or intent do not violate equal protection."
+    q = "Which exact passage supports what you just said?"
+    top = json.loads(amy.library_search(amy.follow_up_query(q, prior), n=1))[0]
+    assert top["cite"].startswith("Facially Neutral Laws") and "Washington v. Davis" in top["text"]
