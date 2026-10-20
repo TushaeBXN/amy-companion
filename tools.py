@@ -858,8 +858,10 @@ _BASE_TOOLS = [
                 "For history, government, economics or law, use action=library to quote primary "
                 "sources (Constitution, Federalist Papers, …) with their citation instead of "
                 "paraphrasing. Use view_record to write down what you think about a big question, "
-                "and again when your view changes (say why); view_get shows your views and how "
-                "they changed."
+                "with evidence = the ids of the library passages or memories it rests on, and again "
+                "when your view changes (say why); view_get shows your views, what they rest on and "
+                "how they changed. When challenged on a view or claim, use why with its id: it shows "
+                "the evidence, whether that evidence was since corrected, and what is your inference."
             ),
             "parameters": {
                 "type": "object",
@@ -867,14 +869,18 @@ _BASE_TOOLS = [
                     "action": {
                         "type": "string",
                         "enum": ["add", "search", "correct", "history", "library", "view_record",
-                                 "view_get", "diary_write", "diary_read", "kg_add", "kg_query", "wake_up"],
+                                 "view_get", "why", "link", "check", "diary_write", "diary_read",
+                                 "kg_add", "kg_query", "wake_up"],
                         "description": (
                             "add=store a memory; search=semantic search; "
                             "correct=replace an outdated memory (memory_id + content, optional reason); "
                             "history=show what replaced a memory, when and why (memory_id); "
                             "library=search primary sources, with citations (query); "
                             "view_record=record your current view on a topic (topic + content, optional reason); "
-                            "view_get=your view on a topic and how it changed (topic), or all your views; "
+                            "view_get=your view on a topic, its evidence and how it changed (topic), or all your views; "
+                            "why=explain a memory or view: source, evidence, what changed, what needs review (memory_id, optional query); "
+                            "link=record that memory_id relation target_id (based_on: target is evidence; derived_from; contradicts; supersedes); "
+                            "check=list views whose evidence was corrected, inferences without evidence, open conflicts; "
                             "diary_write=log a session entry (prevents drift); "
                             "diary_read=read recent entries; "
                             "kg_add=add a fact triple; kg_query=lookup an entity; "
@@ -885,6 +891,14 @@ _BASE_TOOLS = [
                     "memory_id": {"type": "string", "description": "ID of a memory from a search result (for correct/history)."},
                     "reason": {"type": "string", "description": "Why the memory or view changed (for correct/view_record)."},
                     "topic": {"type": "string", "description": "Short topic name, e.g. 'electoral college' (for view_record/view_get)."},
+                    "evidence": {"type": "array", "items": {"type": "string"},
+                                 "description": "IDs of library passages or memories this rests on (for view_record/add)."},
+                    "relation": {"type": "string", "enum": ["based_on", "derived_from", "contradicts", "supersedes"],
+                                 "description": "How memory_id relates to target_id (for link)."},
+                    "target_id": {"type": "string", "description": "The other memory's id (for link)."},
+                    "source": {"type": "string", "enum": ["user", "primary", "secondary", "tool", "inference"],
+                               "description": "Where it came from (for add): user=Brian said it, primary=original document or data, secondary=reporting or analysis, tool=search result, inference=your own conclusion."},
+                    "source_ref": {"type": "string", "description": "Citation or URL (for add)."},
                     "query": {"type": "string", "description": "Search query (for search)."},
                     "wing": {"type": "string", "description": "Memory wing (default: amy). Use 'brian', 'income', etc. for cross-model knowledge."},
                     "room": {"type": "string", "description": "Topic room within the wing (e.g. 'hardware', 'income', 'relationships')."},
@@ -2482,6 +2496,9 @@ def dispatch(name, args, memory=None):
                     room=args.get("room", "general"),
                     hall=args.get("hall", "facts"),
                     pinned=bool(args.get("pinned", False)),
+                    source=args.get("source", ""),
+                    source_ref=args.get("source_ref", ""),
+                    evidence=args.get("evidence"),
                 )
             if action == "search":
                 return _eb.search(
@@ -2501,9 +2518,16 @@ def dispatch(name, args, memory=None):
                 return _eb.library_search(args.get("query", ""), n=int(args.get("n", 4)))
             if action == "view_record":
                 return _eb.record_view(args.get("topic", ""), args.get("content", ""),
-                                       reason=args.get("reason", ""))
+                                       reason=args.get("reason", ""), evidence=args.get("evidence"))
             if action == "view_get":
                 return _eb.get_views(args.get("topic", ""))
+            if action == "why":
+                return _eb.explain_memory(args.get("memory_id", ""), query=args.get("query", ""))
+            if action == "link":
+                return _eb.link_memories(args.get("memory_id", ""), args.get("relation", ""),
+                                         args.get("target_id", ""), reason=args.get("reason", ""))
+            if action == "check":
+                return _eb.check_memory()
             if action == "diary_write":
                 return _eb.diary_write(args.get("content", ""))
             if action == "diary_read":

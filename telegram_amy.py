@@ -7,7 +7,7 @@ _here = os.path.dirname(__file__)
 load_dotenv(os.path.join(_here, ".env"))
 load_dotenv(os.path.join(_here, ".env.amy"), override=True)
 
-import json, re, tempfile, time, ollama
+import json, re, tempfile, time, traceback as _traceback, ollama
 import event_log as _el
 from datetime import datetime as _dt, timezone as _tz, date as _date
 try:
@@ -157,6 +157,9 @@ def _load_history(path: str = HISTORY_FILE) -> list:
     return []
 
 
+from history_io import json_default as _json_default  # noqa: E402
+
+
 def _msg_to_dict(msg) -> dict:
     """Convert an Ollama Message (Pydantic) or plain dict to a serialisable dict."""
     if hasattr(msg, "model_dump"):
@@ -177,11 +180,17 @@ def _save_history(history: list, path: str = HISTORY_FILE):
         clean = {k: v for k, v in d.items() if k != "images"}
         if clean.get("role") in ("user", "assistant", "tool"):
             trimmed.append(clean)
-    try:
-        with open(path, "w") as f:
-            json.dump(trimmed, f)
+    tmp = f"{path}.tmp"
+    try:  # write beside it and swap in, so a failed save can never leave a half-written history
+        with open(tmp, "w") as f:
+            json.dump(trimmed, f, default=_json_default)
+        os.replace(tmp, path)
     except Exception as e:
         print(f"  [telegram] could not save history: {e}")
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 
 _histories: dict = {}
@@ -303,6 +312,14 @@ def _turn_context(history_len: int, person: dict, message: str) -> str:
     s += "[Internal state]\n" + amy_state.state_summary()
     if person["role"] != "owner":
         return s
+    try:  # what Brian's saved memories say about this message (silent when nothing clearly matches)
+        import engram_bridge as _eb
+        _note = _eb.memory_context(message)
+        if _note:  # visible in the terminal, so you can tell memory from chat history
+            _log(f"  [memory] added {_note.count(chr(10) + '- ')} saved memory note(s) to this message")
+        s += _note
+    except Exception:
+        pass
     # Playbooks and SQLite memory reconstruction are designed for the full CORE_PROMPT model.
     # For compact-system models (everything except legacy gemma12-test) they cause the model
     # to echo playbook headers ("**My playful response:**") and inject old bad exchanges.
@@ -564,7 +581,12 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
                 if key in seen:
                     result = f"[Already called {name} this turn — use the result above. Do not call it again.]"
                 else:
-                    result = tools.dispatch(name, args, mem)
+                    try:
+                        result = tools.dispatch(name, args, mem)
+                    except Exception as _te:
+                        # One failing tool must not end the whole turn: tell her, and she can carry on.
+                        _log(f"  (tool {name} failed: {type(_te).__name__}: {_te})\n{_traceback.format_exc()}")
+                        result = f"[tool_error] {name}: {type(_te).__name__}: {_te}"
                     seen[key] = result
             _logged_tool_calls.append({
                 "name": name,
@@ -840,7 +862,7 @@ async def _respond(update: Update, person: dict, text: str, image_bytes):
         reply = await loop.run_in_executor(None, _chat, text, image_bytes, person, progress)
     except Exception as e:
         typing.cancel()
-        _log(f"✗ {who}: Amy failed after {time.time()-t0:.0f}s — {type(e).__name__}: {e}")
+        _log(f"✗ {who}: Amy failed after {time.time()-t0:.0f}s — {type(e).__name__}: {e}\n{_traceback.format_exc()}")
         await update.message.reply_text("Sorry — something went wrong on my end. Try again in a minute?")
         return
     typing.cancel()

@@ -225,7 +225,8 @@ def test_tool_actions(monkeypatch):
 
     calls = []
     monkeypatch.setattr(eb, "library_search", lambda q, n=4: calls.append(("library", q, n)) or "ok")
-    monkeypatch.setattr(eb, "record_view", lambda t, c, reason="": calls.append(("view_record", t, c, reason)) or "ok")
+    monkeypatch.setattr(eb, "record_view", lambda t, c, reason="", evidence=None:
+                        calls.append(("view_record", t, c, reason)) or "ok")
     monkeypatch.setattr(eb, "get_views", lambda t="": calls.append(("view_get", t)) or "ok")
     tools.dispatch("engram_memory", {"action": "library", "query": "checks and balances"})
     tools.dispatch("engram_memory", {"action": "view_record", "topic": "t", "content": "v", "reason": "r"})
@@ -481,7 +482,7 @@ def test_library_context_puts_matching_passages_in_front_of_amy(amy):
     _load_federalist(amy)
     ctx = amy.library_context("What did the founders say about factions?")
     assert ctx.startswith("\n\n[From your library: exact text.")
-    assert "[Federalist No. 10 · Hamilton, Madison and Jay · 1787–88]" in ctx
+    assert "[Federalist No. 10 · Hamilton, Madison and Jay · 1787–88 · id " in ctx  # id: citable as evidence
     assert "violence of faction" in ctx
 
 
