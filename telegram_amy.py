@@ -651,8 +651,7 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
         try:  # a quotation she can't find word for word in what she was given is flagged, not trusted
             import engram_bridge as _eb
             import quote_check as _qc
-            _seen_text = "\n".join(str((_msg_to_dict(m) if not isinstance(m, dict) else m).get("content") or "")
-                                   for m in messages)
+            _seen_text = _qc.sources_text(messages)      # never her own earlier replies
             _bad = _qc.unverified(_reply_text, _seen_text, library_has=_eb.library_has)
             _cases = _qc.unsourced_cases(_reply_text, _seen_text, library_has=_eb.library_has)
             _weak = (_qc.unsupported_citations(_reply_text, _prior, _eb.library_ids)

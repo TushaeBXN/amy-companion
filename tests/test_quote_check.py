@@ -115,3 +115,26 @@ def test_notes_cover_all_three_kinds_and_stay_empty_when_all_is_well():
     assert qc.notes([], [], []) == ""
     text = qc.notes([], ["Louisiana v. Callais"], ["lib-2f8867ec"])
     assert "Louisiana v. Callais" in text and "lib-2f8867ec" in text and "may not support" in text
+
+
+def test_her_own_earlier_replies_are_never_a_source():
+    earlier_invention = ('The Court said Section 2 now reaches "intentional discrimination in districting rather than '
+                         'discriminatory effects" in Louisiana v. Callais.')
+    history = [
+        {"role": "system", "content": "You are Amy."},
+        {"role": "user", "content": "[Message from Brian]\nDoes effect alone violate equal protection?"},
+        {"role": "assistant", "content": earlier_invention},                       # her own words
+        {"role": "tool", "content": "A search result about Washington v. Davis and intent."},
+    ]
+    sources = qc.sources_text(history)
+    assert "Callais" not in sources and "Washington v. Davis" in sources and "equal protection" in sources
+    # so repeating the invention is flagged, instead of being "found" in her own history
+    assert qc.unverified(earlier_invention, sources) == ['intentional discrimination in districting rather than discriminatory effects']
+    assert qc.unsourced_cases(earlier_invention, sources) == ["Louisiana v. Callais"]
+    # while a real quote from a tool result or from Brian still passes
+    assert qc.unverified('He wrote "Washington v. Davis and intent matter here for sure".', "x Washington v. Davis and intent matter here for sure x") == []
+    # objects with model_dump (Ollama messages) are handled too
+    class Msg:
+        def model_dump(self):
+            return {"role": "assistant", "content": "secret invention"}
+    assert "secret invention" not in qc.sources_text([Msg(), {"role": "user", "content": "hi"}])
