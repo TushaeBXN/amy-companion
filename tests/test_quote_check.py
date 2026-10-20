@@ -1,0 +1,82 @@
+"""Quotations Amy can't back up get flagged (quote_check.py). No Engram or model needed."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+import quote_check as qc  # noqa: E402
+
+FOURTEENTH = ("No State shall make or enforce any law which shall abridge the privileges or immunities of "
+              "citizens of the United States; nor shall any State deprive any person of life, liberty, or "
+              "property, without due process of law; nor deny to any person within its jurisdiction the equal "
+              "protection of the laws.")
+FIFTH_REAL = ("No person shall be held to answer for a capital, or otherwise infamous crime, unless on a "
+              "presentment or indictment of a grand jury; nor be deprived of life, liberty, or property, "
+              "without due process of law; nor shall private property be taken for public use, without just compensation.")
+DAVIS = ("In Washington v. Davis, the Court held that someone claiming harm from the disparate or "
+         "disproportionate racial impact of a race-neutral law or policy must prove the government's intent to discriminate.")
+SOURCES = f"[Amendment XIV, Section 1]\n{FOURTEENTH}\n\n[Facially Neutral Laws]\n{DAVIS}"
+
+
+def test_a_real_quotation_with_edits_and_ellipses_passes():
+    reply = ('The text says: "nor shall any State deprive any person of life, liberty, or property, without due '
+             'process of law; nor deny to any person within its jurisdiction th[e] equal protection of the laws."')
+    assert qc.unverified(reply, SOURCES) == []
+    reply = '> "No State shall make or enforce any law ... nor deny to any person within its jurisdiction the equal protection of the laws."'
+    assert qc.unverified(reply, SOURCES) == []
+
+
+def test_curly_quotes_italics_and_attribution_lines_are_handled():
+    reply = (f"> “In *Washington v. Davis*, the Court held that someone claiming harm from the disparate or "
+             f"disproportionate racial impact of a race-neutral law or policy must prove the government’s intent to discriminate.”\n"
+             f"> — *Constitution Annotated*")
+    assert qc.unverified(reply, SOURCES) == []
+
+
+def test_a_made_up_quotation_is_flagged():
+    fake = ("...or shall not make nor permit any man or woman to be deprived of life, liberty, or property, "
+            "without due process of law; nor deny to any person in the United States equally protected rights, under the laws...")
+    reply = f'The Fifth Amendment says: "{fake}" and the Fourteenth says "{FOURTEENTH}"'
+    missing = qc.unverified(reply, SOURCES)
+    assert len(missing) == 1 and "equally protected rights" in missing[0]
+    note = qc.footnote(missing)
+    assert note.startswith("\n\n⚠️") and "shall not make nor permit" in note and "unconfirmed" in note
+
+
+def test_the_library_is_asked_about_what_the_turn_did_not_contain():
+    reply = f'The Fifth Amendment says "{FIFTH_REAL}"'
+    assert len(qc.unverified(reply, SOURCES)) == 1                       # not in this turn's text
+    asked = []
+    has = lambda frag: asked.append(frag) or frag in qc.normalize(FIFTH_REAL)  # noqa: E731
+    assert qc.unverified(reply, SOURCES, library_has=has) == [] and asked   # but it is in the library
+    broken = lambda frag: (_ for _ in ()).throw(RuntimeError("index down"))  # noqa: E731
+    assert len(qc.unverified(reply, SOURCES, library_has=broken)) == 1       # a failing lookup never hides a flag
+
+
+def test_short_phrases_and_ordinary_replies_are_left_alone():
+    assert qc.unverified('He called it "a living document" and "the supreme law of the land".', "") == []
+    assert qc.unverified("No quotations here, just a plain answer about coffee.", "") == []
+    assert qc.footnote([]) == ""
+
+
+def test_library_has_finds_real_passages_and_rejects_made_up_ones(tmp_path, monkeypatch):
+    import pytest
+    pytest.importorskip("engram.lineage")
+    import engram_bridge as eb
+    import library
+    from engram.backends import get_backend
+    from engram.chateau import Chateau
+    from engram.searcher import Searcher
+
+    palace = Chateau(chateau_path=tmp_path / "chateau")
+    backend = get_backend("sqlitevec", db_path=tmp_path / "vec.db")
+    monkeypatch.setattr(eb, "_init", lambda: None)
+    monkeypatch.setattr(eb, "_PALACE", palace)
+    monkeypatch.setattr(eb, "_SEARCHER", Searcher(backend, palace, {"hybrid_weight": 0.3}))
+    library.store([{"id": "lib-5th", "room": "bill-of-rights", "cite": "Amendment V",
+                    "content": f"[Amendment V]\n{FIFTH_REAL}"}], "test", palace, backend)
+    real = qc.fragments("nor be deprived of life, liberty, or property, without due process of law; nor shall private property be taken")[0]
+    fake = qc.fragments("nor deny to any person in the United States equally protected rights, under the laws")[0]
+    assert eb.library_has(real) and not eb.library_has(fake)
+    reply = f'The Fifth Amendment says "{FIFTH_REAL}" and also "nor deny to any person in the United States equally protected rights, under the laws"'
+    assert len(qc.unverified(reply, "", library_has=eb.library_has)) == 1
