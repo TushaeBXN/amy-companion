@@ -73,3 +73,14 @@ def test_nothing_is_added_when_no_memory_is_relevant_and_the_library_is_left_out
 def test_memory_context_never_breaks_a_turn(monkeypatch):
     monkeypatch.setattr(eb, "_init", lambda: (_ for _ in ()).throw(RuntimeError("index unavailable")))
     assert eb.memory_context("coffee tomorrow with a friend, where should we go?") == ""
+
+
+def test_a_failed_history_save_leaves_the_old_file_intact(tmp_path, monkeypatch):
+    """Same write-then-swap as telegram_amy._save_history: a crash mid-write must not corrupt it."""
+    path = tmp_path / "history.json"
+    path.write_text(json.dumps([{"role": "user", "content": "kept"}]))
+    tmp = f"{path}.tmp"
+    with pytest.raises(TypeError):
+        with open(tmp, "w") as f:
+            json.dump([{"role": "assistant", "content": "x", "tool_calls": [object()]}], f)   # fails part-way
+    assert json.loads(path.read_text()) == [{"role": "user", "content": "kept"}]               # untouched
