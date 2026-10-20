@@ -561,8 +561,11 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
                 _remember_for(who, str(args.get("fact") or args.get("text") or args))
                 result = f"Remembered (private to {who})."
             else:
-                result = seen[key] if key in seen else tools.dispatch(name, args, mem)
-            seen[key] = result
+                if key in seen:
+                    result = f"[Already called {name} this turn — use the result above. Do not call it again.]"
+                else:
+                    result = tools.dispatch(name, args, mem)
+                    seen[key] = result
             _logged_tool_calls.append({
                 "name": name,
                 "args": args if isinstance(args, dict) else str(args),

@@ -3083,5 +3083,13 @@ def dispatch(name, args, memory=None):
             lines.append(f"[{ts}] {e['source']}/{e['event_type']} {data_preview}")
         return "\n".join(lines)
 
+    # Alias: model sometimes calls wake_up as a standalone tool
+    if name == "wake_up":
+        try:
+            import engram_bridge as _eb
+            return _eb.wake_up()
+        except Exception as e:
+            return f"wake_up failed: {e}"
+
     print(f"  [tools] unknown tool: {name}")
     return None
