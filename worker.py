@@ -447,6 +447,10 @@ def ollama_chat(_priority: str = "worker", **kw):
         timeout  = _WORKER_TIMEOUT
 
     def _call():
+        opts = kw.get("options") or {}
+        if isinstance(opts, dict):
+            opts.setdefault("flash_attn", True)
+            kw["options"] = opts
         return ollama.chat(**kw)
 
     def _attempt(exec_):
