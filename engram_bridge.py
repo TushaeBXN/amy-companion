@@ -562,6 +562,12 @@ def follow_up_query(message: str, prior: str = "") -> str:
     return message
 
 
+def library_ids(query: str, n: int = 6) -> list:
+    """IDs of the library passages that best match *query* (to check a citation against a claim)."""
+    _init()
+    return [r["id"] for r in _SEARCHER.search(query[:2000], n=n, wing="library")]
+
+
 def library_context(query: str, n: int = 3, max_chars: int = 550) -> str:
     """Relevant library passages for *query*, ready to put in Amy's context ('' if none).
 
