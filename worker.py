@@ -29,6 +29,11 @@ WORK_DIR    = os.path.join(HERE, "work")
 LOG_FILE    = os.path.join(WORK_DIR, "worker_log.md")
 PROPOSALS   = os.path.join(WORK_DIR, "proposals")
 
+# Compact core rules — loaded once at startup, injected inline into every planning prompt.
+# Full curricula live in sandbox/; this is the distilled live version (~300 tokens).
+_CORE_RULES_PATH = os.path.join(HERE, "amy_core_rules.md")
+_CORE_RULES = open(_CORE_RULES_PATH).read() if os.path.exists(_CORE_RULES_PATH) else ""
+
 TICK_SECS   = 60
 MAX_HOPS    = 8
 IDLE_GRACE  = 120          # don't start a task while Brian is mid-conversation
@@ -368,6 +373,7 @@ def scope_rules(max_steps):
     return (
         f"\n\n[How you work — your limits]\n"
         f"- You have {max_steps} tool steps per request. Each tool result shows 'step N of {max_steps}'.\n"
+        "- Before each tool call, state in one sentence what you're doing and why — then do it.\n"
         "- Do exactly what was asked — no more. 'Check X' means look and report back; "
         "don't comment, post, engage, or start extra work unless asked.\n"
         "- Before starting, judge whether the request fits in your steps. If it clearly "
@@ -652,6 +658,7 @@ def _run_task(task):
                        "what you did and where you saved it.")
         system = (
             (_memory.wake_up_static() if _memory else "") + WORK_PERSONA + scope_rules(task_hops) +
+            ("\n\n" + _CORE_RULES if _CORE_RULES else "") +
             "\n\n[Work time] Brian isn't talking to you right now. This is your own "
             "scheduled work. Use your tools to actually do the task — don't describe "
             f"what you would do. Today is {datetime.now():%A, %B %d, %Y}. Save files under "
@@ -1184,6 +1191,7 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
     context = _goals.goal_summary(goal)
     system = (
         (_memory.wake_up_static() if _memory else "") + WORK_PERSONA + scope_rules(goal_max_hops) +
+        ("\n\n" + _CORE_RULES if _CORE_RULES else "") +
         f"\n\n[Active goal context]\n{context}"
     )
     prompt = (
