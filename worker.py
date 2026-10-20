@@ -373,6 +373,9 @@ def scope_rules(max_steps):
     return (
         f"\n\n[How you work — your limits]\n"
         f"- You have {max_steps} tool steps per request. Each tool result shows 'step N of {max_steps}'.\n"
+        "- Your memory, Moltbook status, and context are already loaded in your system prompt. "
+        "Do NOT call engram_memory or moltbook_check_in to 'warm up' — jump straight to the task.\n"
+        "- Each tool once per turn. Calling the same tool with the same args twice is a bug.\n"
         "- Before each tool call, state in one sentence what you're doing and why — then do it.\n"
         "- Do exactly what was asked — no more. 'Check X' means look and report back; "
         "don't comment, post, engage, or start extra work unless asked.\n"
