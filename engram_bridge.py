@@ -563,6 +563,27 @@ def library_context(query: str, n: int = 3, max_chars: int = 550) -> str:
             "answer the question, say you're going from memory.]\n" + "\n\n".join(picked))
 
 
+def memory_context(query: str) -> str:
+    """Saved memories that clearly match *query*, ready to put in Amy's context ('' if none).
+
+    Used on every message so she does not depend on deciding to search: "I'm
+    meeting a friend for coffee" finds the coffee-shop preference without being
+    asked. It is Engram's own auto-recall: only memories above the relevance
+    bar, the current version of anything that was corrected first and the
+    outdated one labelled, never the reference library, and nothing at all
+    when nothing matches.
+    """
+    try:
+        _init()
+        from engram.recall import recall
+        cfg = {**_SEARCHER.config, "recall": True, "recall_max": 3,
+               "recall_exclude_wings": ["library"]}
+        note = recall(query, searcher=_SEARCHER, cfg=cfg, remember=False)
+    except Exception:  # older Engram, or the index is unavailable: carry on without it
+        return ""
+    return "\n\n" + note if note else ""
+
+
 # ── Amy's views: what she currently thinks, and how that changed ──────────────
 
 _VIEW_WING, _VIEW_ROOM, _VIEW_HALL = "amy", "views", "discoveries"
