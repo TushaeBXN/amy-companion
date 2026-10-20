@@ -308,7 +308,10 @@ def _turn_context(history_len: int, person: dict, message: str) -> str:
         return s
     try:  # what Brian's saved memories say about this message (silent when nothing clearly matches)
         import engram_bridge as _eb
-        s += _eb.memory_context(message)
+        _note = _eb.memory_context(message)
+        if _note:  # visible in the terminal, so you can tell memory from chat history
+            _log(f"  [memory] added {_note.count(chr(10) + '- ')} saved memory note(s) to this message")
+        s += _note
     except Exception:
         pass
     # Playbooks and SQLite memory reconstruction are designed for the full CORE_PROMPT model.
