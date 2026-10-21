@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#090d18">
+<title>Amy — Dashboard</title>
+<style>
+:root{
+  color-scheme:dark; --bg:#090d18; --panel:#101727; --panel2:#121d30; --line:#26334b;
+  --text:#edf3ff; --muted:#91a0ba; --subtle:#667692; --cyan:#63e6e2; --violet:#a998ff;
+  --green:#64e6a6; --amber:#ffd27a; --red:#ff8297; --radius:18px;
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(ellipse at 10% -20%,#1b2850 0,transparent 42%),radial-gradient(ellipse at 100% 0%,#18243a 0,transparent 32%),var(--bg);color:var(--text);min-height:100vh}
+button,input,select{font:inherit}
+button{cursor:pointer}
+a{color:inherit}
+.app{max-width:1700px;margin:auto;padding:24px clamp(14px,2.4vw,36px) 36px}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-bottom:26px}
+.brand{display:flex;align-items:center;gap:14px;min-width:0}
+.mark{width:48px;height:48px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(145deg,#7ce8e1,#8c7cff);color:#101528;font-size:22px;font-weight:900;box-shadow:0 8px 30px #66deda20}
+.brand h1{font-size:clamp(22px,3vw,31px);letter-spacing:-.045em;margin:0;font-weight:760}
+.brand p{color:var(--muted);margin:4px 0 0;font-size:12px;letter-spacing:.09em;text-transform:uppercase}
+.top-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:#101828bd;padding:9px 12px;border-radius:999px;color:var(--muted);font-size:12px;white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--subtle);display:inline-block}
+.dot.live{background:var(--green);box-shadow:0 0 0 4px #64e6a617}
+.btn{border:1px solid #35445f;background:#172238;color:var(--text);padding:10px 14px;border-radius:11px;font-weight:650;font-size:12px;transition:.18s}
+.btn:hover{border-color:var(--cyan);transform:translateY(-1px)}
+.btn.primary{background:linear-gradient(120deg,#7be7df,#a9a0ff);border:0;color:#101627}
+.btn.ghost{background:transparent}
+.btn:disabled{opacity:.38;cursor:not-allowed;transform:none}
+.intro{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:12px 0 20px}
+.eyebrow{font-size:11px;color:var(--cyan);font-weight:750;letter-spacing:.16em;text-transform:uppercase}
+.intro h2{font-size:clamp(22px,2.5vw,30px);margin:7px 0 5px;letter-spacing:-.04em}
+.intro p{margin:0;color:var(--muted);font-size:13px;line-height:1.6;max-width:720px}
+.refresh-meta{color:var(--subtle);font-size:11px;text-align:right;line-height:1.7}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-bottom:18px}
+.metric{background:linear-gradient(145deg,#131e32f0,#0f1727f5);border:1px solid var(--line);border-radius:var(--radius);padding:17px 18px;position:relative;overflow:hidden;min-height:116px}
+.metric:after{content:"";position:absolute;width:100px;height:100px;right:-35px;top:-44px;border-radius:50%;background:var(--glow,#63e6e2);opacity:.09;filter:blur(4px)}
+.metric-top{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:12px;gap:8px}
+.metric-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#ffffff08;color:var(--accent,var(--cyan));font-size:15px}
+.metric-value{font-size:32px;letter-spacing:-.05em;font-weight:760;margin-top:12px;line-height:1}
+.metric-foot{font-size:11px;color:var(--subtle);margin-top:8px}
+.layout{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr) minmax(0,.95fr);gap:15px;align-items:start}
+.stack{display:grid;gap:15px;min-width:0}
+.panel{border:1px solid var(--line);border-radius:var(--radius);background:linear-gradient(150deg,#111a2bf5,#0e1523f5);overflow:hidden;min-width:0}
+.panel-head{padding:17px 18px 14px;display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid #243149}
+.panel-title{display:flex;align-items:center;gap:10px;min-width:0}
+.panel-title h3{font-size:14px;margin:0;font-weight:730;letter-spacing:-.015em}
+.panel-title p{font-size:11px;color:var(--muted);margin:4px 0 0}
+.panel-icon{width:31px;height:31px;border-radius:10px;background:#7be7e110;color:var(--cyan);display:grid;place-items:center;flex-shrink:0}
+.count{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:5px 8px;white-space:nowrap}
+.panel-body{padding:13px 14px 15px}
+.toolbar{display:flex;gap:8px;margin-bottom:12px}
+.field{min-width:0;width:100%;background:#0b1220;border:1px solid #27344b;color:var(--text);border-radius:10px;padding:9px 11px;font-size:12px;outline:none}
+.field:focus{border-color:#67dcd8;box-shadow:0 0 0 3px #63e6e21a}
+select.field{width:auto;max-width:125px}
+.feed{display:grid;gap:8px;max-height:560px;overflow:auto;padding-right:2px}
+.item{border:1px solid #26334a;background:#121c2d;border-radius:12px;padding:11px 12px;min-width:0}
+@keyframes flash{from{background:#1f3350}to{background:#121c2d}}
+.item.new{animation:flash 2.6s ease-out}
+.dot.stale{background:var(--amber)}.dot.down{background:var(--red)}
+.dot.live.pulse{animation:pulse 1s ease-out}
+@keyframes pulse{0%{box-shadow:0 0 0 0 #64e6a6aa}100%{box-shadow:0 0 0 9px #64e6a600}}
+.item:hover{border-color:#3c526e}
+.item-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
+.item-title{font-size:12px;font-weight:700;overflow-wrap:anywhere}
+.item-time{font-size:10px;color:var(--subtle);white-space:nowrap}
+.item-desc{font-size:11px;color:var(--muted);line-height:1.55;overflow-wrap:anywhere;white-space:pre-wrap}
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:9px;letter-spacing:.04em;text-transform:uppercase;border:1px solid #34435d;color:#aebbd1;border-radius:6px;padding:4px 6px;margin:0 5px 4px 0}
+.tag.green{border-color:#275f4b;background:#16392f;color:var(--green)}
+.tag.amber{border-color:#65502e;background:#332a1c;color:var(--amber)}
+.tag.red{border-color:#673343;background:#351c28;color:var(--red)}
+.tag.violet{border-color:#4a4177;background:#262044;color:#c4b8ff}
+.empty{padding:30px 14px;text-align:center;color:var(--subtle);font-size:12px;line-height:1.6;border:1px dashed #2b3850;border-radius:12px}
+.empty strong{display:block;color:var(--muted);font-size:13px;margin-bottom:4px}
+.kv-list{display:grid;gap:0}
+.kv{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid #202c40;font-size:12px}
+.kv:last-child{border-bottom:0}
+.kv span:first-child{color:var(--muted)}
+.kv strong{font-weight:650;text-align:right;overflow-wrap:anywhere}
+.progress{height:5px;background:#26334a;border-radius:99px;overflow:hidden;margin-top:10px}
+.progress span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--cyan),var(--violet));border-radius:99px;transition:width .3s}
+.commitment{display:grid;grid-template-columns:1fr auto;gap:9px;align-items:start;padding:12px 4px;border-bottom:1px solid #202c40}
+.commitment:last-child{border-bottom:0}
+.commitment strong{font-size:12px;font-weight:650}
+.commitment p{font-size:11px;color:var(--muted);margin:5px 0 0;line-height:1.5}
+.side-status{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:11px}
+.footer{display:flex;justify-content:space-between;gap:15px;flex-wrap:wrap;margin:19px 2px 0;color:var(--subtle);font-size:10px;line-height:1.6}
+.toast{position:fixed;right:22px;bottom:22px;max-width:min(420px,calc(100vw - 30px));padding:13px 16px;border:1px solid #3c526e;background:#121d30;border-radius:12px;box-shadow:0 20px 60px #0007;font-size:12px;display:none;z-index:20}
+.modal-backdrop{position:fixed;inset:0;background:#02050bd9;display:none;place-items:center;padding:20px;z-index:10}
+.modal{width:min(650px,100%);max-height:85vh;overflow:auto;background:#101827;border:1px solid #35445f;border-radius:18px;padding:22px;box-shadow:0 30px 100px #0009}
+.modal h3{margin:0 0 6px;font-size:19px}
+.modal p{font-size:12px;color:var(--muted);line-height:1.6}
+.modal label{display:block;font-size:11px;color:var(--muted);margin:13px 0 6px}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;flex-wrap:wrap}
+.config-note{background:#182238;border:1px solid #33445f;border-radius:10px;padding:11px;color:#a9b8d2;font-size:11px;line-height:1.6;margin-top:12px}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;color:#b8c9e2;background:#0a101c;padding:12px;border-radius:10px;border:1px solid #26334b}
+@media(max-width:1100px){.layout{grid-template-columns:repeat(2,minmax(0,1fr))}.layout>.stack:last-child{grid-column:1/-1;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}}
+@media(max-width:700px){.app{padding-top:15px}.topbar{align-items:flex-start}.top-actions .pill:first-child{display:none}.intro{align-items:flex-start;flex-direction:column}.refresh-meta{text-align:left}.metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.metric{padding:14px;min-height:105px}.metric-value{font-size:27px}.layout{grid-template-columns:1fr}.layout>.stack:last-child{grid-column:auto;grid-template-columns:1fr}.panel-head{padding:14px}.panel-body{padding:11px}.feed{max-height:420px}.brand p{font-size:10px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">A</div>
+      <div><h1>Amy <span style="color:var(--cyan)">/</span> Command Center</h1><p>Companion runtime · operations overview</p></div>
+    </div>
+    <div class="top-actions">
+      <div class="pill"><span class="dot" id="connectionDot"></span><span id="connectionLabel">Connecting…</span></div>
+      <button class="btn ghost" id="pauseBtn">⏸ Pause</button>
+      <button class="btn ghost" id="settingsBtn">⚙ Settings</button>
+      <button class="btn primary" id="refreshBtn">↻ Refresh</button>
+    </div>
+  </header>
+
+  <section class="intro">
+    <div><div class="eyebrow">Live system overview</div><h2>Good to see you.</h2><p>Amy's activity, goals, incoming agent messages, and overdue commitments, straight from her runtime. Updates automatically.</p></div>
+    <div class="refresh-meta"><div id="lastUpdated">Connecting…</div><div id="refreshState">Auto-refresh is on · every 5 seconds</div></div>
+  </section>
+
+  <section class="metrics" aria-label="Overview metrics">
+    <article class="metric" style="--accent:var(--cyan);--glow:var(--cyan)"><div class="metric-top"><span>Recent events</span><span class="metric-icon">⌁</span></div><div class="metric-value" id="metricEvents">—</div><div class="metric-foot" id="metricEventsFoot">Waiting for event log</div></article>
+    <article class="metric" style="--accent:var(--violet);--glow:var(--violet)"><div class="metric-top"><span>Open goals</span><span class="metric-icon">◎</span></div><div class="metric-value" id="metricGoals">—</div><div class="metric-foot" id="metricGoalsFoot">Waiting for goal state</div></article>
+    <article class="metric" style="--accent:var(--green);--glow:var(--green)"><div class="metric-top"><span>Agent inbox</span><span class="metric-icon">⇄</span></div><div class="metric-value" id="metricInbox">—</div><div class="metric-foot" id="metricInboxFoot">Waiting for messages</div></article>
+    <article class="metric" style="--accent:var(--amber);--glow:var(--amber)"><div class="metric-top"><span>Commitments</span><span class="metric-icon">◷</span></div><div class="metric-value" id="metricCommitments">—</div><div class="metric-foot" id="metricCommitmentsFoot">Waiting for commitments</div></article>
+  </section>
+
+  <main class="layout">
+    <section class="stack">
+      <article class="panel">
+        <div class="panel-head"><div class="panel-title"><div class="panel-icon">⌁</div><div><h3>Activity Log</h3><p>Recent runtime events and tool activity</p></div></div><span class="count" id="eventCount">0 events</span></div>
+        <div class="panel-body">
+          <div class="toolbar"><input class="field" id="eventSearch" placeholder="Search events…" aria-label="Search events"><select class="field" id="eventFilter" aria-label="Filter events"><option value="all">All types</option><option value="error">Errors</option><option value="goal">Goals</option><option value="agent">Agent messages</option><option value="tool">Tool calls</option></select></div>
+          <div class="feed" id="eventsFeed"><div class="empty"><strong>Waiting for Amy's event log</strong>Events appear here as Amy works.</div></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="stack">
+      <article class="panel">
+        <div class="panel-head"><div class="panel-title"><div class="panel-icon" style="color:var(--violet);background:#a998ff12">◎</div><div><h3>Goals & Work</h3><p>Progress, blocked tasks, recent outcomes</p></div></div><span class="count" id="goalCount">0 goals</span></div>
+        <div class="panel-body">
+          <div class="toolbar"><input class="field" id="goalSearch" placeholder="Search goals…" aria-label="Search goals"><select class="field" id="goalFilter" aria-label="Filter goals"><option value="open">Open</option><option value="all">All goals</option><option value="completed">Completed</option><option value="blocked">Blocked / failed</option></select></div>
+          <div class="feed" id="goalsFeed"><div class="empty"><strong>No goal data loaded</strong>Goals will appear here when the backend returns them.</div></div>
+        </div>
+      </article>
+      <article class="panel">
+        <div class="panel-head"><div class="panel-title"><div class="panel-icon" style="color:var(--amber);background:#ffd27a12">◷</div><div><h3>Commitments</h3><p>Follow-ups and due items</p></div></div><span class="count" id="commitmentCount">0 items</span></div>
+        <div class="panel-body"><div id="commitmentsFeed"><div class="empty"><strong>Nothing overdue</strong>Amy has no missed commitments.</div></div></div>
+      </article>
+    </section>
+
+    <section class="stack">
+      <article class="panel">
+        <div class="panel-head"><div class="panel-title"><div class="panel-icon" style="color:var(--green);background:#64e6a612">⇄</div><div><h3>Agent Inbox</h3><p>Messages received by Amy</p></div></div><span class="count" id="agentCount">0 messages</span></div>
+        <div class="panel-body">
+          <div class="toolbar"><input class="field" id="agentSearch" placeholder="Search inbox…" aria-label="Search agent inbox"></div>
+          <div class="feed" id="agentsFeed"><div class="empty"><strong>Inbox is not connected</strong>Agent messages will show when the endpoint returns the inbox data.</div></div>
+        </div>
+      </article>
+      <article class="panel">
+        <div class="panel-head"><div class="panel-title"><div class="panel-icon">◈</div><div><h3>Runtime Snapshot</h3><p>Connection and service metadata</p></div></div><span class="count" id="runtimeBadge">Connecting</span></div>
+        <div class="panel-body">
+          <div class="kv-list" id="runtimeList">
+            
+            
+            
+          </div>
+          <div class="config-note">“Active” means that source logged an event in the last 24h. Idle isn't necessarily broken — it may just have had nothing to do.</div>
+        </div>
+      </article>
+    </section>
+  </main>
+  <footer class="footer"><span>Amy · served by amy_server.py</span><span id="footerStatus">Connecting…</span></footer>
+</div>
+
+<div class="modal-backdrop" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+  <div class="modal">
+    <h3 id="settingsTitle">Connect Amy's backend</h3>
+    <p>Set the endpoint that returns dashboard data. The default is <code>/dashboard/data</code>, matching the existing Amy dashboard route. Settings are remembered in this browser only.</p>
+    <label for="endpointInput">Dashboard JSON endpoint</label><input class="field" id="endpointInput" value="/dashboard/data" placeholder="http://127.0.0.1:8000/dashboard/data">
+    <label for="intervalInput">Auto-refresh interval</label><select class="field" id="intervalInput"><option value="2000">2 seconds</option><option value="5000" selected>5 seconds</option><option value="15000">15 seconds</option><option value="30000">30 seconds</option><option value="60000">60 seconds</option></select>
+    
+    <div class="modal-actions"><button class="btn ghost" id="cancelSettings">Cancel</button><button class="btn primary" id="saveSettings">Save & connect</button></div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const P = __PAYLOAD_JSON__;
+  const store = {
+    get(k, d) { try { return localStorage.getItem(k) || d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} }
+  };
+  let endpoint = store.get('amy.endpoint', '/dashboard/data');
+  let intervalMs = Number(store.get('amy.interval', '5000')) || 5000;
+  let timer = null, lastData = null, lastSig = '', lastOk = Date.now();
+  let busy = false, fails = 0, auto = true, firstRender = true;
+  const seen = new Set();
+
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const arr = (...vs) => { for (const v of vs) if (Array.isArray(v)) return v; return []; };
+  const val = (o, keys, fb='') => { for (const k of keys) if (o && o[k] !== undefined && o[k] !== null && o[k] !== '') return o[k]; return fb; };
+  const toDate = v => typeof v === 'number' ? new Date(v < 1e12 ? v*1000 : v) : new Date(v);
+  const fmtTime = v => {
+    if (!v) return 'time unknown';
+    const d = toDate(v);
+    return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  };
+  const relText = v => {
+    if (!v) return '';
+    const d = toDate(v); if (Number.isNaN(d.getTime())) return '';
+    const s = Math.max(0, Math.round((Date.now()-d.getTime())/1000));
+    if (s < 5) return 'just now'; if (s < 60) return `${s}s ago`;
+    const m = Math.floor(s/60); if (m < 60) return `${m}m ago`;
+    if (m < 1440) return `${Math.floor(m/60)}h ago`; return `${Math.floor(m/1440)}d ago`;
+  };
+  // Relative times are kept live by tick() via data-ts, without redrawing cards.
+  const rel = v => `<span class="rel" data-ts="${esc(v||'')}">${esc(relText(v) || fmtTime(v))}</span>`;
+
+  const parsePlan = p => { if (Array.isArray(p)) return p; try { const x = JSON.parse(p); return Array.isArray(x) ? x : null; } catch { return null; } };
+  const normalized = raw => ({
+    events: arr(raw.events), goals: arr(raw.goals), agents: arr(raw.agents),
+    commitments: arr(raw.commitments), tunnel: raw.tunnel_url || '', lastSeen: raw.last_seen || {},
+    activeGoals: raw.goals_active_count || 0
+  });
+
+  const statusOf = x => String(val(x,['status','state'],'unknown')).toLowerCase().replace(/[_-]+/g,' ');
+  const isDone = s => /complete|success|done|passed|finished|closed/.test(s);
+  const isBlocked = s => /block|fail|error|stuck/.test(s);
+  const isOpen = s => !isDone(s) && !/cancel|dismiss|abandon/.test(s);
+  const tag = (label, tone='') => `<span class="tag ${tone}">${esc(label)}</span>`;
+  const empty = (title, desc) => `<div class="empty"><strong>${esc(title)}</strong>${esc(desc)}</div>`;
+  const searchMatch = (item, q) => !q || JSON.stringify(item).toLowerCase().includes(q.toLowerCase());
+
+  function setConn(state, text) {
+    const dot = $('connectionDot');
+    dot.className = 'dot' + (state === 'live' ? ' live' : state === 'stale' ? ' stale' : state === 'down' ? ' down' : '');
+    $('connectionLabel').textContent = text;
+    $('runtimeBadge').textContent = state === 'live' ? 'Live' : state === 'paused' ? 'Paused' : state === 'stale' ? 'Stale' : 'Offline';
+    $('footerStatus').textContent = state === 'down' ? `Can't reach ${endpoint} — retrying` : `Connected to ${endpoint}`;
+  }
+
+  function eventKind(e) {
+    const type = String(val(e,['event_type','type','kind'],'event')).toLowerCase();
+    const d = e.data || {};
+    const text = `${type} ${d.error || ''}`.toLowerCase();
+    if (/error|fail|exception/.test(text) || d.error) return 'error';
+    if (/goal|task|plan/.test(type)) return 'goal';
+    if (/agentmessage|agent_message/.test(type)) return 'agent';
+    if (/toolcalled|tool/.test(type)) return 'tool';
+    return 'all';
+  }
+  function renderEvents(data) {
+    const q = $('eventSearch').value.trim(), filter = $('eventFilter').value;
+    const items = data.events.filter(e => searchMatch(e,q) && (filter==='all' || eventKind(e)===filter));
+    $('eventCount').textContent = `${items.length} event${items.length===1?'':'s'}`;
+    $('eventsFeed').innerHTML = items.length ? items.slice(0,100).map(e => {
+      const d = e.data || {};
+      const message = d.preview || d.prompt || (d.error ? '⚠ ' + d.error : JSON.stringify(d).slice(0,200));
+      const kind = eventKind(e);
+      const key = [e.id || e.ts, e.source, e.event_type].join('|');
+      const isNew = !firstRender && !seen.has(key);
+      seen.add(key);
+      return `<article class="item${isNew?' new':''}"><div class="item-top"><div class="item-title">${esc(e.event_type||'Event')}</div><div class="item-time">${rel(e.ts)}</div></div><div class="item-desc">${esc(message)}</div><div style="margin-top:8px">${tag(e.source||'?', e.source==='worker'?'green':e.source==='telegram'?'violet':'')}${kind!=='all'?tag(kind,kind==='error'?'red':kind==='goal'?'violet':kind==='agent'?'green':''):''}</div></article>`;
+    }).join('') : empty('No matching events','Nothing in the last 24h matches this search or filter.');
+  }
+  function goalProgress(g, status) {
+    if (isDone(status)) return 100;
+    const plan = parsePlan(g.plan);
+    if (plan && plan.length && typeof g.current_step === 'number') return Math.max(0, Math.min(100, Math.round(g.current_step / plan.length * 100)));
+    return null;
+  }
+  function renderGoals(data) {
+    const q = $('goalSearch').value.trim(), filter = $('goalFilter').value;
+    const items = data.goals.filter(g => {
+      const s = statusOf(g);
+      return searchMatch(g,q) && (filter==='all' || (filter==='open' && isOpen(s)) || (filter==='completed' && isDone(s)) || (filter==='blocked' && isBlocked(s)));
+    });
+    $('goalCount').textContent = `${items.length} goal${items.length===1?'':'s'}`;
+    $('goalsFeed').innerHTML = items.length ? items.slice(0,100).map(g => {
+      const title = val(g,['objective','title','description','goal_id','id'],'Untitled goal');
+      const status = statusOf(g);
+      const detail = val(g,['next_action','evidence','reason'],'');
+      const p = goalProgress(g, status);
+      const plan = parsePlan(g.plan);
+      const step = plan && typeof g.current_step === 'number' ? ` · step ${Math.min(g.current_step+1, plan.length)}/${plan.length}` : '';
+      const tone = isDone(status)?'green':isBlocked(status)?'red':/active|running|progress/.test(status)?'violet':'amber';
+      return `<article class="item"><div class="item-top"><div class="item-title">${esc(String(title).slice(0,140))}</div>${tag(status,tone)}</div>${detail?`<div class="item-desc">${esc(String(detail).slice(0,240))}</div>`:''}${p!==null?`<div class="progress" aria-label="Progress ${p}%"><span style="width:${p}%"></span></div><div class="item-time" style="margin-top:6px">${p}%${esc(step)}${g.attempts?` · ${g.attempts} attempt${g.attempts>1?'s':''}`:''}</div>`:''}<div class="item-time" style="margin-top:8px">${rel(g.updated_at || g.created_at)}</div></article>`;
+    }).join('') : empty('No goals in this view','Try another filter.');
+  }
+  function renderAgents(data) {
+    const q = $('agentSearch').value.trim();
+    const items = data.agents.filter(a => searchMatch(a,q));
+    $('agentCount').textContent = `${items.length} message${items.length===1?'':'s'}`;
+    $('agentsFeed').innerHTML = items.length ? items.slice(0,100).map(a => {
+      const unread = a.status === 'unread';
+      return `<article class="item"><div class="item-top"><div class="item-title">${esc(val(a,['sender_id'],'Unknown agent'))}</div><div class="item-time">${rel(a.received_at)}</div></div><div class="item-desc">${esc(String(a.content||'').slice(0,400))}</div>${a.amy_reply?`<div class="item-desc" style="margin-top:8px;color:var(--cyan)">↳ ${esc(String(a.amy_reply).slice(0,240))}</div>`:''}<div style="margin-top:8px">${tag(a.status||'read', unread?'amber':'')}</div></article>`;
+    }).join('') : empty('No messages to show','No agent messages yet, or your search did not match.');
+  }
+  function renderCommitments(data) {
+    const items = data.commitments;
+    $('commitmentCount').textContent = `${items.length} item${items.length===1?'':'s'}`;
+    $('commitmentsFeed').innerHTML = items.length ? items.slice(0,60).map(c => {
+      const d = c.data || {};
+      return `<div class="commitment"><div><strong>${esc(String(d.description || JSON.stringify(d)).slice(0,160))}</strong><p>Promised ${rel(c.ts)}</p></div><div>${tag('overdue','amber')}</div></div>`;
+    }).join('') : empty('Nothing overdue','Amy has no missed commitments.');
+  }
+  const LABELS = {companion:'Browser chat', telegram:'Telegram', worker:'Worker', agent_comms:'Agent inbox'};
+  function renderRuntime(data) {
+    const rows = Object.keys(LABELS).map(k => {
+      const t = data.lastSeen[k];
+      return `<div class="kv"><span>${LABELS[k]}</span><strong>${t ? `${tag('active','green')} ${rel(t)}` : tag('idle')}</strong></div>`;
+    });
+    rows.push(`<div class="kv"><span>Tunnel</span><strong>${data.tunnel ? tag('up','green') : tag('down','red')}</strong></div>`);
+    if (data.tunnel) rows.push(`<div class="kv"><span>Agent endpoint</span><strong style="font-size:10px">${esc(data.tunnel)}/agent/message</strong></div>`);
+    $('runtimeList').innerHTML = rows.join('');
+  }
+  function render(raw) {
+    const data = normalized(raw); lastData = data;
+    $('metricEvents').textContent = data.events.length;
+    $('metricEventsFoot').textContent = 'In the last 24 hours';
+    $('metricGoals').textContent = data.activeGoals;
+    $('metricGoalsFoot').textContent = `${data.goals.length} total goal records`;
+    const unread = data.agents.filter(a => a.status === 'unread').length;
+    $('metricInbox').textContent = data.agents.length;
+    $('metricInboxFoot').textContent = `${unread} unread`;
+    $('metricCommitments').textContent = data.commitments.length;
+    $('metricCommitmentsFoot').textContent = data.commitments.length ? 'Overdue — needs attention' : 'None overdue';
+    renderEvents(data); renderGoals(data); renderAgents(data); renderCommitments(data); renderRuntime(data);
+    firstRender = false;
+  }
+
+  // Once a second: relative times and connection state. No card redraws.
+  function tick() {
+    document.querySelectorAll('.rel[data-ts]').forEach(el => { const t = relText(el.dataset.ts); if (t) el.textContent = t; });
+    const secs = Math.floor((Date.now() - lastOk) / 1000);
+    $('lastUpdated').textContent = `Updated ${secs < 2 ? 'just now' : secs + 's ago'}`;
+    if (!auto) { setConn('paused', 'Paused'); $('refreshState').textContent = 'Auto-refresh is paused'; }
+    else if (fails >= 3) { setConn('down', 'Offline — retrying'); $('refreshState').textContent = 'Could not reach Amy'; }
+    else if (secs > Math.max(15, intervalMs/1000*3)) setConn('stale', 'Stale');
+    else { setConn('live', 'Live'); $('refreshState').textContent = `Auto-refresh is on · every ${Math.round(intervalMs/1000)} seconds`; }
+  }
+
+  async function refresh() {
+    if (busy) return;
+    busy = true;
+    const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 8000);
+    try {
+      const r = await fetch(new URL(endpoint, location.href).toString(), {headers:{'Accept':'application/json'}, cache:'no-store', signal:ctl.signal});
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const payload = await r.json();
+      fails = 0; lastOk = Date.now();
+      const dot = $('connectionDot'); dot.classList.remove('pulse'); void dot.offsetWidth; dot.classList.add('pulse');
+      // Redraw only when something changed: keeps scroll, selection and search focus stable.
+      const sig = JSON.stringify([payload.events, payload.goals, payload.agents, payload.commitments, payload.tunnel_url, payload.last_seen]);
+      if (sig !== lastSig) { lastSig = sig; render(payload); }
+    } catch (err) { fails++; console.error(err); }
+    finally { clearTimeout(to); busy = false; tick(); }
+  }
+  function startTimer() {
+    clearInterval(timer);
+    if (auto) timer = setInterval(() => { if (!document.hidden) refresh(); }, intervalMs);
+  }
+  let toastTimer;
+  function toast(m) { const el=$('toast'); el.textContent=m; el.style.display='block'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.style.display='none',5200); }
+  const openSettings = () => { $('endpointInput').value=endpoint; $('intervalInput').value=String(intervalMs); $('settingsModal').style.display='grid'; };
+  const closeSettings = () => { $('settingsModal').style.display='none'; };
+  $('settingsBtn').addEventListener('click', openSettings);
+  $('cancelSettings').addEventListener('click', closeSettings);
+  $('settingsModal').addEventListener('click', e => { if (e.target === $('settingsModal')) closeSettings(); });
+  $('saveSettings').addEventListener('click', () => {
+    const c = $('endpointInput').value.trim();
+    if (!c) { toast('Enter a dashboard JSON endpoint first.'); return; }
+    try { new URL(c, location.href); } catch { toast('That endpoint URL does not look valid.'); return; }
+    endpoint = c; intervalMs = Number($('intervalInput').value) || 5000;
+    store.set('amy.endpoint', endpoint); store.set('amy.interval', String(intervalMs));
+    lastSig = ''; closeSettings(); startTimer(); refresh();
+  });
+  $('refreshBtn').addEventListener('click', () => { lastSig = ''; refresh(); });
+  $('pauseBtn').addEventListener('click', () => {
+    auto = !auto; $('pauseBtn').textContent = auto ? '⏸ Pause' : '▶ Resume';
+    startTimer(); if (auto) refresh(); else tick();
+  });
+  ['eventSearch','eventFilter'].forEach(id => $(id).addEventListener('input', () => lastData && renderEvents(lastData)));
+  ['goalSearch','goalFilter'].forEach(id => $(id).addEventListener('input', () => lastData && renderGoals(lastData)));
+  $('agentSearch').addEventListener('input', () => lastData && renderAgents(lastData));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSettings(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && auto) refresh(); });
+  window.addEventListener('online', refresh);
+
+  lastSig = JSON.stringify([P.events, P.goals, P.agents, P.commitments, P.tunnel_url, P.last_seen]);
+  render(P); tick(); startTimer(); setInterval(tick, 1000); refresh();
+})();
+</script>
+</body>
+</html>
