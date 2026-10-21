@@ -1,0 +1,18 @@
+[
+  {
+    "id": "cc76d831",
+    "title": "Generate Fiverr Reports",
+    "details": "The user wants to see reports on Fiverr, categorized by title, platform (Fiverr), rate estimate, description, and a confidence score.",
+    "status": "pending",
+    "created_at": 1792546746.245006,
+    "completed_at": null
+  },
+  {
+    "id": "80b17ce9",
+    "title": "Research AI Side Hustles",
+    "details": "Create a comprehensive report on potential AI side hustles for Brian.",
+    "status": "pending",
+    "created_at": 1792546766.493151,
+    "completed_at": null
+  }
+]

@@ -21,6 +21,10 @@ import compressor as _compressor
 import trajectory as _trajectory
 import agent_state as _goals
 import event_log as _el
+try:
+    import knowledge_watcher as _kw
+except ImportError:
+    _kw = None
 
 HERE        = os.path.dirname(os.path.abspath(__file__))
 TASKS_FILE  = os.path.join(HERE, "tasks.json")
@@ -1622,11 +1626,21 @@ def _heartbeat_decision() -> str:
     return "idle"
 
 
+_KW_EVERY = 5   # scan ai-knowledge every N ticks (~5 min)
+
 def _loop():
     _schedule_next_spont()
+    tick = 0
     while True:
         time.sleep(TICK_SECS)
+        tick += 1
         try:
+            # Periodic knowledge ingestion — runs every _KW_EVERY ticks
+            if _kw and tick % _KW_EVERY == 0:
+                new, upd, chunks = _kw.scan_and_ingest()
+                if new + upd:
+                    print(f"  [watcher] {new} new, {upd} updated, {chunks} chunks indexed", flush=True)
+
             decision = _heartbeat_decision()
             if decision == "goal":
                 goal = _goals.get_active_goal()
