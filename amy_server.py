@@ -586,14 +586,15 @@ async def dashboard():
     """Observability dashboard — event log, active goals, agent inbox."""
     import json as _json
     payload = _dashboard_payload()
-    return HTMLResponse(_DASHBOARD_HTML
-                        .replace("__PAYLOAD_JSON__", _json.dumps(payload, default=str)))
+    blob = _json.dumps(payload, default=str).replace("</", "<\\/")
+    return HTMLResponse(_DASHBOARD_HTML.replace("__PAYLOAD_JSON__", blob),
+                        headers={"Cache-Control": "no-store"})
 
 
 @app.get("/dashboard/data")
 async def dashboard_data():
     """JSON feed for live dashboard refresh."""
-    return JSONResponse(_dashboard_payload())
+    return JSONResponse(_dashboard_payload(), headers={"Cache-Control": "no-store"})
 
 
 # ── UI HTML ───────────────────────────────────────────────────────────────────
@@ -1774,7 +1775,14 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
   /* ── Header ── */
   header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); }
   header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.05em; }
-  header .refresh { margin-left: auto; font-size: 11px; cursor: pointer; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; background: none; color: var(--muted); }
+  header .live { display: flex; align-items: center; gap: 6px; font-size: 11px; font-family: 'IBM Plex Mono', monospace; color: var(--muted); }
+  header .live .dot { width: 7px; height: 7px; border-radius: 50%; }
+  header .live .dot.pulse { animation: pulse 1s ease-out; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(80,250,123,.8); } 100% { box-shadow: 0 0 0 8px rgba(80,250,123,0); } }
+  @keyframes flash { from { background: #26264a; } to { background: var(--surface); } }
+  .card.new { animation: flash 2.5s ease-out; }
+  header .refresh:first-of-type { margin-left: auto; }
+  header .refresh { font-size: 11px; cursor: pointer; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; background: none; color: var(--muted); }
   header .refresh:hover { border-color: var(--accent); color: var(--accent); }
   header .age { font-size: 10px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; }
   /* ── Grid ── */
@@ -1820,8 +1828,10 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
 <body>
 <header>
   <h1>Amy — Dashboard</h1>
+  <span class="live" id="live"><span class="dot dot-grey" id="live-dot"></span><span id="live-text">connecting…</span></span>
   <span class="age" id="age">—</span>
-  <button class="refresh" onclick="refresh()">↻ Refresh</button>
+  <button class="refresh" id="auto-btn" onclick="toggleAuto()">⏸ Pause</button>
+  <button class="refresh" style="margin-left:0" onclick="refresh(true)">↻ Refresh</button>
 </header>
 <div class="status-strip" id="status-strip">
   <div class="status-pill"><div class="dot dot-grey"></div>Loading…</div>
@@ -1843,7 +1853,15 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
 
 <script>
 const P = __PAYLOAD_JSON__;
-let _lastRefresh = Date.now();
+const POLL_MS = 5000;
+let _lastOk = Date.now();
+let _last = P, _lastSig = '', _auto = true, _busy = false, _fails = 0, _timer = null;
+const _seen = new Set();
+let _firstRender = true;
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 
 function ts(iso) {
   if (!iso) return '';
@@ -1881,9 +1899,12 @@ function renderEvents(events) {
   if (!events.length) { el.innerHTML = '<div class="empty">No events in the last 24h</div>'; return; }
   el.innerHTML = events.map(e => {
     const d = e.data || {};
-    let body = d.preview || d.prompt || (d.error ? '⚠ ' + d.error : JSON.stringify(d).slice(0,120));
+    let body = esc(d.preview || d.prompt || (d.error ? '⚠ ' + d.error : JSON.stringify(d).slice(0,120)));
     const tipLines = Object.entries(d).map(([k,v]) => `${k}: ${JSON.stringify(v)}`).join('\\n');
-    return `<div class="card">
+    const key = e.ts + '|' + e.source + '|' + e.event_type + '|' + (d.preview || d.prompt || '').slice(0,40);
+    const isNew = !_firstRender && !_seen.has(key);
+    _seen.add(key);
+    return `<div class="card${isNew ? ' new' : ''}">
       <div class="ts">${ts(e.ts)}</div>
       <div><span class="tag ${e.source||''}">${e.source||'?'}</span><span class="tag ${e.event_type||''}">${e.event_type||'?'}</span></div>
       ${body ? `<div class="body">${body}</div>` : ''}
@@ -1974,18 +1995,67 @@ function render(d) {
   renderEvents(d.events || []);
   renderGoals(d.goals || [], d.goals_active_count || 0);
   renderCommitmentsInAgents(d.commitments || [], d.agents || []);
-  document.getElementById('age').textContent = 'updated ' + new Date().toLocaleTimeString();
+  _firstRender = false;
 }
 
-async function refresh() {
+function setLive(state, text) {
+  const dot = document.getElementById('live-dot');
+  dot.className = 'dot ' + ({ok:'dot-green', stale:'dot-yellow', down:'dot-red', paused:'dot-grey'}[state] || 'dot-grey');
+  document.getElementById('live-text').textContent = text;
+}
+
+// Ticks every second: relative times + connection state, without touching the cards.
+function tick() {
+  const secs = Math.floor((Date.now() - _lastOk) / 1000);
+  document.getElementById('age').textContent = 'updated ' + (secs < 2 ? 'just now' : secs + 's ago');
+  if (!_auto) setLive('paused', 'paused');
+  else if (_fails >= 3) setLive('down', 'offline — retrying');
+  else if (secs > POLL_MS / 1000 * 3) setLive('stale', 'stale');
+  else setLive('ok', 'live');
+  renderStatus(_last);
+}
+
+async function refresh(manual) {
+  if (_busy) return;
+  _busy = true;
+  const ctl = new AbortController();
+  const to = setTimeout(() => ctl.abort(), 8000);
   try {
-    const r = await fetch('/dashboard/data');
-    render(await r.json());
-  } catch(e) { console.error(e); }
+    const r = await fetch('/dashboard/data', {cache: 'no-store', signal: ctl.signal});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    _fails = 0; _lastOk = Date.now(); _last = d;
+    document.getElementById('live-dot').classList.remove('pulse');
+    void document.getElementById('live-dot').offsetWidth;
+    document.getElementById('live-dot').classList.add('pulse');
+    // Only rebuild the DOM when something changed — keeps scroll, hover tooltips and selection stable.
+    const sig = JSON.stringify([d.events, d.goals, d.agents, d.commitments]);
+    if (sig !== _lastSig) { _lastSig = sig; render(d); }
+  } catch(e) { _fails++; console.error(e); }
+  finally { clearTimeout(to); _busy = false; tick(); }
 }
 
+function schedule() {
+  clearInterval(_timer);
+  if (_auto) _timer = setInterval(() => { if (!document.hidden) refresh(); }, POLL_MS);
+}
+
+function toggleAuto() {
+  _auto = !_auto;
+  document.getElementById('auto-btn').textContent = _auto ? '⏸ Pause' : '▶ Resume';
+  schedule();
+  if (_auto) refresh(); else tick();
+}
+
+document.addEventListener('visibilitychange', () => { if (!document.hidden && _auto) refresh(); });
+window.addEventListener('online', () => refresh());
+
+_lastSig = JSON.stringify([P.events, P.goals, P.agents, P.commitments]);
 render(P);
-setInterval(refresh, 15000);
+tick();
+schedule();
+setInterval(tick, 1000);
+refresh();
 </script>
 </body>
 </html>"""
