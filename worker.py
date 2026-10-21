@@ -412,7 +412,7 @@ def _fit(messages, budget_chars=None):
 _chat_executor   = ThreadPoolExecutor(max_workers=1, thread_name_prefix="chat")
 _worker_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="worker_ollama")
 _CHAT_TIMEOUT    = 300   # 5 min for a chat response
-_WORKER_TIMEOUT  = 240   # 4 min for a background task step
+_WORKER_TIMEOUT  = 360   # 6 min for a background task step (12B model + large ctx needs headroom)
 _chat_pending    = threading.Event()
 
 def _evict_worker_model():
