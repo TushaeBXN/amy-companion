@@ -26,6 +26,11 @@ try:
 except ImportError:
     _kw = None
 
+try:
+    import world as _world
+except ImportError:
+    _world = None
+
 HERE        = os.path.dirname(os.path.abspath(__file__))
 TASKS_FILE  = os.path.join(HERE, "tasks.json")
 STATE_FILE  = os.path.join(HERE, "worker_state.json")
@@ -1626,7 +1631,8 @@ def _heartbeat_decision() -> str:
     return "idle"
 
 
-_KW_EVERY = 5   # scan ai-knowledge every N ticks (~5 min)
+_KW_EVERY    = 5    # scan ai-knowledge every N ticks (~5 min)
+_WORLD_EVERY = 12   # fetch world headlines every N ticks (~12 min)
 
 def _loop():
     _schedule_next_spont()
@@ -1640,6 +1646,12 @@ def _loop():
                 new, upd, chunks = _kw.scan_and_ingest()
                 if new + upd:
                     print(f"  [watcher] {new} new, {upd} updated, {chunks} chunks indexed", flush=True)
+
+            # World observation — fetch headlines every _WORLD_EVERY ticks
+            if _world and tick % _WORLD_EVERY == 0:
+                fetched, _ = _world.tick()
+                if fetched:
+                    print(f"  [world] {fetched} area(s) refreshed", flush=True)
 
             decision = _heartbeat_decision()
             if decision == "goal":
