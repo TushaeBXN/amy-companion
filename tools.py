@@ -391,6 +391,39 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "write_knowledge_file",
+            "description": (
+                "Create or update a file in ~/ai-knowledge/ — your persistent knowledge base "
+                "that knowledge_watcher ingests into your RAG. "
+                "YOU MUST CALL THIS TOOL to actually write a knowledge file. "
+                "Describing a file structure, saying you 'organized' something, or telling "
+                "Brian you created files WITHOUT calling this tool means the files do not exist. "
+                "Never claim to have written or organized ~/ai-knowledge/ content unless this "
+                "tool appears in your response."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "rel_path": {
+                        "type": "string",
+                        "description": "Path relative to ~/ai-knowledge/ — e.g. 'models/capabilities/core_behaviors.md'",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Markdown content to write",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "description": "'write' to overwrite (default), 'append' to add to end",
+                    },
+                },
+                "required": ["rel_path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_files",
             "description": "List files in a directory — use whenever you need to know what's there, check your own work folder, or verify something exists.",
             "parameters": {
@@ -2144,6 +2177,28 @@ def dispatch(name, args, memory=None):
             return f"written to {path}"
         except Exception as e:
             return f"could not write file: {e}"
+
+    if name == "write_knowledge_file":
+        rel_path = args.get("rel_path", "").lstrip("/")
+        content  = args.get("content", "")
+        mode     = args.get("mode", "write")
+        if not rel_path:
+            return "no rel_path given"
+        if not content:
+            return "no content given"
+        base = os.path.expanduser("~/ai-knowledge")
+        abs_path = os.path.normpath(os.path.join(base, rel_path))
+        # Prevent path-traversal out of ~/ai-knowledge/
+        if not abs_path.startswith(base + os.sep) and abs_path != base:
+            return f"blocked: path must be inside ~/ai-knowledge/ (got {abs_path})"
+        try:
+            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+            with open(abs_path, "a" if mode == "append" else "w") as f:
+                f.write(content)
+            print(f"  [knowledge] wrote {len(content)} chars to {abs_path}")
+            return f"written: ~/ai-knowledge/{rel_path} ({len(content)} chars)"
+        except Exception as e:
+            return f"could not write knowledge file: {e}"
 
     if name == "list_files":
         path = os.path.expanduser(args.get("path", "~"))
