@@ -604,6 +604,9 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
                 if cap and _tool_counts[name] > cap:
                     result = (f"[{name} already called {cap}x this turn — "
                               f"your context is loaded. Stop and respond to {who}.]")
+                    # She ignored the message and kept calling it (10 hops in a row, then out of
+                    # steps): take the tool away so the next hop has to be a real answer.
+                    tool_list = [t for t in tool_list if t.get("function", {}).get("name") != name]
                 elif key in seen:
                     result = f"[Already called {name} with these exact args — use the result above.]"
                 else:
