@@ -260,6 +260,15 @@ def build_context(mem, user_text, amy_state=None, absence=None,
     except Exception:
         pass  # never let a queue error break a conversation turn
 
+    # World observation — what's happening in the world right now
+    try:
+        import world as _world_mod
+        _world_ctx = _world_mod.context_snippet()
+        if _world_ctx:
+            system += "\n\n" + _world_ctx
+    except Exception:
+        pass  # never let world fetch errors break a conversation turn
+
     # Surface buffered thoughts from while the human was away
     if pending_thoughts:
         thought_texts = [t for _, t in pending_thoughts]
