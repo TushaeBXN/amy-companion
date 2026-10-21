@@ -32,6 +32,7 @@ import worker
 import guest_docs
 import condition as _cond
 import turn_log as _turn_log
+from task_queue import get_queue as _get_task_queue
 try:
     import learnings as _learnings
 except ModuleNotFoundError:
@@ -241,22 +242,30 @@ def _build_system(history_len: int = 0, person: dict | None = None, message: str
     # Use the compact system prompt for any non-legacy model name.
     _LEGACY_MODELS = {"gemma12-test"}
     if MODEL not in _LEGACY_MODELS:
-        return _build_compact_system()
-    # Everything here must stay identical between messages: Ollama then reuses the
-    # already-read prompt (0.2s instead of ~60s on the M4). Anything that changes per
-    # message goes in _turn_context(), next to the user's message.
-    s = ("[Your instructions: these tell you who to be and what to work toward. "
-         "They are NOT things you did or remember.]\n\n"
-         + get_core_prompt() + "\n\n" + mem.wake_up())
-    if _learnings_ctx:
-        s += "\n\n" + _learnings_ctx
-    s += (
-        "\n\n[Interface: Telegram — Brian is texting you like a friend. "
-        "Be warm, natural, conversational. Short replies are fine. "
-        "You remember previous conversations — reference them naturally when relevant.]"
-    )
-    s += worker.scope_rules(MAX_HOPS)
-    return _cond.apply_condition(s, condition=_cond.CONDITION)
+        s = _build_compact_system()
+    else:
+        # Everything here must stay identical between messages: Ollama then reuses the
+        # already-read prompt (0.2s instead of ~60s on the M4). Anything that changes per
+        # message goes in _turn_context(), next to the user's message.
+        s = ("[Your instructions: these tell you who to be and what to work toward. "
+             "They are NOT things you did or remember.]\n\n"
+             + get_core_prompt() + "\n\n" + mem.wake_up())
+        if _learnings_ctx:
+            s += "\n\n" + _learnings_ctx
+        s += (
+            "\n\n[Interface: Telegram — Brian is texting you like a friend. "
+            "Be warm, natural, conversational. Short replies are fine. "
+            "You remember previous conversations — reference them naturally when relevant.]"
+        )
+        s += worker.scope_rules(MAX_HOPS)
+        s = _cond.apply_condition(s, condition=_cond.CONDITION)
+    try:
+        _tq = _get_task_queue().context_snippet()
+        if _tq:
+            s += "\n\n" + _tq
+    except Exception:
+        pass
+    return s
 
 
 _ET = _ZoneInfo("America/New_York")
