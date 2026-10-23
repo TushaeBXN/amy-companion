@@ -859,7 +859,7 @@ def _plain(text: str) -> str:
 
 
 _TOOL_PHRASES = {
-    "web_search": "searching the web", "read_article": "reading articles",
+    "web_search": "searching the web", "read_article": "reading articles", "browse": "browsing the web",
     "moltbook_check_in": "checking Moltbook", "moltbook_engage": "working on Moltbook",
     "moltbook_post": "posting on Moltbook", "moltbook_verify": "working on Moltbook",
     "read_file": "reading files", "write_file": "saving a file", "list_files": "looking through files",

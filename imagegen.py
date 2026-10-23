@@ -87,6 +87,11 @@ def _exclusive():
     @contextmanager
     def cm():
         with heavy_job.exclusive("image generation"):
+            try:
+                import browse
+                browse.shutdown()          # an open page costs ~0.5 GB; FLUX needs the room
+            except Exception:
+                pass
             _unload_chat_models()
             yield
     return cm()
