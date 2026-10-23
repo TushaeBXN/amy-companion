@@ -127,3 +127,12 @@ def test_inconclusive_check_is_not_celebrated_or_punished(env, monkeypatch):
     gd.record_check("g1", 1.0, 1.0, 3)                   # passed, but it passed without the playbook too
     line = gd.drive_line()
     assert "Open gap" in line and "Enjoy" not in line and "stings" not in line
+
+
+def test_retired_gap_leaves_the_pull_and_earns_nothing(env):
+    gd.open_gap("g1", "evidence-first", "evidence", case="c1")
+    gd.retire_gap("g1", "not reproducible: 0 of 8 baseline failures")
+    assert gd.open_gaps() == []
+    assert gd.drive_line() == ""
+    rec = gd._records()["g1"]
+    assert rec["status"] == "retired" and "0 of 8" in rec["retired_reason"]

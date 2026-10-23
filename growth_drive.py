@@ -79,6 +79,11 @@ def open_gap(gap_id: str, skill: str, evidence: str, case: str = "") -> bool:
     return True
 
 
+def retire_gap(gap_id: str, reason: str) -> None:
+    """Drop a gap that can't be reproduced or no longer applies. Kept on file, never rewarded."""
+    _append({"id": gap_id, "status": "retired", "retired_reason": reason})
+
+
 def open_gaps() -> list:
     return [r for r in _records().values() if r.get("status") == "open"]
 

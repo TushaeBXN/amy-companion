@@ -20,5 +20,21 @@ invented numbers would come back later as if they were verified.
 broke its purpose, which is to stop her acting on unchecked ideas. A required field is not
 permission to fill it with a guess.
 
-**Became:** `growth/playbooks/evidence-before-estimates.md`, checked by
-`growth/cases/income-brainstorm.json`.
+**Became:** a draft playbook (`evidence-before-estimates.draft.md`, in this folder so it is
+not loaded) and a replay case, `growth/cases/income-brainstorm.json`.
+
+## Result: not reproducible, playbook not shipped
+
+- Check, 3 replays each way: baseline 3/3 pass, with playbook 3/3 pass -> inconclusive.
+- Larger baseline, 8 replays with no playbook: `income_eval` was called 0 of 8 times
+  (first calls: `task_list` x7, `read_feed` x1).
+- So the failure seen once earlier does not reproduce in her current setup. It may have been
+  chance, or fixed by something else since (BoTTube was paused in between). 8 clean runs
+  only rule out a high failure rate, not a rare one.
+- The check did its job: it refused to credit a playbook for fixing something that wasn't
+  broken. The gap is retired, not closed, and no win was recorded.
+- The playbook is left as a draft because it would also work against her own rule to run
+  `income_eval` before committing to an income idea.
+
+Lesson for the next session: measure the baseline first. Only write a playbook for a
+failure that actually reproduces.
