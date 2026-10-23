@@ -32,6 +32,11 @@ TIMEOUT_S = 900
 # AMY_IMAGEGEN_PAUSED=0 to resume. Run it alone (about 3 min, 178 s measured) or not at all.
 PAUSED = os.environ.get("AMY_IMAGEGEN_PAUSED", "1") != "0"
 
+# Lower-bit FLUX weights use less GPU memory than the 8-bit she ran at (peak 21.8 GB). mflux
+# accepts 3, 4, 5, 6 or 8. Default 4; set AMY_FLUX_QUANT=8 for the old behaviour.
+_Q = os.environ.get("AMY_FLUX_QUANT", "4")
+FLUX_QUANT = _Q if _Q in {"3", "4", "5", "6", "8"} else "4"
+
 _lock = threading.Lock()  # one generation at a time; 16GB can't fit two
 
 
@@ -96,7 +101,7 @@ def generate_image(prompt: str, seed: int | None = None, steps: int = 4) -> Path
         seed = int(time.time()) if seed is None else seed
         out = OUT_DIR / f"amy_{seed}.png"
         cmd = [MFLUX_BIN, "--model", "schnell"]
-        cmd += ["--path", MODEL_PATH] if MODEL_PATH else ["-q", "8"]
+        cmd += ["--path", MODEL_PATH] if MODEL_PATH else ["-q", FLUX_QUANT]
         cmd += ["--prompt", prompt, "--steps", str(steps),
                 "--seed", str(seed), "--output", str(out)]
 
@@ -164,7 +169,7 @@ def create_slideshow(prompts: list, duration_per_image: int = 3) -> Path:
                 seed = int(time.time()) + i
                 out = OUT_DIR / f"amy_{seed}.png"
                 cmd = [MFLUX_BIN, "--model", "schnell"]
-                cmd += ["--path", MODEL_PATH] if MODEL_PATH else ["-q", "8"]
+                cmd += ["--path", MODEL_PATH] if MODEL_PATH else ["-q", FLUX_QUANT]
                 cmd += ["--prompt", prompt, "--steps", "4",
                         "--seed", str(seed), "--output", str(out)]
                 with open(LOG_FILE, "a") as log:
