@@ -72,24 +72,26 @@ def arxiv_papers(category: str = "ai", limit: int = 8) -> str:
 # ── GitHub Trending ───────────────────────────────────────────────────────────
 
 def github_trending(language: str = "", since: str = "daily") -> str:
-    """Trending repos on GitHub today."""
+    """Trending repos on GitHub today.
+
+    Reads each repo's own <article class="Box-row"> block, so a repo and its description can't
+    drift apart. It used to take every /owner/repo link on the page (nav, sponsors, apps) and
+    pair them with descriptions by position, which gave junk links and mismatched text."""
     url = "https://github.com/trending"
     if language:
         url += f"/{language.lower()}"
     url += f"?since={since}"
     r = _S.get(url, timeout=15)
-    # Match repo links in the trending page
-    repos = re.findall(r'href="/([a-zA-Z0-9_.\-]+/[a-zA-Z0-9_.\-]+)"', r.text)
-    descs = re.findall(r'<p[^>]*col-9[^>]*>\s*(.*?)\s*</p>', r.text, re.DOTALL)
-    seen: set = set()
-    # Filter out navigation/meta links (single-segment paths already excluded by regex)
-    skip = {"features", "enterprise", "explore", "marketplace", "pricing", "login", "join"}
-    unique = [x for x in repos if x.split("/")[0].lower() not in skip
-              and not (x in seen or seen.add(x))][:10]
     lines = []
-    for i, repo in enumerate(unique):
-        desc = re.sub(r"\s+", " ", descs[i]).strip() if i < len(descs) else ""
-        lines.append(f"- https://github.com/{repo}  {desc[:100]}")
+    for block in re.findall(r'<article[^>]*Box-row.*?</article>', r.text, re.DOTALL):
+        repo = re.search(r'<h2[^>]*>\s*<a[^>]*href="/([^"/]+/[^"/]+)"', block, re.DOTALL)
+        if not repo:
+            continue
+        d = re.search(r'<p class="[^"]*col-9[^"]*"[^>]*>(.*?)</p>', block, re.DOTALL)
+        desc = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", d.group(1))).strip() if d else ""
+        lines.append(f"- https://github.com/{repo.group(1)}  {desc[:100]}")
+        if len(lines) >= 10:
+            break
     return "\n".join(lines) or "No trending repos found."
 
 
