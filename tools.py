@@ -1656,20 +1656,17 @@ _pending_voice: "Path | None" = None
 # Build active TOOLS list — moltbook tools only included when service is reachable
 TOOLS = _BASE_TOOLS + _AGENT_COMMS_TOOLS + _EVENT_LOG_TOOLS + (_MOLTBOOK_TOOLS if _MOLTBOOK_UP else [])
 
-# BoTTube: Amy may look around (bottube_check is read-only) but not create anything yet
-# (Brian's call). Set AMY_BOTTUBE_PAUSED=0 to let her make and post videos. The creating
-# tools are hidden from the model and refused if called anyway.
-BOTTUBE_PAUSED = os.environ.get("AMY_BOTTUBE_PAUSED", "1") != "0"
-_BOTTUBE_TOOLS = {"create_slideshow", "bottube_post"}
-if BOTTUBE_PAUSED:
+# BoTTube is switched off until Brian has bigger compute (2026-10-23). The code stays (bottube.py);
+# AMY_BOTTUBE=1 brings the tools back. create_slideshow exists only for BoTTube, so it goes with it.
+BOTTUBE_ENABLED = os.environ.get("AMY_BOTTUBE", "0") == "1"
+_BOTTUBE_TOOLS = {"create_slideshow", "bottube_post", "bottube_check"}
+if not BOTTUBE_ENABLED:
     TOOLS = [t for t in TOOLS if t["function"]["name"] not in _BOTTUBE_TOOLS]
 
-# Image generation is paused too: FLUX needs more GPU memory than this Mac has free while Amy
-# runs (see imagegen.PAUSED). Set AMY_IMAGEGEN_PAUSED=0 to resume.
-IMAGEGEN_PAUSED = os.environ.get("AMY_IMAGEGEN_PAUSED", "1") != "0"
-_IMAGE_TOOLS = {"generate_image", "create_slideshow"}
+# Single images (generate_image) are on: she makes one when Brian asks. AMY_IMAGEGEN_PAUSED=1 pauses it.
+IMAGEGEN_PAUSED = os.environ.get("AMY_IMAGEGEN_PAUSED", "0") == "1"
 if IMAGEGEN_PAUSED:
-    TOOLS = [t for t in TOOLS if t["function"]["name"] not in _IMAGE_TOOLS]
+    TOOLS = [t for t in TOOLS if t["function"]["name"] != "generate_image"]
 
 # Active timer dedup — tracks delay values (seconds) currently counting down
 _active_timers: set = set()
@@ -1700,12 +1697,11 @@ def dispatch(name, args, memory=None):
       - avatar_* -> your Unity/VRM animation bridge
       - hardware_* -> your BLE controller (the RealDoll-style neck/motor layer)
     """
-    if IMAGEGEN_PAUSED and name in _IMAGE_TOOLS:
-        return ("Image generation is paused: FLUX needs more memory than this Mac has free while you run, "
-                "and it froze the machine. Tell Brian plainly if he asks for an image; don't pretend to make one.")
+    if IMAGEGEN_PAUSED and name == "generate_image":
+        return "Image generation is paused. Tell Brian plainly if he asks for an image; don't pretend to make one."
 
-    if BOTTUBE_PAUSED and name in _BOTTUBE_TOOLS:
-        return "Creating on BoTTube is paused by Brian for now. You can still look around with bottube_check."
+    if not BOTTUBE_ENABLED and name in _BOTTUBE_TOOLS:
+        return "BoTTube is switched off until Brian has bigger compute. Don't use it or bring it up."
 
     if name in ("read_file", "write_file", "list_files", "read_deliverable") and _is_guest_private(args.get("path", "")):
         return "That belongs to someone else's private space (a guest's documents or chats). I don't open it."

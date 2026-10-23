@@ -1,46 +1,65 @@
-"""Image generation (FLUX) is paused: hidden from her tools, refused if called, guarded in imagegen."""
+"""Single images are on (when Brian asks). BoTTube and slideshows are off, with the code kept."""
 import importlib
 
 import pytest
 
+import amy_persona
 import imagegen
 import tools
 
 
-def test_both_image_tools_are_hidden():
+def _boom(*a, **k):
+    raise AssertionError("must not run")
+
+
+def test_generate_image_is_available_and_bottube_is_gone():
     names = {t["function"]["name"] for t in tools.TOOLS}
-    assert "generate_image" not in names and "create_slideshow" not in names
-    assert "bottube_check" in names           # looking around BoTTube is still allowed
+    assert "generate_image" in names
+    for gone in ("create_slideshow", "bottube_post", "bottube_check"):
+        assert gone not in names
 
 
-@pytest.mark.parametrize("name,args", [("generate_image", {"prompt": "a fox"}),
-                                       ("create_slideshow", {"prompts": ["a", "b"]})])
-def test_calling_them_anyway_is_refused_and_starts_nothing(monkeypatch, name, args):
-    def boom(*a, **k):
-        raise AssertionError("FLUX must not start while paused")
-    monkeypatch.setattr(imagegen, "generate_image", boom)
-    monkeypatch.setattr(imagegen, "create_slideshow", boom)
-    monkeypatch.setattr(imagegen, "generate_and_send", boom)
-    reply = tools.dispatch(name, args, None)
-    assert "paused" in reply and "don't pretend" in reply
+@pytest.mark.parametrize("name,args", [("create_slideshow", {"prompts": ["a", "b"]}),
+                                       ("bottube_post", {"path": "x.mp4", "title": "t"}),
+                                       ("bottube_check", {"action": "trending"})])
+def test_bottube_tools_are_refused_and_start_nothing(monkeypatch, name, args):
+    import bottube
+    for fn in ("create_slideshow", "generate_and_send"):
+        monkeypatch.setattr(imagegen, fn, _boom)
+    for fn in ("upload_video", "trending", "feed", "search", "my_profile", "check_earnings", "get_wallet"):
+        monkeypatch.setattr(bottube, fn, _boom)
+    assert "switched off" in tools.dispatch(name, args, None)
 
 
-def test_imagegen_itself_refuses_when_paused():
-    with pytest.raises(RuntimeError, match="paused"):
-        imagegen.generate_image("a fox")
-    with pytest.raises(RuntimeError, match="paused"):
+def test_slideshows_refuse_without_bottube():
+    with pytest.raises(RuntimeError, match="Slideshows are off"):
         imagegen.create_slideshow(["a", "b"])
 
 
-def test_env_flag_resumes_it(monkeypatch):
-    monkeypatch.setenv("AMY_IMAGEGEN_PAUSED", "0")
+def test_images_can_still_be_paused(monkeypatch):
+    monkeypatch.setattr(imagegen, "PAUSED", True)
+    with pytest.raises(RuntimeError, match="paused"):
+        imagegen.generate_image("a fox")
+    monkeypatch.setattr(tools, "IMAGEGEN_PAUSED", True)
+    monkeypatch.setattr(imagegen, "generate_and_send", _boom)
+    assert "paused" in tools.dispatch("generate_image", {"prompt": "a fox"}, None)
+
+
+def test_env_flags(monkeypatch):
     try:
-        assert importlib.reload(imagegen).PAUSED is False
+        monkeypatch.setenv("AMY_BOTTUBE", "1")
+        monkeypatch.setenv("AMY_IMAGEGEN_PAUSED", "1")
+        m = importlib.reload(imagegen)
+        assert m.SLIDESHOWS is True and m.PAUSED is True
     finally:
+        monkeypatch.delenv("AMY_BOTTUBE")
         monkeypatch.delenv("AMY_IMAGEGEN_PAUSED")
-        assert importlib.reload(imagegen).PAUSED is True
+        m = importlib.reload(imagegen)
+        assert m.SLIDESHOWS is False and m.PAUSED is False
 
 
-def test_persona_tells_her_the_truth_about_images():
-    import amy_persona
-    assert "Image generation is paused" in amy_persona.get_core_prompt()
+def test_persona_images_on_request_and_bottube_off():
+    core = amy_persona.get_core_prompt()
+    assert "when Brian asks for an image" in core and "never on your own" in core
+    assert "BoTTube is switched off" in core
+    assert "amy_t" not in core and "bottube_check" not in core

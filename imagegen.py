@@ -27,10 +27,12 @@ OUT_DIR = Path(os.path.expanduser(os.environ.get("AMY_IMAGE_DIR", "~/amy-images"
 LOG_FILE = OUT_DIR / "imagegen.log"
 TIMEOUT_S = 900
 
-# Paused (Brian's call, 2026-10-23): FLUX peaks at ~21.8 GB of GPU memory on a 16 GB Mac, which
-# froze the machine and aborted mflux with "Insufficient Memory" while Amy was running. Set
-# AMY_IMAGEGEN_PAUSED=0 to resume. Run it alone (about 3 min, 178 s measured) or not at all.
-PAUSED = os.environ.get("AMY_IMAGEGEN_PAUSED", "1") != "0"
+# Single images are on: Amy makes one when Brian asks (the exclusive gate unloads her chat model
+# first, and the 4-bit default keeps memory down; a run takes ~2 minutes). AMY_IMAGEGEN_PAUSED=1
+# pauses it. Slideshows exist only for BoTTube, which is off until Brian has bigger compute
+# (2026-10-23): AMY_BOTTUBE=1 turns it back on. Its runs were the ones that crashed the machine.
+PAUSED = os.environ.get("AMY_IMAGEGEN_PAUSED", "0") == "1"
+SLIDESHOWS = os.environ.get("AMY_BOTTUBE", "0") == "1"
 
 # Lower-bit FLUX weights use less GPU memory than the 8-bit she ran at (peak 21.8 GB). mflux
 # accepts 3, 4, 5, 6 or 8. Default 4; set AMY_FLUX_QUANT=8 for the old behaviour.
@@ -93,7 +95,7 @@ def _exclusive():
 def generate_image(prompt: str, seed: int | None = None, steps: int = 4) -> Path:
     """Run mflux as a subprocess (no shell) and return the image path."""
     if PAUSED:
-        raise RuntimeError("Image generation is paused (set AMY_IMAGEGEN_PAUSED=0 to resume).")
+        raise RuntimeError("Image generation is paused (AMY_IMAGEGEN_PAUSED=1).")
     if not _lock.acquire(blocking=False):
         raise RuntimeError("An image is already being generated.")
     try:
@@ -157,8 +159,8 @@ def _notify(text: str) -> None:
 
 def create_slideshow(prompts: list, duration_per_image: int = 3) -> Path:
     """Generate one FLUX image per prompt and stitch into an mp4 with ffmpeg."""
-    if PAUSED:
-        raise RuntimeError("Image generation is paused (set AMY_IMAGEGEN_PAUSED=0 to resume).")
+    if PAUSED or not SLIDESHOWS:
+        raise RuntimeError("Slideshows are off: they exist only for BoTTube, which is switched off for now.")
     if not _lock.acquire(blocking=False):
         raise RuntimeError("An image is already being generated.")
     try:

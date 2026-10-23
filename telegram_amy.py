@@ -10,6 +10,7 @@ load_dotenv(os.path.join(_here, ".env.amy"), override=True)
 import json, re, tempfile, time, traceback as _traceback, ollama
 import event_log as _el
 import heavy_job
+import image_request
 from datetime import datetime as _dt, timezone as _tz, date as _date
 try:
     from zoneinfo import ZoneInfo as _ZoneInfo
@@ -600,6 +601,10 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
             key  = (name, tuple(sorted((k, str(v)) for k, v in args.items()) if isinstance(args, dict) else ()))
             if not is_owner and name not in GUEST_TOOLS:
                 result = "That tool is only available to Brian."
+            elif name == "generate_image" and not image_request.asked_for_image(user_text):   # only when he asks
+                result = ("Not done: Brian didn't ask for an image. Tell him what you had in mind "
+                          "and ask if he wants it.")
+                _log("  (blocked generate_image: not requested)")
             elif is_owner and _is_public_action(name, args) and not _PUBLIC_OK.search(user_text):
                 result = ("Not done: Brian didn't ask you to post, comment, follow or upvote. "
                           "Tell him what you found and ask if he wants you to act on it.")
