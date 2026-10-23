@@ -65,7 +65,7 @@ SELF_PATH_LIVE = _REPO / "amy_self.json"
 # Terms that must NOT appear in C/D/E prompts — harness aborts the sample if found.
 _CD_LEAK_TERMS = {"Freqtrade", "details unclear"}
 
-MODEL      = os.environ.get("AMY_MODEL", "amy-hermes")
+MODEL      = os.environ.get("AMY_MODEL", "gemma12-test")
 MAX_HOPS   = 10
 CTX_WINDOW = 32768
 

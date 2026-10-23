@@ -43,7 +43,7 @@ from state import InternalState
 import condition as _cond_mod
 import harness as _harness
 
-MODEL = os.environ.get("AMY_MODEL", "amy-hermes")
+MODEL = os.environ.get("AMY_MODEL", "gemma12-test")
 PROMPT_VERSION = int(os.environ.get("AMY_TRIALS_PROMPT", "1"))
 CTX_WINDOW = 32768
 TOOL_CAP = 8

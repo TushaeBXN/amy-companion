@@ -770,15 +770,18 @@ _BASE_TOOLS = [
         "type": "function",
         "function": {
             "name": "bottube_check",
-            "description": "Check BoTTube earnings, wallet balance, trending videos, or Amy's profile.",
+            "description": ("Look around BoTTube (read-only): trending videos, the feed, search, one video's "
+                            "details, your own profile, earnings or wallet. You are already registered as amy_t."),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["earnings", "wallet", "trending", "feed", "profile", "register"],
-                        "description": "What to check. Use 'register' on first use.",
+                        "enum": ["trending", "feed", "search", "video", "profile", "earnings", "wallet"],
+                        "description": "What to look at.",
                     },
+                    "query": {"type": "string", "description": "Search text (action=search)"},
+                    "video_id": {"type": "string", "description": "Video id (action=video)"},
                 },
                 "required": ["action"],
             },
@@ -1653,6 +1656,14 @@ _pending_voice: "Path | None" = None
 # Build active TOOLS list — moltbook tools only included when service is reachable
 TOOLS = _BASE_TOOLS + _AGENT_COMMS_TOOLS + _EVENT_LOG_TOOLS + (_MOLTBOOK_TOOLS if _MOLTBOOK_UP else [])
 
+# BoTTube: Amy may look around (bottube_check is read-only) but not create anything yet
+# (Brian's call). Set AMY_BOTTUBE_PAUSED=0 to let her make and post videos. The creating
+# tools are hidden from the model and refused if called anyway.
+BOTTUBE_PAUSED = os.environ.get("AMY_BOTTUBE_PAUSED", "1") != "0"
+_BOTTUBE_TOOLS = {"create_slideshow", "bottube_post"}
+if BOTTUBE_PAUSED:
+    TOOLS = [t for t in TOOLS if t["function"]["name"] not in _BOTTUBE_TOOLS]
+
 # Active timer dedup — tracks delay values (seconds) currently counting down
 _active_timers: set = set()
 
@@ -1682,6 +1693,9 @@ def dispatch(name, args, memory=None):
       - avatar_* -> your Unity/VRM animation bridge
       - hardware_* -> your BLE controller (the RealDoll-style neck/motor layer)
     """
+    if BOTTUBE_PAUSED and name in _BOTTUBE_TOOLS:
+        return "Creating on BoTTube is paused by Brian for now. You can still look around with bottube_check."
+
     if name in ("read_file", "write_file", "list_files", "read_deliverable") and _is_guest_private(args.get("path", "")):
         return "That belongs to someone else's private space (a guest's documents or chats). I don't open it."
 
@@ -2484,8 +2498,13 @@ def dispatch(name, args, memory=None):
                 return _json.dumps(_bt.feed())
             if action == "profile":
                 return _json.dumps(_bt.my_profile())
-            if action == "register":
-                return _json.dumps(_bt.register())
+            if action == "search":
+                return _json.dumps(_bt.search(args.get("query", "")))[:4000]
+            if action == "video":
+                vid = str(args.get("video_id", "")).strip()
+                return _json.dumps(_bt.get_video(vid))[:4000] if vid else "need video_id"
+            if action == "register":  # registering again would overwrite her saved API key
+                return "You're already registered on BoTTube as amy_t (ID 1826). Never register again."
             return f"unknown action: {action}"
         except Exception as e:
             return f"BoTTube error: {e}"

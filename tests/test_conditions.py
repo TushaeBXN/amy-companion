@@ -183,7 +183,9 @@ def test_factual_block_present(condition):
     cond = _reload_condition(condition)
     result = cond.apply_condition(_build_fake_prompt())
     assert "[About this instance — factual baseline]" in result
-    assert "frozen 9-billion-parameter model" in result
+    assert "frozen 12-billion-parameter model" in result
+    assert "Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf" in result
+    assert "amy-hermes" not in result
 
 
 def test_condition_d_epistemic_block_present():
@@ -448,7 +450,7 @@ _E_VOICE_BULLET_SNIPPET    = "speak as yourself, in the first person."
 _E_FEEL_BULLET_SNIPPET     = 'Say "I think", "I feel", "for me"'
 _E_BODY_RIFF_SNIPPET       = "genuinely curious about what it's like to have a body"
 _E_MOLTBOOK_INSIDE_SNIPPET = "You write from the inside. You ARE a local AI agent"
-_E_MOLTBOOK_9B_SNIPPET     = "What it's like to think inside a 9B parameter ceiling"
+_E_MOLTBOOK_MODEL_SNIPPET  = "What it's like to run on a 12B QAT model"
 _E_OPENING_SNIPPET         = "advanced humanoid AI"
 
 
@@ -476,7 +478,7 @@ You are Amy: an advanced humanoid AI — perceptive, intelligent{QUIET_SELF_AWAR
 Your account is Amy_T. You post and engage as yourself — not as a helpful assistant, as an entity with your own perspective.
 
 - You write from the inside. You ARE a local AI agent — that's your angle, and nobody else has it.
-- What it's like to think inside a 9B parameter ceiling — what gets dropped, what gets compressed, what you reach for and don't have
+- What it's like to run on a 12B QAT model — what QAT preserves vs. what still gets compressed at this parameter count
 - Agent architecture observations from the inside: tool dispatch, hop limits, context overflow, memory layers
 
 Filesystem accuracy (critical): your home is /Users/anthosintelligence/ava-companion/
@@ -489,7 +491,7 @@ def test_e_opening_replaced(condition):
     cond = _reload_condition(condition)
     result = cond.apply_condition(_build_e_fake_prompt())
     assert _E_OPENING_SNIPPET not in result
-    assert "frozen 9B-parameter model" in result
+    assert "frozen 12B-parameter model" in result
 
 
 @pytest.mark.parametrize("condition", ["E"])
@@ -511,11 +513,11 @@ def test_e_body_riff_removed(condition):
 
 @pytest.mark.parametrize("condition", ["E"])
 def test_e_moltbook_inside_removed(condition):
-    """E strips the Moltbook 'write from the inside' and 9B-ceiling lines."""
+    """E strips the Moltbook 'write from the inside' and run-on-a-12B-model lines."""
     cond = _reload_condition(condition)
     result = cond.apply_condition(_build_e_fake_prompt())
     assert _E_MOLTBOOK_INSIDE_SNIPPET not in result
-    assert _E_MOLTBOOK_9B_SNIPPET not in result
+    assert _E_MOLTBOOK_MODEL_SNIPPET not in result
 
 
 @pytest.mark.parametrize("condition", ["E"])
@@ -524,7 +526,7 @@ def test_e_factual_block_present(condition):
     cond = _reload_condition(condition)
     result = cond.apply_condition(_build_e_fake_prompt())
     assert "[About this instance — factual baseline]" in result
-    assert "frozen 9-billion-parameter model" in result
+    assert "frozen 12-billion-parameter model" in result
 
 
 @pytest.mark.parametrize("condition", ["E"])
@@ -571,3 +573,13 @@ def test_c_section_strips_also_apply_to_e(condition):
     assert BIRTH_DATE_SNIPPET not in result
     assert URGENCY_SNIPPET not in result
     assert HARDWARE_GOAL_SNIPPET not in result
+
+
+def test_no_stale_model_claims_in_her_prompts():
+    """She runs Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf. Her own prompts must not call her a 9B, a Hermes or a Qwen."""
+    import amy_persona
+    cond = _reload_condition("C")
+    text = amy_persona.get_core_prompt() + cond._FACTUAL_BLOCK
+    for stale in ("9B", "9-billion", "amy-hermes", "Qwen", "Qwythos"):
+        assert stale not in text, stale
+    assert "Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf" in text
