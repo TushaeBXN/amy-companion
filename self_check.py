@@ -10,6 +10,7 @@ All project files are editable. The safety net IS the test suite: syntax check +
 backup + auto-revert if score drops. self_check.py itself is never self-edited.
 """
 import ast
+from pathlib import Path
 import importlib
 import inspect
 import json
@@ -288,7 +289,47 @@ def _log_code_reward(filename: str, score_before: int, score_after: int,
         pass
 
 
+def _log_edit_attempt(filename: str, reason: str, result: dict):
+    """Append every self_edit outcome to ~/ai-knowledge/metrics/self_edits.jsonl.
+
+    _log_code_reward only fires for edits that were applied or reverted. Everything that
+    fails earlier (text not found, syntax error, approval gate, blast radius) used to leave
+    no trace, so there was no way to see what her self-edits actually did."""
+    try:
+        import json
+        import self_metrics as _sm
+        path = Path(_sm.METRICS_DIR) / "self_edits.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "file": os.path.basename(str(filename)),
+            "reason": str(reason)[:200],
+            "status": result.get("status", "unknown"),
+            "score_before": result.get("score_before"),
+            "score_after": result.get("score_after"),
+            "message": str(result.get("message") or result.get("error") or "")[:200],
+        }
+        with open(path, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass
+
+
 def self_edit(
+    filename: str,
+    old_text: str,
+    new_text: str,
+    reason: str,
+    *,
+    force_autonomous: bool = False,
+) -> dict:
+    """Guarded self-edit (see _self_edit for the workflow). Records every outcome."""
+    result = _self_edit(filename, old_text, new_text, reason, force_autonomous=force_autonomous)
+    _log_edit_attempt(filename, reason, result)
+    return result
+
+
+def _self_edit(
     filename: str,
     old_text: str,
     new_text: str,
