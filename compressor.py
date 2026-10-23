@@ -20,6 +20,7 @@ import os
 import time
 from typing import Any
 
+import heavy_job
 import ollama
 
 logger = logging.getLogger(__name__)
@@ -181,7 +182,7 @@ def _summarize(middle: list, model: str, ctx_window: int) -> str | None:
         return None
 
     try:
-        resp = ollama.chat(
+        resp = heavy_job.call(ollama.chat,
             model=model,
             messages=[
                 {"role": "system", "content": _SUMMARIZE_PROMPT},

@@ -9,6 +9,7 @@ load_dotenv(os.path.join(_here, ".env.amy"), override=True)
 
 import json, re, tempfile, time, traceback as _traceback, ollama
 import event_log as _el
+import heavy_job
 from datetime import datetime as _dt, timezone as _tz, date as _date
 try:
     from zoneinfo import ZoneInfo as _ZoneInfo
@@ -909,6 +910,12 @@ async def _respond(update: Update, person: dict, text: str, image_bytes):
 
     try:
         reply = await loop.run_in_executor(None, _chat, text, image_bytes, person, progress)
+    except heavy_job.JobBusy as e:
+        typing.cancel()
+        _log(f"… {who}: held while a heavy job runs — {e}")
+        await update.message.reply_text("I'm in the middle of making an image and my model is switched off "
+                                        "while it runs. Give me a few minutes and ask again.")
+        return
     except Exception as e:
         typing.cancel()
         _log(f"✗ {who}: Amy failed after {time.time()-t0:.0f}s — {type(e).__name__}: {e}\n{_traceback.format_exc()}")
