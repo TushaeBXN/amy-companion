@@ -238,3 +238,39 @@ def test_if_the_model_wont_unload_flux_never_starts(monkeypatch, tmp_path, flag)
         imagegen.generate_image("a fox")
     assert not flag.exists()
     assert not imagegen._lock.locked()
+
+
+# ── lower-bit FLUX: the setting reaches the mflux command ────────────────────
+
+def _run_and_capture_cmd(monkeypatch, tmp_path):
+    monkeypatch.setattr(imagegen, "PAUSED", False)
+    monkeypatch.setattr(imagegen, "OUT_DIR", tmp_path)
+    monkeypatch.setattr(imagegen, "LOG_FILE", tmp_path / "log")
+    monkeypatch.setattr(imagegen, "_unload_chat_models", lambda *a, **k: None)
+    seen = {}
+
+    def fake_mflux(cmd, **kw):
+        seen["cmd"] = cmd
+        open(cmd[cmd.index("--output") + 1], "wb").write(b"png")
+        return type("R", (), {"returncode": 0})()
+    monkeypatch.setattr(imagegen.subprocess, "run", fake_mflux)
+    imagegen.generate_image("a fox", seed=7)
+    return seen["cmd"]
+
+
+def test_default_quantization_is_four_bit(monkeypatch, tmp_path):
+    monkeypatch.setattr(imagegen, "MODEL_PATH", "")
+    cmd = _run_and_capture_cmd(monkeypatch, tmp_path)
+    assert cmd[cmd.index("-q") + 1] == "4"
+
+
+def test_quantization_can_be_changed_and_a_bad_value_falls_back(monkeypatch):
+    import importlib
+    try:
+        monkeypatch.setenv("AMY_FLUX_QUANT", "8")
+        assert importlib.reload(imagegen).FLUX_QUANT == "8"
+        monkeypatch.setenv("AMY_FLUX_QUANT", "nonsense")
+        assert importlib.reload(imagegen).FLUX_QUANT == "4"
+    finally:
+        monkeypatch.delenv("AMY_FLUX_QUANT")
+        importlib.reload(imagegen)
