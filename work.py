@@ -9,6 +9,7 @@ import re
 import time
 from datetime import datetime
 
+import heavy_job
 import ollama
 
 HERE = os.path.dirname(__file__)
@@ -42,7 +43,7 @@ def draft_deliverable(gig_type: str, brief: str, extra_context: str = "") -> str
         user_parts.append(f"Additional context:\n{extra_context}")
     user_parts.append("\nComplete the deliverable in full now.")
 
-    resp = ollama.chat(
+    resp = heavy_job.call(ollama.chat,
         model=WORK_MODEL,
         messages=[
             {"role": "system", "content": system},

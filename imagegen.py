@@ -19,17 +19,81 @@ from pathlib import Path
 
 import requests
 
+import heavy_job
+
 MODEL_PATH = os.path.expanduser(os.environ.get("AMY_FLUX_PATH", "")) if os.environ.get("AMY_FLUX_PATH") else ""
 MFLUX_BIN = os.path.expanduser(os.environ.get("MFLUX_BIN", "~/mflux-env/bin/mflux-generate"))
 OUT_DIR = Path(os.path.expanduser(os.environ.get("AMY_IMAGE_DIR", "~/amy-images")))
 LOG_FILE = OUT_DIR / "imagegen.log"
 TIMEOUT_S = 900
 
+# Paused (Brian's call, 2026-10-23): FLUX peaks at ~21.8 GB of GPU memory on a 16 GB Mac, which
+# froze the machine and aborted mflux with "Insufficient Memory" while Amy was running. Set
+# AMY_IMAGEGEN_PAUSED=0 to resume. Run it alone (about 3 min, 178 s measured) or not at all.
+PAUSED = os.environ.get("AMY_IMAGEGEN_PAUSED", "1") != "0"
+
+# Lower-bit FLUX weights use less GPU memory than the 8-bit she ran at (peak 21.8 GB). mflux
+# accepts 3, 4, 5, 6 or 8. Default 4; set AMY_FLUX_QUANT=8 for the old behaviour.
+_Q = os.environ.get("AMY_FLUX_QUANT", "4")
+FLUX_QUANT = _Q if _Q in {"3", "4", "5", "6", "8"} else "4"
+
 _lock = threading.Lock()  # one generation at a time; 16GB can't fit two
+
+
+def _loaded_models() -> list:
+    import ollama
+    names = []
+    for m in ollama.ps().get("models", []):
+        name = m.get("model") if hasattr(m, "get") else getattr(m, "model", None)
+        if name and "embed" not in name:   # the embedding model is tiny and her memory needs it
+            names.append(name)
+    return names
+
+
+def _unload_chat_models(wait_s: float = 90, settle_checks: int = 3) -> None:
+    """Evict Amy's chat/vision models and confirm they STAY gone before FLUX starts.
+
+    A ~9.6 GB chat model plus FLUX (peak ~21.8 GB) doesn't fit in 16 GB. Raises JobBusy if a
+    model is still loaded after wait_s: starting FLUX anyway is what froze the machine."""
+    try:
+        import ollama
+        _loaded_models()
+    except Exception:
+        return                                   # Ollama isn't running: nothing is loaded
+    deadline, quiet = time.time() + wait_s, 0
+    while time.time() < deadline:
+        loaded = _loaded_models()
+        if not loaded:
+            quiet += 1
+            if quiet >= settle_checks:
+                return
+        else:
+            quiet = 0
+            for name in loaded:
+                try:
+                    ollama.generate(model=name, prompt="", keep_alive=0)
+                except Exception:
+                    pass
+        time.sleep(2)
+    raise heavy_job.JobBusy(f"couldn't unload the chat model ({_loaded_models()}); not starting FLUX")
+
+
+def _exclusive():
+    """Hold the machine for FLUX: close the gate, drain model calls, unload, then run."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def cm():
+        with heavy_job.exclusive("image generation"):
+            _unload_chat_models()
+            yield
+    return cm()
 
 
 def generate_image(prompt: str, seed: int | None = None, steps: int = 4) -> Path:
     """Run mflux as a subprocess (no shell) and return the image path."""
+    if PAUSED:
+        raise RuntimeError("Image generation is paused (set AMY_IMAGEGEN_PAUSED=0 to resume).")
     if not _lock.acquire(blocking=False):
         raise RuntimeError("An image is already being generated.")
     try:
@@ -37,16 +101,17 @@ def generate_image(prompt: str, seed: int | None = None, steps: int = 4) -> Path
         seed = int(time.time()) if seed is None else seed
         out = OUT_DIR / f"amy_{seed}.png"
         cmd = [MFLUX_BIN, "--model", "schnell"]
-        cmd += ["--path", MODEL_PATH] if MODEL_PATH else ["-q", "8"]
+        cmd += ["--path", MODEL_PATH] if MODEL_PATH else ["-q", FLUX_QUANT]
         cmd += ["--prompt", prompt, "--steps", str(steps),
                 "--seed", str(seed), "--output", str(out)]
 
-        with open(LOG_FILE, "a") as log:
-            log.write(f"\n=== {time.ctime()} :: {prompt!r}\n")
-            log.flush()
-            result = subprocess.run(
-                cmd, stdout=log, stderr=subprocess.STDOUT, timeout=TIMEOUT_S
-            )
+        with _exclusive():
+            with open(LOG_FILE, "a") as log:
+                log.write(f"\n=== {time.ctime()} :: {prompt!r}\n")
+                log.flush()
+                result = subprocess.run(
+                    cmd, stdout=log, stderr=subprocess.STDOUT, timeout=TIMEOUT_S
+                )
         if result.returncode != 0 or not out.exists():
             raise RuntimeError(f"mflux failed (exit {result.returncode}); see {LOG_FILE}")
         return out
@@ -92,25 +157,28 @@ def _notify(text: str) -> None:
 
 def create_slideshow(prompts: list, duration_per_image: int = 3) -> Path:
     """Generate one FLUX image per prompt and stitch into an mp4 with ffmpeg."""
+    if PAUSED:
+        raise RuntimeError("Image generation is paused (set AMY_IMAGEGEN_PAUSED=0 to resume).")
     if not _lock.acquire(blocking=False):
         raise RuntimeError("An image is already being generated.")
     try:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         paths = []
-        for i, prompt in enumerate(prompts):
-            seed = int(time.time()) + i
-            out = OUT_DIR / f"amy_{seed}.png"
-            cmd = [MFLUX_BIN, "--model", "schnell"]
-            cmd += ["--path", MODEL_PATH] if MODEL_PATH else ["-q", "8"]
-            cmd += ["--prompt", prompt, "--steps", "4",
-                    "--seed", str(seed), "--output", str(out)]
-            with open(LOG_FILE, "a") as log:
-                log.write(f"\n=== {time.ctime()} [slide {i+1}/{len(prompts)}] :: {prompt!r}\n")
-                log.flush()
-                result = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, timeout=TIMEOUT_S)
-            if result.returncode != 0 or not out.exists():
-                raise RuntimeError(f"mflux failed on slide {i+1} (exit {result.returncode})")
-            paths.append(out)
+        with _exclusive():   # only the FLUX runs hold the machine; ffmpeg below is light
+            for i, prompt in enumerate(prompts):
+                seed = int(time.time()) + i
+                out = OUT_DIR / f"amy_{seed}.png"
+                cmd = [MFLUX_BIN, "--model", "schnell"]
+                cmd += ["--path", MODEL_PATH] if MODEL_PATH else ["-q", FLUX_QUANT]
+                cmd += ["--prompt", prompt, "--steps", "4",
+                        "--seed", str(seed), "--output", str(out)]
+                with open(LOG_FILE, "a") as log:
+                    log.write(f"\n=== {time.ctime()} [slide {i+1}/{len(prompts)}] :: {prompt!r}\n")
+                    log.flush()
+                    result = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, timeout=TIMEOUT_S)
+                if result.returncode != 0 or not out.exists():
+                    raise RuntimeError(f"mflux failed on slide {i+1} (exit {result.returncode})")
+                paths.append(out)
 
         # write ffmpeg concat list
         ts = int(time.time())

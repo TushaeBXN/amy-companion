@@ -10,6 +10,7 @@ import os
 import threading
 import time
 
+import heavy_job
 import ollama
 
 HERE = os.path.dirname(__file__)
@@ -164,7 +165,7 @@ class ThoughtBuffer:
 
         try:
             for _ in range(4):
-                resp = ollama.chat(
+                resp = heavy_job.call(ollama.chat,
                     model=TOOL_MODEL,
                     messages=messages,
                     tools=allowed,
@@ -218,7 +219,7 @@ class ThoughtBuffer:
         messages = [{"role": "system", "content": prompt}] + recent
 
         try:
-            resp = ollama.chat(
+            resp = heavy_job.call(ollama.chat,
                 model=THOUGHT_MODEL,
                 messages=messages,
                 keep_alive="30m",
