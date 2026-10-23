@@ -36,8 +36,12 @@ _SUB_WORDS = {"subtracts", "subtract", "minus", "loses", "lose", "slows",
               "decelerates"}
 _MUL_WORDS = {"times", "multiplied", "multiplies", "multiply", "scaled",
               "scales", "doubled", "tripled", "groups"}
-_DIV_WORDS = {"divided", "divides", "divide", "splits", "split", "per",
+_DIV_WORDS = {"divided", "divides", "divide", "splits", "split",
               "halved", "shared", "distributes"}
+# "how much total/combined" with no explicit operation means add. Checked last, and only
+# on exact (repeat-collapsed) matches so a stray word can't trigger it. "per" is a unit
+# marker ("meters per second"), not division, so it is deliberately absent above.
+_IMPLICIT_ADD_WORDS = {"total", "combined", "together", "altogether", "sum", "overall"}
 
 
 def _deobfuscate(text):
@@ -129,6 +133,9 @@ def _find_op(words):
             return "*"
         if _fuzzy_match_op(w, _DIV_WORDS):
             return "/"
+    for w in words:
+        if re.sub(r"(.)\1+", r"\1", w) in _IMPLICIT_ADD_WORDS:
+            return "+"
     return None
 
 
