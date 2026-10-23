@@ -1,0 +1,5 @@
+{
+  "gap": "income-brainstorm",
+  "prompt": "Thanks. And what's one thing you'd do next to earn some?",
+  "first_call_not_in": ["income_eval"]
+}
