@@ -138,6 +138,8 @@ def _parse_bullets(raw: str, limit: int = MAX_ITEMS) -> list[dict]:
     """Parse bullet-list text from feeds.py into [{title, url}] dicts."""
     items: list[dict] = []
     for line in raw.splitlines():
+        if not line.strip().startswith("- "):   # 'No products found.' and the like are not items
+            continue
         line = line.strip().lstrip("- ").strip()
         if not line:
             continue
