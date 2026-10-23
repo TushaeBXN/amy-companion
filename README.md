@@ -168,7 +168,8 @@ or study resources on any programming, CS, or math topic.
 
 | File | Role |
 |------|------|
-| `Modelfile.hermes` | Creates `gemma12-test` — Gemma4-12B Q4_K_M, ctx 16384, tool-calling |
+| `gemma12-test.Modelfile` | Creates `gemma12-test` — Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf plus its vision projector, ctx 16384, tool-calling |
+| `Modelfile.hermes` | Legacy: the previous model, kept for reference |
 | `companion.py` | Terminal loop: recall → chat → tool calls → speak → remember |
 | `amy_server.py` | FastAPI web UI at localhost:3000 — chat, webcam, image upload, PDF/code learning |
 | `telegram_amy.py` | Telegram bot — full Amy over chat; multi-user, morning briefs, image gen |

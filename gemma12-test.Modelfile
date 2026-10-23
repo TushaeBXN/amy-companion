@@ -1,6 +1,11 @@
 FROM /Users/anthosintelligence/Downloads/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf
 FROM /Users/anthosintelligence/Downloads/mmproj-Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-BF16.gguf
 
+# Gemma 4 tool calling needs these three lines; without them tools are silently dropped.
+TEMPLATE {{ .Prompt }}
+RENDERER gemma4
+PARSER gemma4
+
 PARAMETER num_ctx 16384
 PARAMETER num_batch 4096
 PARAMETER num_predict 300
