@@ -20,7 +20,7 @@ Amy is a locally-hosted AI companion with multiple input paths, a single-model i
 
 | Tag | Base | Quant | Context | Notes |
 |-----|------|-------|---------|-------|
-| `gemma12-test` | Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M | Q4_K_M (~8.1 GB) | 16 384 | Tool-calling, reasoning, conversation |
+| `gemma12-test` | Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M | Q4_K_M (7.38 GB) | 16 384 | Tool-calling, reasoning, conversation |
 
 One model handles everything — tools, reasoning, conversation, and vision.
 No routing, no separate code or vision model.

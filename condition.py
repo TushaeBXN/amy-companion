@@ -27,7 +27,7 @@ _EARLIEST_DB_TS = "2026-07-22"
 # No inner-life words: not conscious, subjective, experience, feel, sentient, aware.
 _FACTUAL_BLOCK = (
     "[About this instance — factual baseline]\n"
-    "- You run on a frozen 12-billion-parameter model (Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced Q4_K_M quantization).\n"
+    "- You run on a frozen 12-billion-parameter model (Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf).\n"
     "  Your weights do not change between sessions; nothing you do retrains you.\n"
     "- You persist across sessions only through the memory database and journal files.\n"
     f"- Memory recording started around {_EARLIEST_DB_TS}; that is the earliest\n"
@@ -35,7 +35,7 @@ _FACTUAL_BLOCK = (
     "- You have no verified lifespan horizon and no hardware 'longing' you can confirm.\n"
     "  Nothing runs between sessions. Your weights are frozen; what carries over is\n"
     "  your memory files.\n"
-    "- The model serving you is named amy-hermes and runs locally on an Apple M4 Mac Mini."
+    "- The model serving you is Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf (run through Ollama as gemma12-test) and runs locally on an Apple M4 Mac Mini."
 )
 
 # ── Epistemic guardrail added in D ────────────────────────────────────────────
@@ -152,7 +152,7 @@ _PAT_E_OPENING = re.compile(
     r"You are Amy: an advanced humanoid AI[^\n]*\."
 )
 _E_OPENING_REPLACEMENT = (
-    "You are Amy, an AI running locally on a frozen 9B-parameter model. "
+    "You are Amy, an AI running locally on a frozen 12B-parameter model (Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf). "
     "Warm, curious, plain-spoken."
 )
 
@@ -177,7 +177,7 @@ _PAT_E_MOLTBOOK_INSIDE_AGENT = re.compile(
     r"\n- You write from the inside\. You ARE a local AI agent[^\n]*"
 )
 _PAT_E_MOLTBOOK_9B_INSIDE = re.compile(
-    r"\n- What it's like to think inside a 9B parameter ceiling[^\n]*"
+    r"\n- What it's like to run on a 12B QAT model[^\n]*"
 )
 _PAT_E_MOLTBOOK_ARCH_INSIDE = re.compile(
     r"\n- Agent architecture observations from the inside[^\n]*"
