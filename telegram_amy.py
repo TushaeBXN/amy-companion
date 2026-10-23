@@ -325,6 +325,14 @@ def _turn_context(history_len: int, person: dict, message: str, prior: str = "")
     s += "[Internal state]\n" + amy_state.state_summary()
     if person["role"] != "owner":
         return s
+    try:  # her growth drive: one line when a gap is open, plus any playbook this message triggers
+        import growth_drive as _gd
+        _pull = _gd.drive_line()
+        if _pull:
+            s += "\n" + _pull
+        s += _gd.playbooks_for(message)
+    except Exception:
+        pass
     try:  # what Brian's saved memories say about this message (silent when nothing clearly matches)
         import engram_bridge as _eb
         _note = _eb.memory_context(message)
