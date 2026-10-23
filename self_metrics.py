@@ -60,6 +60,21 @@ def log_score(
     return json.dumps({"logged": dimension, "score": score})
 
 
+def retract_score(date_prefix: str, dimension: str, reason: str) -> str:
+    """Mark matching score entries as superseded (kept on file, ignored by soft spots/trends).
+
+    For notes that were wrong, or have gone stale, e.g. a low score about something since fixed."""
+    data = _load_scores()
+    hit = 0
+    for e in data["entries"]:
+        if e["date"].startswith(date_prefix) and e["dimension"] == dimension and not e.get("superseded"):
+            e["superseded"] = reason
+            hit += 1
+    if hit:
+        _save_scores(data)
+    return json.dumps({"retracted": hit})
+
+
 def get_soft_spots(model: str = "Amy", days: int = 30) -> str:
     """
     Analyze recent scores and return the dimensions with lowest average.
@@ -70,6 +85,7 @@ def get_soft_spots(model: str = "Amy", days: int = 30) -> str:
     recent = [
         e for e in data["entries"]
         if e.get("model") == model
+        and not e.get("superseded")
         and datetime.fromisoformat(e["date"]) > cutoff
     ]
     if not recent:
@@ -124,6 +140,7 @@ def get_trend(dimension: str, model: str = "Amy", days: int = 60) -> str:
         e for e in data["entries"]
         if e.get("model") == model
         and e["dimension"] == dimension
+        and not e.get("superseded")
         and datetime.fromisoformat(e["date"]) > cutoff
     ]
     if len(entries) < 2:
