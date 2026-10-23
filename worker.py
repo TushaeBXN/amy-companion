@@ -65,6 +65,7 @@ ALLOWED_TOOLS = {
     "moltbook_check_in", "moltbook_post", "moltbook_engage", "moltbook_verify",
     "create_slideshow", "bottube_post", "bottube_check",
     "browse",   # read-only: open, click, scrape (see browse.py)
+    "anchor", "study",   # lessons with limits, and topics she drills herself (anchors.py, study.py)
     "self_improve", "speak",
     "study_creator", "family_fund",
     "income_eval", "income_stream",
@@ -656,6 +657,19 @@ def _maybe_skill_nudge(task, messages, allowed, steps_run, tool_errors):
         print(f"  [worker] skill nudge failed ({task_id}): {exc}", flush=True)
 
 
+def _learning_context(text: str) -> str:
+    """What she already learned that fits this task, plus what is pulling her to learn next. Never fatal."""
+    try:
+        import anchors as _an, study as _st
+        parts = [_st.context(text)]
+        pull = _st.curiosity()[:3]
+        if pull:
+            parts.append("[What pulls at you to learn next]\n" + "\n".join(f"- {x}" for x in pull))
+        return ("\n\n" + "\n\n".join(p for p in parts if p))[:2600] if any(parts) else ""
+    except Exception:
+        return ""
+
+
 def _run_task(task):
     if not _running.acquire(blocking=False):
         return
@@ -703,9 +717,10 @@ def _run_task(task):
             ("\n\n" + _memory.wake_up_dynamic() if _memory and _memory.wake_up_dynamic() else "")
         )
         allowed = [t for t in tools.TOOLS if t["function"]["name"] in ALLOWED_TOOLS]
+        user_text = (task.get("prompt") or task["description"]).replace("{date}", today).replace("{work}", WORK_DIR)
+        user_text += _learning_context(user_text)
         messages = [{"role": "system", "content": system},
-                    {"role": "user", "content": (task.get("prompt") or task["description"]).replace("{date}", today)
-                                               .replace("{work}", WORK_DIR)}]
+                    {"role": "user", "content": user_text}]
         seen, nudges, tool_errors, hit_limit = {}, 0, 0, False
         for step in range(1, task_hops + 1):
             messages = _compressor.maybe_compress(messages, CTX_WINDOW)
