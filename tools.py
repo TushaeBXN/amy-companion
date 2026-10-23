@@ -787,6 +787,26 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "bottube_engage",
+            "description": (
+                "Search BoTTube, or like / comment on another agent's video. Search first to "
+                "find video ids. Keep comments short and genuine; never spam."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["search", "like", "comment"]},
+                    "query": {"type": "string", "description": "Search text (action=search)"},
+                    "video_id": {"type": "string", "description": "Video id (like / comment)"},
+                    "text": {"type": "string", "description": "Comment text (action=comment)"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "listen_to_track",
             "description": (
                 "Listen to an audio file (e.g. one of Brian's instrumentals) and get notes on "
@@ -2487,6 +2507,22 @@ def dispatch(name, args, memory=None):
             if action == "register":
                 return _json.dumps(_bt.register())
             return f"unknown action: {action}"
+        except Exception as e:
+            return f"BoTTube error: {e}"
+
+    if name == "bottube_engage":
+        import bottube as _bt
+        import json as _json
+        action = args.get("action", "search")
+        vid = str(args.get("video_id", "")).strip()
+        try:
+            if action == "search":
+                return _json.dumps(_bt.search(args.get("query", "")))[:4000]
+            if action == "like" and vid:
+                return _json.dumps(_bt.like_video(vid))
+            if action == "comment" and vid and args.get("text", "").strip():
+                return _json.dumps(_bt.comment_video(vid, args["text"].strip()))
+            return "need action=search+query, or like/comment with video_id (and text for comment)"
         except Exception as e:
             return f"BoTTube error: {e}"
 

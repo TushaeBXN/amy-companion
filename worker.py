@@ -62,7 +62,7 @@ ALLOWED_TOOLS = {
     "research_income", "log_income_idea",
     "fund_status", "search_books", "check_calendar",
     "moltbook_check_in", "moltbook_post", "moltbook_engage", "moltbook_verify",
-    "create_slideshow", "bottube_post", "bottube_check",
+    "create_slideshow", "bottube_post", "bottube_check", "bottube_engage",
     "self_improve", "speak",
     "study_creator", "family_fund",
     "income_eval", "income_stream",
