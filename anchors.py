@@ -46,7 +46,8 @@ REQUIRED = ["id", "title", "what_it_is", "applies_when", "do_not_apply_when", "b
 STRETCH_KINDS = {"same_mechanism_other_field", "flip_constraint", "scale_up", "scale_down"}
 RESULTS = {"worked", "failed", "inconclusive"}
 TRIGGERS = {"recurrence", "load_bearing_low_conf", "unexplained_error", "doc_contradicts_memory", "curiosity"}
-KINDS = {"add", "recall", "stretch", "attempt", "confirm", "review", "defer", "contradict", "resolve"}
+KINDS = {"add", "recall", "stretch", "attempt", "confirm", "review", "defer", "contradict", "resolve",
+         "topic", "source", "drill", "teach"}   # the last four belong to study.py, same chain
 HEDGE = re.compile(r"\b(apparently|probably|seems|likely)\b", re.I)
 _STOP = set("the a an and or of to in on for with is are be it this that i you my your do does how what when "
             "where why can could would should have has had not no yes at as by from but if so we me".split())
@@ -238,7 +239,7 @@ def is_stale(anchor: dict, recs: list = None) -> bool:
 # ── the loop ─────────────────────────────────────────────────────────────────
 
 def add_anchor(*, title, what_it_is, applies_when, do_not_apply_when, breaks_when, origin,
-               tags=None, supersedes=None, resolves_deferred=None) -> dict:
+               tags=None, supersedes=None, resolves_deferred=None, topic=None) -> dict:
     fields = {"title": title, "what_it_is": what_it_is, "applies_when": applies_when,
               "do_not_apply_when": do_not_apply_when, "breaks_when": breaks_when, "origin": origin}
     for name, value in fields.items():
@@ -261,6 +262,8 @@ def add_anchor(*, title, what_it_is, applies_when, do_not_apply_when, breaks_whe
             "created": date.today().isoformat()}
     if supersedes:
         data["supersedes"] = [supersedes]
+    if topic:
+        data["topic"] = str(topic)          # the topic this rule came from (study.py checks it exists)
     with _locked():
         _anchor_file(anchor_id).write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
     _emit("add", anchor=anchor_id, origin=origin, resolves=resolves_deferred or "")
@@ -273,9 +276,11 @@ def _tokens(text: str) -> set:
         if w in _STOP or len(w) < 3:
             continue
         for suffix in ("ing", "ed", "es", "s"):
-            if w.endswith(suffix) and len(w) - len(suffix) >= 3:
+            if w.endswith(suffix) and len(w) - len(suffix) >= 3 and not (suffix == "s" and w.endswith("ss")):
                 w = w[: -len(suffix)]
                 break
+        if w.endswith("e") and len(w) > 3:      # so produce / produces / produced all become the same stem
+            w = w[:-1]
         out.add(w)
     return out
 

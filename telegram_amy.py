@@ -335,6 +335,16 @@ def _turn_context(history_len: int, person: dict, message: str, prior: str = "")
         s += _gd.playbooks_for(message)
     except Exception:
         pass
+    try:  # lessons and topics she learned that fit this message, and what pulls her to learn next
+        import study as _st
+        _ctx = _st.context(message)
+        if _ctx:
+            s += "\n\n" + _ctx
+        _pull = _st.curiosity()[:1]
+        if _pull:
+            s += "\n[Pulling at you to learn] " + _pull[0]
+    except Exception:
+        pass
     try:  # what Brian's saved memories say about this message (silent when nothing clearly matches)
         import engram_bridge as _eb
         _note = _eb.memory_context(message)
@@ -732,6 +742,11 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"Invite for {name}: have her open this chat's bot link, press Start, "
                 f"and send just this code:\n\n{code}")
+            return
+        import study as _study
+        learn = _study.owner_command(text)
+        if learn:
+            await update.message.reply_text(learn)
             return
         cmd = worker.handle_command(text)
         if cmd:
