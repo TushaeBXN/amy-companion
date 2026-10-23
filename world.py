@@ -42,7 +42,7 @@ def _fetch_tech() -> list[dict]:
     try:
         import feeds
         raw = feeds.github_trending()
-        items.extend(_parse_bullets(raw, limit=2))
+        items.extend(_parse_repos(raw, limit=2))
     except Exception as e:
         print(f"  [world] tech/GitHub: {e}", flush=True)
     return items[:MAX_ITEMS]
@@ -148,6 +148,23 @@ def _parse_bullets(raw: str, limit: int = MAX_ITEMS) -> list[dict]:
         url = ("http" + parts[1].strip()) if len(parts) > 1 else ""
         if len(title) > 10:
             items.append({"title": title, "url": url})
+        if len(items) >= limit:
+            break
+    return items
+
+
+def _parse_repos(raw: str, limit: int = MAX_ITEMS) -> list[dict]:
+    """Parse feeds.github_trending lines ('- <url>  <description>') into [{title, url}].
+
+    _parse_bullets expects 'title ... url', so on these lines it saw an empty title and
+    dropped every repo: GitHub never reached the tech area."""
+    items: list[dict] = []
+    for line in raw.splitlines():
+        m = re.match(r"-\s+(https://github\.com/(\S+))\s*(.*)$", line.strip())
+        if not m:
+            continue
+        url, repo, desc = m.group(1), m.group(2), m.group(3).strip()
+        items.append({"title": f"{repo}: {desc}" if desc else repo, "url": url})
         if len(items) >= limit:
             break
     return items

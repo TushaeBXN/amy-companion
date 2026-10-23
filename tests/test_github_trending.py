@@ -1,5 +1,6 @@
 """Offline checks: each trending repo keeps its own description; page chrome is never a repo."""
 import feeds
+import world
 
 _PAGE = """
 <nav><a href="/sponsors/explore">Sponsors</a> <a href="/trending/developers">Developers</a>
@@ -44,3 +45,24 @@ def test_empty_page_gives_the_not_found_message(monkeypatch):
         text = "<html>nothing</html>"
     monkeypatch.setattr(feeds, "_S", type("S", (), {"get": lambda self, u, timeout=0: Empty()})())
     assert feeds.github_trending() == "No trending repos found."
+
+
+def test_world_keeps_trending_repos_with_their_descriptions():
+    raw = ("- https://github.com/php/php-src  The PHP Interpreter\n"
+           "- https://github.com/owner/bare  \n"
+           "No trending repos found.")
+    assert world._parse_repos(raw) == [
+        {"title": "php/php-src: The PHP Interpreter", "url": "https://github.com/php/php-src"},
+        {"title": "owner/bare", "url": "https://github.com/owner/bare"},
+    ]
+    assert world._parse_repos("No trending repos found.") == []
+
+
+def test_tech_area_includes_github_repos(monkeypatch):
+    monkeypatch.setattr(feeds, "hacker_news", lambda limit=10, kind="top": "\n".join(
+        f"- Front page story number {n} here ({50 - n} pts) https://hn{n}.example" for n in range(1, 11)))
+    monkeypatch.setattr(feeds, "github_trending", lambda *a, **k:
+                        "- https://github.com/php/php-src  The PHP Interpreter\n- https://github.com/nodejs/node  Node.js runtime")
+    titles = [i["title"] for i in world._fetch_tech()]
+    assert "php/php-src: The PHP Interpreter" in titles and "nodejs/node: Node.js runtime" in titles
+    assert len(titles) == 5          # 3 HN + 2 GitHub
