@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutureTimeou
 import ollama
 import requests
 
+import heavy_job
 import tools
 import compressor as _compressor
 import trajectory as _trajectory
@@ -305,6 +306,8 @@ def _quiet(now):
 
 
 def _pick():
+    if heavy_job.held():   # an image job is pending or running; start nothing until it ends
+        return None
     now = datetime.now()
     if _quiet(now) or time.time() - _last_user < IDLE_GRACE:
         return None
@@ -434,6 +437,13 @@ def _evict_worker_model():
 
 
 def ollama_chat(_priority: str = "worker", **kw):
+    """Every chat-model call goes through here. Refused (JobBusy) while a heavy job such as
+    FLUX image generation holds the machine, so nothing can reload the model under it."""
+    with heavy_job.model_call(chat=(_priority == "chat")):   # a live chat turn may finish while a job is only pending
+        return _ollama_chat(_priority, **kw)
+
+
+def _ollama_chat(_priority: str = "worker", **kw):
     """Run ollama.chat in a dedicated thread so Ctrl+C always works.
 
     _priority="chat"   — uses the chat executor; sets _chat_pending so worker

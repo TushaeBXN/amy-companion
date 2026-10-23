@@ -83,3 +83,6 @@ sandbox/sandbox.db
 sandbox/reports/
 sandbox/bait/
 sandbox/work/
+
+# set while an image job holds the machine (heavy_job.py)
+.heavy_job
