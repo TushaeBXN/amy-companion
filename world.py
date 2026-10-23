@@ -64,12 +64,6 @@ def _fetch_ai() -> list[dict]:
                 break
     except Exception as e:
         print(f"  [world] ai/arxiv: {e}", flush=True)
-    try:
-        import feeds
-        raw = feeds.reddit_hot(subreddit="localllama", limit=6)
-        items.extend(_parse_bullets(raw, limit=2))
-    except Exception as e:
-        print(f"  [world] ai/reddit: {e}", flush=True)
     return items[:MAX_ITEMS]
 
 
@@ -96,12 +90,12 @@ def _fetch_startups() -> list[dict]:
         items.extend(_parse_bullets(raw, limit=3))
     except Exception as e:
         print(f"  [world] startups/PH: {e}", flush=True)
-    try:  # Reddit's r/indiehackers feed answered 429 every cycle; Show HN is what founders post there anyway
+    try:  # Hacker News front page (news.ycombinator.com/news), ranks 4-8: the tech area already takes the top 3
         import feeds
-        raw = feeds.hacker_news(limit=8, kind="show")
-        items.extend(_parse_bullets(raw, limit=2))
+        raw = feeds.hacker_news(limit=10, kind="top")
+        items.extend(_parse_bullets(raw, limit=8)[3:5])
     except Exception as e:
-        print(f"  [world] startups/ShowHN: {e}", flush=True)
+        print(f"  [world] startups/HN: {e}", flush=True)
     return items[:MAX_ITEMS]
 
 
@@ -144,6 +138,8 @@ def _parse_bullets(raw: str, limit: int = MAX_ITEMS) -> list[dict]:
     """Parse bullet-list text from feeds.py into [{title, url}] dicts."""
     items: list[dict] = []
     for line in raw.splitlines():
+        if not line.strip().startswith("- "):   # 'No products found.' and the like are not items
+            continue
         line = line.strip().lstrip("- ").strip()
         if not line:
             continue

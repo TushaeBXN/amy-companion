@@ -131,15 +131,28 @@ def reddit_hot(subreddit: str = "localllama", limit: int = 8) -> str:
 
 # ── Product Hunt ──────────────────────────────────────────────────────────────
 
+_ATOM = "{http://www.w3.org/2005/Atom}"
+
+
 def product_hunt_today() -> str:
-    """Today's top products on Product Hunt (RSS feed)."""
+    """Today's top products on Product Hunt. The feed is Atom (<entry>); RSS (<item>) still works.
+
+    It used to read only <item>, found nothing in the Atom feed and returned 'No products found.'"""
     r = _S.get("https://www.producthunt.com/feed", timeout=10)
     root = ET.fromstring(r.text)
-    items = root.findall(".//item")[:8]
     lines = []
-    for item in items:
+    for entry in root.findall(f".//{_ATOM}entry")[:8]:
+        title = (entry.findtext(f"{_ATOM}title") or "").strip()
+        link_el = entry.find(f"{_ATOM}link[@rel='alternate']")
+        link = (link_el.get("href") if link_el is not None else "").strip()
+        html = entry.findtext(f"{_ATOM}content") or entry.findtext(f"{_ATOM}summary") or ""
+        desc = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
+        desc = re.sub(r"\s*Discussion \| Link$", "", desc)[:120]   # footer links in the feed's HTML
+        if title:
+            lines.append(f"- {title}: {desc}  {link}")
+    for item in root.findall(".//item")[:8]:
         title = item.findtext("title", "").strip()
         link = item.findtext("link", "").strip()
         desc = item.findtext("description", "").strip()[:120]
         lines.append(f"- {title}: {desc}  {link}")
-    return "\n".join(lines) or "No products found."
+    return "\n".join(lines[:8]) or "No products found."
