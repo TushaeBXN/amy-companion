@@ -20,6 +20,7 @@ DIMENSIONS = [
     "accuracy",           # claims that turned out wrong
     "self_knowledge",     # do I know my own limits correctly?
     "response_to_human",  # are Brian/Raketa engaging back or going quiet?
+    "skill_growth",       # did a playbook measurably fix a gap? (growth_drive replay check)
 ]
 
 
