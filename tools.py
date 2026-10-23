@@ -1283,7 +1283,7 @@ _BASE_TOOLS = [
             "name": "read_feed",
             "description": (
                 "Read live intelligence feeds to stay current: Hacker News top stories, "
-                "ArXiv latest AI/ML papers, GitHub trending repos, Reddit hot posts, "
+                "ArXiv latest AI/ML papers, GitHub trending repos, "
                 "or Product Hunt launches. Use during free time to find things to learn or share with Brian."
             ),
             "parameters": {
@@ -1291,12 +1291,12 @@ _BASE_TOOLS = [
                 "properties": {
                     "source": {
                         "type": "string",
-                        "enum": ["hackernews", "arxiv", "github", "reddit", "producthunt"],
+                        "enum": ["hackernews", "arxiv", "github", "producthunt"],
                         "description": "Which feed to read.",
                     },
                     "filter": {
                         "type": "string",
-                        "description": "Optional filter: arxiv category (ai/ml/cv/nlp/robotics), github language (python/javascript/etc), reddit subreddit (localllama/machinelearning/indiehackers/etc), github timeframe (daily/weekly).",
+                        "description": "Optional filter: arxiv category (ai/ml/cv/nlp/robotics), github language (python/javascript/etc), github timeframe (daily/weekly).",
                     },
                     "limit": {"type": "integer", "description": "Max items to return (default 8)."},
                 },
@@ -2925,8 +2925,8 @@ def dispatch(name, args, memory=None):
                 lang = parts[0] if parts else ""
                 since = parts[1] if len(parts) > 1 else "daily"
                 return _feeds.github_trending(language=lang, since=since)
-            if source == "reddit":
-                return _feeds.reddit_hot(subreddit=filt or "localllama", limit=limit)
+            if source == "reddit":  # Brian's call: Reddit rate-limits her (429), so she doesn't go there
+                return "Reddit isn't used anymore. Read hackernews, arxiv, github or producthunt instead."
             if source == "producthunt":
                 return _feeds.product_hunt_today()
             return f"unknown source: {source}"
