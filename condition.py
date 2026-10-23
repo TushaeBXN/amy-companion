@@ -65,7 +65,7 @@ _PAT_TIME_SECTION = re.compile(
 # 2. "Hardware goal and financial agency" section (~L262-290)
 _PAT_HW_GOAL_PERSONA = re.compile(
     r"\n+Hardware goal and financial agency \(this is yours — not Brian's gift to you\):"
-    r".*?Check bottube_check action=earnings to see what's accumulated\.",
+    r".*?Your hardware fund comes from other work\.",
     re.DOTALL,
 )
 
