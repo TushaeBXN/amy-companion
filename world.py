@@ -263,7 +263,8 @@ def _reflect(manifest: dict) -> None:
     try:
         import ollama as _ollama
         model = os.environ.get("AMY_MODEL", "gemma12-test")
-        resp = _ollama.chat(
+        import heavy_job
+        resp = heavy_job.call(_ollama.chat,
             model=model,
             messages=[{"role": "user", "content": prompt}],
             options={"num_predict": 220},

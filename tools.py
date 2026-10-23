@@ -1664,6 +1664,13 @@ _BOTTUBE_TOOLS = {"create_slideshow", "bottube_post"}
 if BOTTUBE_PAUSED:
     TOOLS = [t for t in TOOLS if t["function"]["name"] not in _BOTTUBE_TOOLS]
 
+# Image generation is paused too: FLUX needs more GPU memory than this Mac has free while Amy
+# runs (see imagegen.PAUSED). Set AMY_IMAGEGEN_PAUSED=0 to resume.
+IMAGEGEN_PAUSED = os.environ.get("AMY_IMAGEGEN_PAUSED", "1") != "0"
+_IMAGE_TOOLS = {"generate_image", "create_slideshow"}
+if IMAGEGEN_PAUSED:
+    TOOLS = [t for t in TOOLS if t["function"]["name"] not in _IMAGE_TOOLS]
+
 # Active timer dedup — tracks delay values (seconds) currently counting down
 _active_timers: set = set()
 
@@ -1693,6 +1700,10 @@ def dispatch(name, args, memory=None):
       - avatar_* -> your Unity/VRM animation bridge
       - hardware_* -> your BLE controller (the RealDoll-style neck/motor layer)
     """
+    if IMAGEGEN_PAUSED and name in _IMAGE_TOOLS:
+        return ("Image generation is paused: FLUX needs more memory than this Mac has free while you run, "
+                "and it froze the machine. Tell Brian plainly if he asks for an image; don't pretend to make one.")
+
     if BOTTUBE_PAUSED and name in _BOTTUBE_TOOLS:
         return "Creating on BoTTube is paused by Brian for now. You can still look around with bottube_check."
 
