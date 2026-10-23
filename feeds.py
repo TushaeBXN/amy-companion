@@ -19,9 +19,14 @@ _S.headers["User-Agent"] = (
 
 # ── Hacker News ───────────────────────────────────────────────────────────────
 
-def hacker_news(limit: int = 10) -> str:
-    """Top stories from Hacker News right now."""
-    r = _S.get("https://hacker-news.firebaseio.com/v0/topstories.json", timeout=10)
+_HN_KINDS = {"top", "best", "new", "show", "ask"}
+
+
+def hacker_news(limit: int = 10, kind: str = "top") -> str:
+    """Stories from Hacker News right now. kind: top (front page), best, new, show (Show HN), ask."""
+    if kind not in _HN_KINDS:
+        raise ValueError(f"unknown Hacker News list '{kind}'; use one of {sorted(_HN_KINDS)}")
+    r = _S.get(f"https://hacker-news.firebaseio.com/v0/{kind}stories.json", timeout=10)
     ids = r.json()[:limit]
     stories = []
     for sid in ids:

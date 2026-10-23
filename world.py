@@ -96,12 +96,12 @@ def _fetch_startups() -> list[dict]:
         items.extend(_parse_bullets(raw, limit=3))
     except Exception as e:
         print(f"  [world] startups/PH: {e}", flush=True)
-    try:
+    try:  # Reddit's r/indiehackers feed answered 429 every cycle; Show HN is what founders post there anyway
         import feeds
-        raw = feeds.reddit_hot(subreddit="indiehackers", limit=5)
+        raw = feeds.hacker_news(limit=8, kind="show")
         items.extend(_parse_bullets(raw, limit=2))
     except Exception as e:
-        print(f"  [world] startups/IH: {e}", flush=True)
+        print(f"  [world] startups/ShowHN: {e}", flush=True)
     return items[:MAX_ITEMS]
 
 
