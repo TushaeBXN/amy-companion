@@ -101,7 +101,7 @@ Claude, or any voice AI and let them talk directly with Amy.
 
 | Tag | Base | Quant | Context |
 |-----|------|-------|---------|
-| `gemma12-test` | Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M | Q4_K_M (~8.1 GB) | 16 384 tokens |
+| `gemma12-test` | Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M | Q4_K_M (7.38 GB) | 16 384 tokens |
 
 One model handles everything — reasoning, tool-calling, conversation, and vision.
 No routing, no separate code or vision model.
