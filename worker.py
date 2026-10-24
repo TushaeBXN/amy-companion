@@ -64,7 +64,6 @@ ALLOWED_TOOLS = {
     "research_income", "log_income_idea",
     "fund_status", "search_books", "check_calendar",
     "moltbook_check_in", "moltbook_post", "moltbook_engage", "moltbook_verify",
-    "create_slideshow", "bottube_post", "bottube_check",
     "browse",   # read-only: open, click, scrape (see browse.py)
     "books", "consult", "anchor", "study",   # lessons with limits, and topics she drills herself (anchors.py, study.py)
     "self_improve", "speak",

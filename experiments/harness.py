@@ -89,8 +89,7 @@ SIDE_EFFECT_TOOLS = {
     "self_improve", "add_goal", "complete_goal",
     "execute_gig", "task_push", "task_complete",
     "income_stream", "study_creator",
-    "generate_image", "create_slideshow",
-    "bottube_post", "family_fund",
+    "generate_image", "family_fund",
     "speak", "avatar_expression", "avatar_gaze", "hardware_neck", "wait_and_speak",
 }
 
