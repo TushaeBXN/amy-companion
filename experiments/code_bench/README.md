@@ -33,12 +33,12 @@ coders in general.
 The raw logs are kept as they were produced. Two of them contain mistakes of ours, which is why the table above does
 not match them directly:
 
-1. `easy_first_run_INVALID_gemma_thinking_on.log`: Gemma scored 5/10 here. That run left thinking **on** and capped
+1. `easy_first_run_INVALID_gemma_thinking_on.txt`: Gemma scored 5/10 here. That run left thinking **on** and capped
    answers at 700 tokens, so Gemma ran out of room before finishing code. The coder (no thinking) was unaffected.
    The run is not a fair comparison for Gemma.
-2. `easy_rerun_failures_thinking_off.log`: the five tasks Gemma failed, rerun with thinking off and 1500 tokens. Gemma
+2. `easy_rerun_failures_thinking_off.txt`: the five tasks Gemma failed, rerun with thinking off and 1500 tokens. Gemma
    passed all five, which with its five earlier passes gives 10/10. The coder's `top_words` failure reproduced here.
-3. `hard_run_as_logged.log`: Gemma shows 8/10 because the old checker used a text search and blocked its
+3. `hard_run_as_logged.txt`: Gemma shows 8/10 because the old checker used a text search and blocked its
    `evalexpr` answer, whose docstring said "without using eval()". The code never called `eval`. The logged answer
    was not kept, so we generated that task again and checked it with a syntax-tree check: Gemma's fresh answer
    passes (9/10), while both coders' fresh answers still fail it, as logged. `bench.py` now checks the syntax tree,
