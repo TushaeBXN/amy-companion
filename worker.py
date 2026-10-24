@@ -46,7 +46,7 @@ _CORE_RULES_PATH = os.path.join(HERE, "amy_core_rules.md")
 _CORE_RULES = open(_CORE_RULES_PATH).read() if os.path.exists(_CORE_RULES_PATH) else ""
 
 TICK_SECS   = 60
-MAX_HOPS    = 8
+MAX_HOPS    = 14
 IDLE_GRACE  = 120          # don't start a task while Brian is mid-conversation
 QUIET_START, QUIET_END = 23, 7
 SPONTANEOUS = True         # Amy sends unprompted thoughts during idle time
@@ -396,12 +396,13 @@ def scope_rules(max_steps):
         f"- You have {max_steps} tool steps per request. Each tool result shows 'step N of {max_steps}'.\n"
         "- Your memory, Moltbook status, and context are already loaded in your system prompt. "
         "Do NOT call engram_memory or moltbook_check_in to 'warm up' — jump straight to the task.\n"
-        "- Each tool once per turn. Calling the same tool with the same args twice is a bug.\n"
+        "- Calling the same tool with the same arguments twice is a waste. The same tool with different arguments "
+        "(the next page, the next idea, a fix to what failed) is how real work gets done, so keep going.\n"
         "- Before each tool call, state in one sentence what you're doing and why — then do it.\n"
         "- Do exactly what was asked — no more. 'Check X' means look and report back; "
         "don't comment, post, engage, or start extra work unless asked.\n"
-        "- Before starting, judge whether the request fits in your steps. If it clearly "
-        "doesn't, say so, do the most important part first, and say what's left.\n"
+        "- If the job won't fit in this round, do the most important part now and say what's left: the rest "
+        "carries on automatically in the next round. Don't stop early, and don't ask whether to continue.\n"
         "- When you're near your last step, stop calling tools and report: what you did, "
         "what you found, and what (if anything) is still left.\n"
         "- Report only what your tools actually returned. Never fill in details you didn't "
@@ -912,7 +913,7 @@ def _spontaneous_thought():
                 {"role": "system", "content": persona},
                 {"role": "user", "content": prompt},
             ],
-            options={"num_predict": 150},
+            options={"num_predict": 500},
         )
         text = _clean(resp.message.content)
         if not text:
@@ -967,7 +968,7 @@ def _propose_next_goal(goal: dict):
             model=_model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": prompt}],
-            options={"num_predict": 350, "temperature": 0.4},
+            options={"num_predict": 1200, "temperature": 0.4},
         )
         raw = _clean(resp["message"].get("content", ""))
         goal_m = re.search(r"GOAL:\s*(.+)", raw, re.IGNORECASE)
@@ -1166,7 +1167,7 @@ def _execute_goal_planning(goal_id: str, goal: dict):
                 model=_model,
                 messages=[{"role": "system", "content": system},
                           {"role": "user", "content": plan_prompt}],
-                options={"num_predict": 600, "temperature": 0.5},
+                options={"num_predict": 3000, "temperature": 0.5},
             )
             raw = _clean(resp["message"].get("content", ""))
             # Accept numbered (1. / 1)) or bullet (- / * / •) lists
@@ -1202,7 +1203,7 @@ def _execute_goal_planning(goal_id: str, goal: dict):
             model=_model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": criteria_prompt}],
-            options={"num_predict": 700, "temperature": 0.3},
+            options={"num_predict": 3500, "temperature": 0.3},
         )
         criteria = _parse_criteria(resp2["message"].get("content", ""), len(steps))
 
@@ -1220,17 +1221,17 @@ def _execute_goal_planning(goal_id: str, goal: dict):
             model=_model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": complexity_prompt}],
-            options={"num_predict": 50, "temperature": 0.0},
+            options={"num_predict": 100, "temperature": 0.0},
         )
         complexity_raw = _clean(resp3["message"].get("content", "")).lower()
         if "deep" in complexity_raw:
-            goal_max_hops = 12
+            goal_max_hops = 24
             complexity = "deep"
         elif "medium" in complexity_raw:
-            goal_max_hops = 6
+            goal_max_hops = 14
             complexity = "medium"
         else:
-            goal_max_hops = 3
+            goal_max_hops = 6
             complexity = "simple"
 
         _goals.set_plan(goal_id, steps, criteria)
@@ -1517,7 +1518,7 @@ def _verify_step(goal: dict, step_idx: int, step_desc: str,
             model=_model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": prompt}],
-            options={"num_predict": 800, "temperature": 0.3},
+            options={"num_predict": 1500, "temperature": 0.3},
         )
         raw = _clean(resp["message"].get("content", ""))
         first = raw.splitlines()[0].upper() if raw else ""
@@ -1571,7 +1572,7 @@ def _classify_and_learn_task(task_id: str, tool_errors: int, tools_used: list, o
             model=_model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": prompt}],
-            options={"num_predict": 200, "temperature": 0.3},
+            options={"num_predict": 800, "temperature": 0.3},
         )
         raw = _clean(resp["message"].get("content", ""))
         cat_m = re.search(r"CATEGORY:\s*(\w+)", raw, re.IGNORECASE)
@@ -1648,7 +1649,7 @@ def _classify_and_learn(goal_id: str):
             model=_model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": prompt}],
-            options={"num_predict": 250, "temperature": 0.4},
+            options={"num_predict": 1000, "temperature": 0.4},
         )
         raw = _clean(resp["message"].get("content", ""))
         cat_m = re.search(r"CATEGORY:\s*(\w+)", raw, re.IGNORECASE)
