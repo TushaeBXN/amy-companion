@@ -23,42 +23,31 @@ anyway.
 
 ---
 
-## What this is, for a first-time reader
+## Why I built this
 
-Amy is a case study in running a real agentic system on hardware anyone can
-buy — a 16 GB Apple Mac mini, one 12B local model, no API calls out — and in
-not overselling what that system actually does.
+I didn't come up through computer science. I studied entertainment business
+at Full Sail. Cybersecurity and AI are things I taught myself after that, and
+I learned pretty quickly that watching videos and reading about this stuff
+only gets you so far — I actually had to build something real to understand
+how it works underneath. Amy is that something.
 
-**The problem it's solving:** a small local model is cheap, private, and
-fast, but it's also smaller than its own ambitions — it will narrate work it
-didn't do, spiral on a tool call, or claim a step is finished when nothing
-checked that. Most "AI companion" or "autonomous agent" projects paper over
-that with a bigger prompt. This one builds the discipline into the code
-instead:
+She runs on a $600-ish Mac mini, no cloud, nothing phoned home. And the thing
+I kept running into while building her: a local model this size will straight
+up lie to you about what it did. It'll tell you it opened a file it never
+opened, or say a step is finished when nothing actually checked. I didn't
+want to just paper over that with a longer prompt telling it to behave — I
+wanted the code itself to catch it. So now when I give Amy a real job, it
+becomes a goal with steps, and each step only counts as done if a tool
+actually ran and actually did the thing — not because she said so. That part
+took way more work than I expected, and it's the part I'm proudest of.
 
-- **Multiple real interfaces to one core** — a web UI, a Telegram bot run as
-  an always-on service, and a terminal client with voice and webcam input,
-  all sharing the same persona, memory, and tools (see **Architecture** below).
-- **Tool-using autonomy with a second, deterministic layer checking it** —
-  when Amy is given a real instruction, it becomes a goal with a plan; each
-  step is checked against what her tools actually returned (a file only
-  counts as written if it changed *during* that step; a step only passes if
-  a tool call actually worked), not against what she says happened. See
-  **Getting things done** below.
-- **Layered local memory** — identity, conversation recall, a document/book
-  library she can actually read and cite from, and a long-term store (Engram)
-  that tracks corrections and her own stated views over time, all on-disk,
-  nothing phoned home.
-- **Honest about what's deterministic vs. what's the model** — her
-  "spontaneous" thoughts and check-ins fire from a plain randomized timer in
-  code, not from the model noticing time has passed; the model only ever
-  fills in words when something calls it. A language model has no background
-  cognition, and this project doesn't pretend otherwise.
+Past that, she's got a few ways to talk to her (Telegram, a web UI, a
+terminal with voice and webcam), real memory that sticks around instead of
+resetting every conversation, and a library of books she can actually open
+and read instead of just pretending to know what's in them.
 
-That combination — real multi-channel deployment, tool-calling agents,
-verification instead of trust, and a memory architecture, all running
-entirely local on consumer hardware — is the actual engineering surface area
-here, more than any one feature.
+None of this was me consuming a course. It was me breaking it, reading the
+error, and fixing it, over and over, until I understood why it broke.
 
 ---
 
