@@ -448,6 +448,9 @@ def _evict_worker_model():
 def ollama_chat(_priority: str = "worker", **kw):
     """Every chat-model call goes through here. Refused (JobBusy) while a heavy job such as
     FLUX image generation holds the machine, so nothing can reload the model under it."""
+    # Thinking is off unless a caller asks for it. With it on, the model spends a small token budget (a 600-token
+    # plan, an 80-token thought) on thinking and returns an empty answer: planning "returned no steps" for that reason.
+    kw.setdefault("think", False)
     with heavy_job.model_call(chat=(_priority == "chat")):   # a live chat turn may finish while a job is only pending
         return _ollama_chat(_priority, **kw)
 
@@ -482,7 +485,14 @@ def _ollama_chat(_priority: str = "worker", **kw):
         if isinstance(opts, dict):
             opts.setdefault("flash_attn", True)
             kw["options"] = opts
-        return ollama.chat(**kw)
+        try:
+            return ollama.chat(**kw)
+        except (TypeError, ollama.ResponseError) as e:
+            # a model or SDK that doesn't know the 'think' option: ask again without it
+            if "think" in kw and ("think" in str(e).lower() or isinstance(e, TypeError)):
+                kw.pop("think")
+                return ollama.chat(**kw)
+            raise
 
     def _attempt(exec_):
         fut = exec_.submit(_call)
