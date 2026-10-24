@@ -1733,6 +1733,25 @@ _pending_voice: "Path | None" = None
 # Build active TOOLS list — moltbook tools only included when service is reachable
 TOOLS = _BASE_TOOLS + _AGENT_COMMS_TOOLS + _EVENT_LOG_TOOLS + (_MOLTBOOK_TOOLS if _MOLTBOOK_UP else [])
 
+# Live chat sends every tool schema on every message, and that's most of what a cold prompt costs
+# (measured: 76 tools ≈ 13.5k tokens of schema, ~110s of prefill on this M4 vs ~20s for a dozen).
+# These are background/autonomous-only in practice (her own free-time income research, agent-to-agent
+# contact, channel/media tools, gig execution) — grounded in 268 logged chat turns where none of them
+# were ever called directly. They stay fully reachable: worker.ALLOWED_TOOLS still carries them, so a
+# task Brian asks for in chat still reaches them through a goal. Nothing is removed, only re-routed.
+CHAT_BACKGROUND_ONLY = {
+    "income_eval", "income_stream", "research_income", "log_income_idea", "family_fund", "study_creator",
+    "agent_check_inbox", "agent_reply_to", "agent_send_message", "get_my_endpoint",
+    "tiktok_search", "scan_channels", "delegate", "execute_gig",
+    "listen_live", "listen_to_track", "learn_from_video", "state_log_day", "wait_and_speak",
+}
+
+
+def chat_tools() -> list:
+    """The tool list for a live chat turn: everything except the background-only set above."""
+    return [t for t in TOOLS if t["function"]["name"] not in CHAT_BACKGROUND_ONLY]
+
+
 # Browsing (browse): read-only, in its own process, see browse.py. AMY_BROWSE=0 switches it off.
 BROWSE_ENABLED = os.environ.get("AMY_BROWSE", "1") != "0"
 if not BROWSE_ENABLED:

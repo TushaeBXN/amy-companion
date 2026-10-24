@@ -467,7 +467,7 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
     who     = person["name"]
     # Condition A: bare baseline — no tools, no memory writes.
     _bare = is_owner and _cond.CONDITION == "A"
-    tool_list = [] if _bare else (tools.TOOLS if is_owner else [
+    tool_list = [] if _bare else (tools.chat_tools() if is_owner else [
         t for t in tools.TOOLS if t["function"]["name"] in GUEST_TOOLS])
     # If a photo was sent, describe it first then fold the description into the message
     if image_bytes:
