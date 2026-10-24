@@ -76,6 +76,10 @@ ALLOWED_TOOLS = {
     "check_email", "send_email",
     # Agent-to-agent communication
     "agent_check_inbox", "agent_reply_to", "agent_send_message", "get_my_endpoint",
+    # Chat only sends a trimmed tool list now (tools.chat_tools()); these stay reachable through
+    # a goal when Brian asks for them as a task, even though the live chat turn no longer sees them.
+    "scan_channels", "delegate", "execute_gig",
+    "listen_live", "listen_to_track", "learn_from_video", "state_log_day", "wait_and_speak",
 }
 
 # Whitelisted email recipients — Amy may only send to these addresses autonomously
