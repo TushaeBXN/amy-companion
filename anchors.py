@@ -40,8 +40,8 @@ SELF_CAP = 0.6                # without Brian's confirmation, her own wins can't
 SELF_WIN, SELF_WIN_MAX = 0.05, 10
 CONFIRMED_WIN = 0.15
 FAILED, INCONCLUSIVE = -0.10, -0.02
-ORIGIN_BASE = {"url": 0.4, "file": 0.6, "receipt": 0.6, "brian": 0.8}   # starting confidence by source
-ORIGIN_CAP = {"url": 0.5, "file": 0.7, "receipt": 0.7, "brian": 0.9}
+ORIGIN_BASE = {"url": 0.4, "file": 0.6, "book": 0.6, "receipt": 0.6, "brian": 0.8}   # starting confidence by source
+ORIGIN_CAP = {"url": 0.5, "file": 0.7, "book": 0.7, "receipt": 0.7, "brian": 0.9}
 REQUIRED = ["id", "title", "what_it_is", "applies_when", "do_not_apply_when", "breaks_when", "origin"]
 STRETCH_KINDS = {"same_mechanism_other_field", "flip_constraint", "scale_up", "scale_down"}
 RESULTS = {"worked", "failed", "inconclusive"}
@@ -158,7 +158,7 @@ def get(anchor_id: str) -> dict:
 # ── validation ───────────────────────────────────────────────────────────────
 
 def parse_origin(origin: str):
-    """('url'|'file'|'receipt'|'brian', value), or AnchorError. Where it came from must be checkable."""
+    """('url'|'file'|'book'|'receipt'|'brian', value), or AnchorError. Where it came from must be checkable."""
     origin = (origin or "").strip()
     kind, _, value = origin.partition(":")
     kind, value = kind.strip().lower(), value.strip()
@@ -168,6 +168,15 @@ def parse_origin(origin: str):
     elif kind == "file":
         if not value or not Path(value).expanduser().exists():
             raise AnchorError(f"origin 'file:' must point to a file that exists; {value!r} doesn't")
+    elif kind == "book":
+        title, _, num = value.rpartition("#")
+        if not title or not num.isdigit():
+            raise AnchorError("origin 'book:' looks like book:<title>#<passage number>, e.g. book:Becoming the Hacker#120")
+        import bookshelf
+        try:
+            bookshelf.passage(title, int(num))
+        except bookshelf.BookError as e:
+            raise AnchorError(f"origin 'book:' must name a passage on your shelf: {e}")
     elif kind == "receipt":
         if not any(r.get("id") == value for r in receipts()):
             raise AnchorError(f"origin 'receipt:' must be an id from your receipts; {value!r} isn't one")
@@ -175,7 +184,7 @@ def parse_origin(origin: str):
         if len(value) < 8:
             raise AnchorError("origin 'brian:' needs what Brian actually told you, in a few words")
     else:
-        raise AnchorError("origin must be url:<address>, file:<existing path>, receipt:<id> or brian:<what he said>. "
+        raise AnchorError("origin must be url:<address>, file:<existing path>, book:<title>#<passage>, receipt:<id> or brian:<what he said>. "
                           "Where you learned it has to be something that can be checked.")
     return kind, value
 

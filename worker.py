@@ -65,7 +65,7 @@ ALLOWED_TOOLS = {
     "moltbook_check_in", "moltbook_post", "moltbook_engage", "moltbook_verify",
     "create_slideshow", "bottube_post", "bottube_check",
     "browse",   # read-only: open, click, scrape (see browse.py)
-    "anchor", "study",   # lessons with limits, and topics she drills herself (anchors.py, study.py)
+    "books", "anchor", "study",   # lessons with limits, and topics she drills herself (anchors.py, study.py)
     "self_improve", "speak",
     "study_creator", "family_fund",
     "income_eval", "income_stream",
@@ -662,6 +662,10 @@ def _learning_context(text: str) -> str:
     try:
         import anchors as _an, study as _st
         parts = [_st.context(text)]
+        import bookshelf as _bsh
+        _n = len(_bsh.shelf())
+        if _n:
+            parts.append(f"[Your bookshelf] {_n} books you can open (books action=shelf).")
         pull = _st.curiosity()[:3]
         if pull:
             parts.append("[What pulls at you to learn next]\n" + "\n".join(f"- {x}" for x in pull))
