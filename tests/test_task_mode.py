@@ -184,3 +184,27 @@ def test_such_a_step_can_now_pass_the_check(monkeypatch):
     result = G.result_from_tools("", [ok])
     passed, decision, _ = W._verify_step(GOAL, 0, "Open the report and read the first section", result, calls=[ok])
     assert passed
+
+
+PLAN = ["Find the PDF", "Read the key section", "Try the first procedure", "Record what happened"]
+
+
+def test_the_plan_message_lists_every_step_and_says_how_to_follow_up():
+    m = G.plan_message("Study the incident report and reproduce it", PLAN)
+    assert all(f"{i}. {s}" in m for i, s in enumerate(PLAN, 1)) and "next: 1. Find the PDF" in m and "status" in m
+
+
+def test_a_step_message_shows_the_evidence_not_just_a_tick():
+    calls = [{"name": "list_files", "args": {}, "result_snippet": "[dir] Documents/"},
+             {"name": "read_pdf", "args": {}, "result_snippet": "[PDF r.pdf, pages 1-5 of 40] Incident summary"},
+             {"name": "books", "args": {}, "result_snippet": "books: no book on your shelf matches 'x'"}]
+    m = G.step_message(0, PLAN, "I found ~/Documents/report.pdf and read the first five pages.", calls, "model_pass")
+    assert "Step 1 of 4 done and verified: Find the PDF" in m
+    assert "Tools that worked: list_files, read_pdf" in m and "books" not in m.split("Checked by")[0]     # a failed tool is not listed as worked
+    assert "judgment by the model" in m and "I found ~/Documents/report.pdf" in m
+    assert "done: 1. Find the PDF" in m and "next: 2. Read the key section" in m and "Next: Read the key section" in m
+
+
+def test_the_last_step_says_so():
+    m = G.step_message(3, PLAN, "Wrote the notes.", [{"name": "write_file", "args": {}, "result_snippet": "wrote 300 bytes"}], "deterministic_pass")
+    assert "That was the last step" in m and "hard check" in m

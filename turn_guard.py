@@ -255,3 +255,30 @@ def result_from_tools(final: str, calls: list, limit: int = 1500) -> str:
         return final or "(no output)"
     lines = [f"{c['name']}: {str(c.get('result_snippet') or '')[:300]}" for c in done]
     return ("(no closing summary; these are the results her tools returned)\n" + "\n".join(lines))[:limit]
+
+
+# ── what Brian is told while a goal runs ─────────────────────────────────────
+
+_CHECKED_BY = {"deterministic_pass": "a hard check (a tool worked and/or a file was written in this step)",
+               "model_pass": "a judgment by the model, shown the real tool results"}
+
+
+def checklist(plan: list, done: int) -> str:
+    return "\n".join(f"  {'done' if i < done else 'next' if i == done else 'later'}: {i + 1}. {s[:120]}"
+                     for i, s in enumerate(plan))
+
+
+def plan_message(objective: str, plan: list) -> str:
+    return (f"Here's my plan for: {objective[:140]}\n\n{checklist(plan, 0)}\n\n"
+            "I'll do these one at a time and tell you when each is verified (or when I'm stuck). "
+            "Say \"status\" any time.")
+
+
+def step_message(step_idx: int, plan: list, result: str, calls: list, decision: str) -> str:
+    """A verified step, with the evidence: which tools worked, how it was checked, what she found."""
+    tools = ", ".join(sorted({c["name"] for c in real_work(calls)})) or "none"
+    found = re.sub(r"\s+", " ", result or "").strip()[:320]
+    nxt = (f"Next: {plan[step_idx + 1][:120]}" if step_idx + 1 < len(plan) else "That was the last step.")
+    return (f"Step {step_idx + 1} of {len(plan)} done and verified: {plan[step_idx][:140]}\n"
+            f"Tools that worked: {tools}\nChecked by: {_CHECKED_BY.get(decision, decision)}\n"
+            f"What she reported: {found}\n\n{checklist(plan, step_idx + 1)}\n\n{nxt}")
