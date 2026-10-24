@@ -23,6 +23,40 @@ anyway.
 
 ---
 
+## What "spontaneous" and "autonomous" actually mean here
+
+Worth being precise about, since it's easy to oversell: a language model has
+no background cognition. It has no idea time is passing, and it produces
+nothing unless something calls it. Every "spontaneous thought" or "autonomous
+goal" you'll see from Amy is the *surrounding system* deciding to call her,
+not the model deciding to speak.
+
+Concretely:
+- **The trigger is deterministic code, not a feeling.** A spontaneous
+  check-in fires from a plain timer — a random delay inside a known window
+  (`worker.py`: 45 minutes to 3 hours of Brian being quiet) — not from the
+  model noticing it's idle.
+- **The content comes from a prompt, same as any other reply.** When the
+  timer fires, code builds a message (a reflection prompt, a question
+  template, whatever fits the moment) and sends it to the model like any
+  other request. The model fills in the words; it doesn't choose the moment.
+- **"Autonomous" means verified, not trusted.** This matters more than the
+  thought buffer: when Amy is given a real instruction, the system doesn't
+  take her word for what she did. A goal's steps are checked against what her
+  tools actually returned — a file only counts as written if it changed
+  *during that step*, a step only passes if a tool call actually worked, and
+  a model's own account of a step is evidence to check, not a result to
+  trust. That design runs through the whole project, not just this one
+  feature: see **Getting things done** below, and `_verify_step` /
+  `turn_guard.py` in [ARCHITECTURE.md](ARCHITECTURE.md) for the mechanism.
+
+The interesting engineering problem here was never "make it feel alive" — it's
+"give a small local model a second, honest layer that catches it when it
+narrates work it never did." That's the actual thing this repo is a case
+study in.
+
+---
+
 ## Architecture
 
 → **[ARCHITECTURE.md](ARCHITECTURE.md)** — full system diagram + per-component breakdown
