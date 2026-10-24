@@ -138,3 +138,26 @@ def goal_context(agent_state=None) -> str:
             f"Status {g['status']}; step {min(step + 1, max(len(plan), 1))} of {len(plan) or '?'}: {now[:160]}\n"
             "Your background worker is carrying this out while Brian is quiet and will message him when a step "
             "is done or stuck. If he says 'yes' or 'keep going', tell him where it stands; don't start over.")
+
+
+# ── announcing instead of doing ──────────────────────────────────────────────
+# "My first instinct is to actually open that book and read through it" and then the turn just ended.
+
+_ANNOUNCE = re.compile(r"(?i)\b(let me|i'?ll|i will|i'?m going to|i am going to|i'?m about to|i'?m ready to|next,? i|"
+                       r"my (?:first|next) (?:instinct|step|move) is|i plan to|i want to|i should|first,? i(?:'ll| will| need))\b")
+
+
+def announced_not_done(reply: str, user_text: str) -> bool:
+    """She said what she would do next, on a real task, and stopped. (A question back to Brian is not a stall.)"""
+    reply = (reply or "").strip()
+    if not reply or "?" in reply or len(reply) > 900:
+        return False
+    task = is_continue_word(user_text) or len((user_text or "").strip()) >= SUBSTANTIAL
+    return task and bool(_ANNOUNCE.search(reply))
+
+
+def nudge_text(user_text: str, history: list) -> str:
+    job = objective_for(user_text, history) or (user_text or "").strip()
+    return ("[You said what you would do but didn't do it. Brian's request: " + job[:260] + "\n"
+            "Do the next step now with a real tool call, not text. To read a book: books action=open title=<title>, "
+            "then books action=read. To try something on this Mac: run_code. Then keep going until the task is done.]")
