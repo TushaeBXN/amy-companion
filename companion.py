@@ -855,7 +855,7 @@ def _spontaneous_thought(history, mem, amy_state):
 
     try:
         resp = ollama.chat(model=MODEL, messages=messages, keep_alive=KEEP_ALIVE, think=THINK,
-                           options={"num_ctx": CTX_WINDOW, "num_predict": 80})
+                           options={"num_ctx": CTX_WINDOW, "num_predict": 300})
         text = _strip_trailers(resp["message"].get("content", "").strip())
         if text and re.sub(r'[^\w]', '', text):
             voice.speak(text, emotion=mood)
