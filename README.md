@@ -484,6 +484,24 @@ from the conversation and loaded at the top of the next session's context.
 
 ---
 
+## License
+
+This code is mine, and it's licensed under
+**[PolyForm Noncommercial 1.0.0](LICENSE.md)**, not MIT.
+
+In plain terms: read it, run it, fork it, learn from it, build your own thing
+on top of it — for any noncommercial purpose, no permission needed. If a
+company wants to use it commercially, that needs a license from me directly.
+
+This covers my own code. It doesn't cover, and doesn't need to cover, the
+things it talks to: the pip libraries it imports (their own permissive
+licenses, MIT/BSD/Apache — none of them vendored into this repo), `ffmpeg` and
+`whisper-cli` (called as external programs, not linked in), or any model
+weights (Gemma, Piper voices, Whisper) — none of those are committed here;
+they're downloaded separately and carry their own publishers' terms.
+
+---
+
 ## Fine-tuning (future)
 
 Conversation data accumulates in `amy_thoughts.log` + session history.
