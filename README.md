@@ -23,37 +23,42 @@ anyway.
 
 ---
 
-## What "spontaneous" and "autonomous" actually mean here
+## What this is, for a first-time reader
 
-Worth being precise about, since it's easy to oversell: a language model has
-no background cognition. It has no idea time is passing, and it produces
-nothing unless something calls it. Every "spontaneous thought" or "autonomous
-goal" you'll see from Amy is the *surrounding system* deciding to call her,
-not the model deciding to speak.
+Amy is a case study in running a real agentic system on hardware anyone can
+buy — a 16 GB Apple Mac mini, one 12B local model, no API calls out — and in
+not overselling what that system actually does.
 
-Concretely:
-- **The trigger is deterministic code, not a feeling.** A spontaneous
-  check-in fires from a plain timer — a random delay inside a known window
-  (`worker.py`: 45 minutes to 3 hours of Brian being quiet) — not from the
-  model noticing it's idle.
-- **The content comes from a prompt, same as any other reply.** When the
-  timer fires, code builds a message (a reflection prompt, a question
-  template, whatever fits the moment) and sends it to the model like any
-  other request. The model fills in the words; it doesn't choose the moment.
-- **"Autonomous" means verified, not trusted.** This matters more than the
-  thought buffer: when Amy is given a real instruction, the system doesn't
-  take her word for what she did. A goal's steps are checked against what her
-  tools actually returned — a file only counts as written if it changed
-  *during that step*, a step only passes if a tool call actually worked, and
-  a model's own account of a step is evidence to check, not a result to
-  trust. That design runs through the whole project, not just this one
-  feature: see **Getting things done** below, and `_verify_step` /
-  `turn_guard.py` in [ARCHITECTURE.md](ARCHITECTURE.md) for the mechanism.
+**The problem it's solving:** a small local model is cheap, private, and
+fast, but it's also smaller than its own ambitions — it will narrate work it
+didn't do, spiral on a tool call, or claim a step is finished when nothing
+checked that. Most "AI companion" or "autonomous agent" projects paper over
+that with a bigger prompt. This one builds the discipline into the code
+instead:
 
-The interesting engineering problem here was never "make it feel alive" — it's
-"give a small local model a second, honest layer that catches it when it
-narrates work it never did." That's the actual thing this repo is a case
-study in.
+- **Multiple real interfaces to one core** — a web UI, a Telegram bot run as
+  an always-on service, and a terminal client with voice and webcam input,
+  all sharing the same persona, memory, and tools (see **Architecture** below).
+- **Tool-using autonomy with a second, deterministic layer checking it** —
+  when Amy is given a real instruction, it becomes a goal with a plan; each
+  step is checked against what her tools actually returned (a file only
+  counts as written if it changed *during* that step; a step only passes if
+  a tool call actually worked), not against what she says happened. See
+  **Getting things done** below.
+- **Layered local memory** — identity, conversation recall, a document/book
+  library she can actually read and cite from, and a long-term store (Engram)
+  that tracks corrections and her own stated views over time, all on-disk,
+  nothing phoned home.
+- **Honest about what's deterministic vs. what's the model** — her
+  "spontaneous" thoughts and check-ins fire from a plain randomized timer in
+  code, not from the model noticing time has passed; the model only ever
+  fills in words when something calls it. A language model has no background
+  cognition, and this project doesn't pretend otherwise.
+
+That combination — real multi-channel deployment, tool-calling agents,
+verification instead of trust, and a memory architecture, all running
+entirely local on consumer hardware — is the actual engineering surface area
+here, more than any one feature.
 
 ---
 
