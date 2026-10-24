@@ -29,10 +29,8 @@ TIMEOUT_S = 900
 
 # Single images are on: Amy makes one when Brian asks (the exclusive gate unloads her chat model
 # first, and the 4-bit default keeps memory down; a run takes ~2 minutes). AMY_IMAGEGEN_PAUSED=1
-# pauses it. Slideshows exist only for BoTTube, which is off until Brian has bigger compute
-# (2026-10-23): AMY_BOTTUBE=1 turns it back on. Its runs were the ones that crashed the machine.
+# pauses it.
 PAUSED = os.environ.get("AMY_IMAGEGEN_PAUSED", "0") == "1"
-SLIDESHOWS = os.environ.get("AMY_BOTTUBE", "0") == "1"
 
 # Lower-bit FLUX weights use less GPU memory than the 8-bit she ran at (peak 21.8 GB). mflux
 # accepts 3, 4, 5, 6 or 8. Default 4; set AMY_FLUX_QUANT=8 for the old behaviour.
@@ -160,53 +158,6 @@ def _notify(text: str) -> None:
         )
     except Exception:
         pass
-
-
-def create_slideshow(prompts: list, duration_per_image: int = 3) -> Path:
-    """Generate one FLUX image per prompt and stitch into an mp4 with ffmpeg."""
-    if PAUSED or not SLIDESHOWS:
-        raise RuntimeError("Slideshows are off: they exist only for BoTTube, which is switched off for now.")
-    if not _lock.acquire(blocking=False):
-        raise RuntimeError("An image is already being generated.")
-    try:
-        OUT_DIR.mkdir(parents=True, exist_ok=True)
-        paths = []
-        with _exclusive():   # only the FLUX runs hold the machine; ffmpeg below is light
-            for i, prompt in enumerate(prompts):
-                seed = int(time.time()) + i
-                out = OUT_DIR / f"amy_{seed}.png"
-                cmd = [MFLUX_BIN, "--model", "schnell"]
-                cmd += ["--path", MODEL_PATH] if MODEL_PATH else ["-q", FLUX_QUANT]
-                cmd += ["--prompt", prompt, "--steps", "4",
-                        "--seed", str(seed), "--output", str(out)]
-                with open(LOG_FILE, "a") as log:
-                    log.write(f"\n=== {time.ctime()} [slide {i+1}/{len(prompts)}] :: {prompt!r}\n")
-                    log.flush()
-                    result = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, timeout=TIMEOUT_S)
-                if result.returncode != 0 or not out.exists():
-                    raise RuntimeError(f"mflux failed on slide {i+1} (exit {result.returncode})")
-                paths.append(out)
-
-        # write ffmpeg concat list
-        ts = int(time.time())
-        list_file = OUT_DIR / f"slideshow_{ts}.txt"
-        with open(list_file, "w") as f:
-            for path in paths:
-                f.write(f"file '{path}'\nduration {duration_per_image}\n")
-            f.write(f"file '{paths[-1]}'\n")  # ffmpeg needs final frame repeated
-
-        out_mp4 = OUT_DIR / f"amy_slideshow_{ts}.mp4"
-        ffmpeg_cmd = [
-            "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file),
-            "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,"
-                   "pad=1280:720:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
-            "-c:v", "libx264", "-r", "30", str(out_mp4),
-        ]
-        subprocess.run(ffmpeg_cmd, capture_output=True, check=True, timeout=120)
-        list_file.unlink(missing_ok=True)
-        return out_mp4
-    finally:
-        _lock.release()
 
 
 def generate_and_send(prompt: str, caption: str = "") -> str:

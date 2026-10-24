@@ -321,7 +321,6 @@ from the conversation and loaded at the top of the next session's context.
 | Feature | Status | To re-enable |
 |---|---|---|
 | **Code routing** (`deepseek-coder:6.7b`) | Paused — model isn't installed, so Amy handles code herself | `ollama pull deepseek-coder:6.7b` and set `AMY_CODE_MODEL=deepseek-coder:6.7b` |
-| **BoTTube** (`bottube_post` / `bottube_check`) | Tools exist, account not registered (no `~/.bottube/credentials.json`) | Register via `bottube.py` |
 | **Video generation** (`videogen.py`, LTX-Video) | Written but not wired to any tool | Add a tool in `tools.py` |
 | **Robot neck** (`hardware_neck`) | Stub — logs the command, no real BLE write yet | See *Wiring up a real body* |
 | **Spontaneous speech / thought buffer on Telegram** | Web UI and terminal only | — |

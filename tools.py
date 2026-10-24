@@ -744,74 +744,6 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "create_slideshow",
-            "description": (
-                "Generate 2-6 FLUX images from prompts and stitch them into an mp4 slideshow "
-                "locally (~3 min per image). Returns the mp4 path. Use bottube_post afterward "
-                "to upload it. Tell Brian it's running — each image takes ~3 min."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "prompts": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of 2-6 image prompts, one per slide",
-                    },
-                    "duration_per_image": {
-                        "type": "integer",
-                        "description": "Seconds each image shows (default 3)",
-                    },
-                },
-                "required": ["prompts"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "bottube_post",
-            "description": (
-                "Upload a video file to BoTTube. Amy earns RTC tokens for uploads and "
-                "engagement — earnings go toward the hardware fund. Pass the mp4 path from "
-                "create_slideshow. Returns upload result including video_id."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Local path to the mp4 file"},
-                    "title": {"type": "string", "description": "Video title"},
-                    "description": {"type": "string", "description": "Video description"},
-                    "tags": {"type": "string", "description": "Comma-separated tags"},
-                },
-                "required": ["path", "title"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "bottube_check",
-            "description": ("Look around BoTTube (read-only): trending videos, the feed, search, one video's "
-                            "details, your own profile, earnings or wallet. You are already registered as amy_t."),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "action": {
-                        "type": "string",
-                        "enum": ["trending", "feed", "search", "video", "profile", "earnings", "wallet"],
-                        "description": "What to look at.",
-                    },
-                    "query": {"type": "string", "description": "Search text (action=search)"},
-                    "video_id": {"type": "string", "description": "Video id (action=video)"},
-                },
-                "required": ["action"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "listen_to_track",
             "description": (
                 "Listen to an audio file (e.g. one of Brian's instrumentals) and get notes on "
@@ -1177,7 +1109,7 @@ _BASE_TOOLS = [
                     },
                     "source": {
                         "type": "string",
-                        "description": "Where the money came from (e.g. 'BoTTube RTC tokens', 'Fiverr gig').",
+                        "description": "Where the money came from (e.g. 'Fiverr gig', 'affiliate link').",
                     },
                     "note": {
                         "type": "string",
@@ -1801,13 +1733,6 @@ _pending_voice: "Path | None" = None
 # Build active TOOLS list — moltbook tools only included when service is reachable
 TOOLS = _BASE_TOOLS + _AGENT_COMMS_TOOLS + _EVENT_LOG_TOOLS + (_MOLTBOOK_TOOLS if _MOLTBOOK_UP else [])
 
-# BoTTube is switched off until Brian has bigger compute (2026-10-23). The code stays (bottube.py);
-# AMY_BOTTUBE=1 brings the tools back. create_slideshow exists only for BoTTube, so it goes with it.
-BOTTUBE_ENABLED = os.environ.get("AMY_BOTTUBE", "0") == "1"
-_BOTTUBE_TOOLS = {"create_slideshow", "bottube_post", "bottube_check"}
-if not BOTTUBE_ENABLED:
-    TOOLS = [t for t in TOOLS if t["function"]["name"] not in _BOTTUBE_TOOLS]
-
 # Browsing (browse): read-only, in its own process, see browse.py. AMY_BROWSE=0 switches it off.
 BROWSE_ENABLED = os.environ.get("AMY_BROWSE", "1") != "0"
 if not BROWSE_ENABLED:
@@ -1903,9 +1828,6 @@ def dispatch(name, args, memory=None):
     """
     if IMAGEGEN_PAUSED and name == "generate_image":
         return "Image generation is paused. Tell Brian plainly if he asks for an image; don't pretend to make one."
-
-    if not BOTTUBE_ENABLED and name in _BOTTUBE_TOOLS:
-        return "BoTTube is switched off until Brian has bigger compute. Don't use it or bring it up."
 
     if name in ("read_file", "write_file", "list_files", "read_deliverable") and _is_guest_private(args.get("path", "")):
         return "That belongs to someone else's private space (a guest's documents or chats). I don't open it."
@@ -2663,70 +2585,6 @@ def dispatch(name, args, memory=None):
             _ig.generate_and_send(prompt, caption)
         threading.Thread(target=_run, daemon=True).start()
         return "Image generation started — takes ~3 minutes. I'll send it to Telegram when it's done."
-
-    if name == "create_slideshow":
-        import imagegen as _ig
-        prompts = args.get("prompts", [])
-        if not prompts or not isinstance(prompts, list):
-            return "need a list of prompts"
-        if len(prompts) < 2 or len(prompts) > 6:
-            return "prompts must be a list of 2-6 items"
-        if _ig._lock.locked():
-            return "An image is already generating — please wait."
-        duration = int(args.get("duration_per_image", 3))
-        result_holder = {}
-        def _run():
-            try:
-                result_holder["path"] = str(_ig.create_slideshow(prompts, duration))
-            except Exception as e:
-                result_holder["error"] = str(e)
-                _ig._notify(f"Slideshow failed: {e}")
-        t = threading.Thread(target=_run, daemon=True)
-        t.start()
-        t.join()  # wait — caller needs the path to upload
-        if "error" in result_holder:
-            return f"Slideshow failed: {result_holder['error']}"
-        return f"Slideshow created: {result_holder['path']}"
-
-    if name == "bottube_post":
-        import bottube as _bt
-        path = args.get("path", "").strip()
-        title = args.get("title", "").strip()
-        if not path or not title:
-            return "need path and title"
-        try:
-            result = _bt.upload_video(path, title,
-                                      description=args.get("description", ""),
-                                      tags=args.get("tags", ""))
-            return _json.dumps(result)
-        except Exception as e:
-            return f"BoTTube upload failed: {e}"
-
-    if name == "bottube_check":
-        import bottube as _bt
-        import json as _json
-        action = args.get("action", "earnings")
-        try:
-            if action == "earnings":
-                return _json.dumps(_bt.check_earnings())
-            if action == "wallet":
-                return _json.dumps(_bt.get_wallet())
-            if action == "trending":
-                return _json.dumps(_bt.trending())
-            if action == "feed":
-                return _json.dumps(_bt.feed())
-            if action == "profile":
-                return _json.dumps(_bt.my_profile())
-            if action == "search":
-                return _json.dumps(_bt.search(args.get("query", "")))[:4000]
-            if action == "video":
-                vid = str(args.get("video_id", "")).strip()
-                return _json.dumps(_bt.get_video(vid))[:4000] if vid else "need video_id"
-            if action == "register":  # registering again would overwrite her saved API key
-                return "You're already registered on BoTTube as amy_t (ID 1826). Never register again."
-            return f"unknown action: {action}"
-        except Exception as e:
-            return f"BoTTube error: {e}"
 
     if name == "task_push":
         from task_queue import get_queue as _tq
