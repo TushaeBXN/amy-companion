@@ -63,6 +63,7 @@ MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
 HISTORY_WINDOW = 16     # keep last N messages (user+assistant) to prevent context bloat
 CTX_WINDOW = int(os.environ.get("AMY_CTX", 32768))  # match telegram_amy.py/worker.py so Ollama shares one loaded model
 KEEP_ALIVE = -1         # keep models loaded indefinitely — no eviction between turns
+THINK = os.environ.get("AMY_THINK", "0") == "1"   # everyday chat runs with thinking off (faster, and it coded better in tests); AMY_THINK=1 turns it back on
 MAX_LEARNINGS_CHARS = 2000  # cap session learnings injected into system prompt
 SELF_PORTRAIT = os.path.join(os.path.dirname(__file__), "amyglitch.png")
 
@@ -426,7 +427,7 @@ def run_turn(history, mem, image=None, amy_state=None,
                 clean_user.pop("images", None)
                 amy_messages = sys_msgs + _drop_images(history[:-1]) + [clean_user]
                 resp = ollama.chat(model=MODEL, messages=amy_messages,
-                                   tools=tools.TOOLS, keep_alive=KEEP_ALIVE,
+                                   tools=tools.TOOLS, keep_alive=KEEP_ALIVE, think=THINK,
                                    options={"num_ctx": CTX_WINDOW})
             msg = resp["message"]
             if msg.get("thinking"):
@@ -468,7 +469,7 @@ def run_turn(history, mem, image=None, amy_state=None,
 
     for _ in range(MAX_TOOL_HOPS):
         resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
-                           keep_alive=KEEP_ALIVE,
+                           keep_alive=KEEP_ALIVE, think=THINK,
                            options={"num_ctx": CTX_WINDOW, "num_predict": 2048})
         msg = resp["message"]
         # Ava's chain-of-thought stays private: log it, never speak/print it.
@@ -634,7 +635,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
                 clean_user.pop("images", None)
                 amy_messages = sys_msgs + _drop_images(history[:-1]) + [clean_user]
                 resp = ollama.chat(model=MODEL, messages=amy_messages, tools=tools.TOOLS,
-                                   keep_alive=KEEP_ALIVE, options={"num_ctx": CTX_WINDOW})
+                                   keep_alive=KEEP_ALIVE, think=THINK, options={"num_ctx": CTX_WINDOW})
                 content = resp["message"].get("content", "")
 
             if content:
@@ -771,7 +772,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
     for _ in range(MAX_TOOL_HOPS):
         with _log.Timer("model_call", model=MODEL):
             resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
-                               keep_alive=KEEP_ALIVE,
+                               keep_alive=KEEP_ALIVE, think=THINK,
                                options={"num_ctx": CTX_WINDOW, "num_predict": 2048})
         msg = resp["message"]
         if msg.get("thinking"):
@@ -853,7 +854,7 @@ def _spontaneous_thought(history, mem, amy_state):
     messages = [{"role": "system", "content": system}] + _drop_images(history[-6:])
 
     try:
-        resp = ollama.chat(model=MODEL, messages=messages, keep_alive=KEEP_ALIVE,
+        resp = ollama.chat(model=MODEL, messages=messages, keep_alive=KEEP_ALIVE, think=THINK,
                            options={"num_ctx": CTX_WINDOW, "num_predict": 80})
         text = _strip_trailers(resp["message"].get("content", "").strip())
         if text and re.sub(r'[^\w]', '', text):
