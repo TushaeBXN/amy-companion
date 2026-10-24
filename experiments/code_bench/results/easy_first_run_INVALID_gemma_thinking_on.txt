@@ -1,0 +1,22 @@
+amy-coder dedupe pass 60.8
+amy-coder is_pal pass 85.4
+amy-coder parse_kv pass 85.1
+amy-coder merge pass 90.5
+amy-coder fizz pass 86.3
+amy-coder flatten pass 86.7
+amy-coder top_words fail 86.7
+amy-coder roman pass 89.5
+amy-coder fix_bug pass 84.1
+amy-coder bsearch pass 111.7
+amy-coder SCORE 9 / 10
+gemma12-test dedupe pass 132.1
+gemma12-test is_pal pass 129.7
+gemma12-test parse_kv pass 143.9
+gemma12-test merge fail 145.4
+gemma12-test fizz pass 130.7
+gemma12-test flatten fail 145.9
+gemma12-test top_words fail 145.2
+gemma12-test roman fail 216.6
+gemma12-test fix_bug fail 143.9
+gemma12-test bsearch pass 44.6
+gemma12-test SCORE 5 / 10

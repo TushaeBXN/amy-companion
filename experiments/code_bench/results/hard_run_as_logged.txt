@@ -1,0 +1,33 @@
+gemma12-test lru pass 50.0
+gemma12-test evalexpr blocked 45.5
+gemma12-test toposort pass 40.1
+gemma12-test wordwrap pass 26.8
+gemma12-test csvparse fail: SyntaxError: unmatched ')' 33.9
+gemma12-test fix_median pass 13.8
+gemma12-test rle pass 42.0
+gemma12-test bracket pass 19.2
+gemma12-test islands pass 41.5
+gemma12-test bank pass 15.4
+gemma12-test SCORE 8 / 10
+amy-coder lru pass 13.0
+amy-coder evalexpr fail: IndexError: pop from an empty deque 14.7
+amy-coder toposort fail: AssertionError 10.3
+amy-coder wordwrap fail: AssertionError 5.4
+amy-coder csvparse fail: AssertionError 7.4
+amy-coder fix_median fail: AssertionError 3.1
+amy-coder rle fail: AssertionError 3.8
+amy-coder bracket pass 3.7
+amy-coder islands pass 11.5
+amy-coder bank fail: AssertionError 8.8
+amy-coder SCORE 3 / 10
+amy-coder-q5 lru pass 12.4
+amy-coder-q5 evalexpr fail: IndexError: pop from empty list 17.7
+amy-coder-q5 toposort fail: AssertionError 8.8
+amy-coder-q5 wordwrap fail: AssertionError 5.7
+amy-coder-q5 csvparse fail: AssertionError 8.8
+amy-coder-q5 fix_median fail: AssertionError 3.5
+amy-coder-q5 rle fail: AssertionError 4.4
+amy-coder-q5 bracket pass 4.3
+amy-coder-q5 islands pass 10.7
+amy-coder-q5 bank fail: AssertionError 9.6
+amy-coder-q5 SCORE 3 / 10
