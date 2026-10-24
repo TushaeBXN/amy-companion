@@ -55,7 +55,7 @@ CTX_WINDOW  = 16384
 
 ALLOWED_TOOLS = {
     "web_search", "read_article",
-    "read_file", "write_file", "list_files",
+    "read_file", "write_file", "list_files", "read_pdf",
     "list_work", "read_deliverable",
     "journal_entry", "read_journal", "remember_fact",
     "add_goal", "complete_goal",
