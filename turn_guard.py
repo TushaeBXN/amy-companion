@@ -243,3 +243,15 @@ def tool_proof_problem(step_desc: str, calls: list) -> str:
         return ""
     return ("no tool did any work in this step (" + (", ".join(f"{c['name']}: {'failed' if failed(c.get('result_snippet')) else 'context only'}"
                                                           for c in calls[:4]) or "no tool calls") + "); describing work does not count")
+
+
+def result_from_tools(final: str, calls: list, limit: int = 1500) -> str:
+    """A step's result: her closing account, or if she ended without one, what her tools actually returned.
+    (A tool that worked followed by no closing sentence was being scored "no output" and failed.)"""
+    if (final or "").strip() and final.strip() != "(no output)":
+        return final
+    done = real_work(calls)
+    if not done:
+        return final or "(no output)"
+    lines = [f"{c['name']}: {str(c.get('result_snippet') or '')[:300]}" for c in done]
+    return ("(no closing summary; these are the results her tools returned)\n" + "\n".join(lines))[:limit]

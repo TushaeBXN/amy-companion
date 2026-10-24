@@ -1343,7 +1343,7 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
                              "content": result_text + f"\n[step {step} of {goal_max_hops}]"})
         if wasted >= 3:
             break
-    return final or "(no output)", files_written, tool_log
+    return _turn_guard.result_from_tools(final, tool_log), files_written, tool_log
 
 
 MAX_STEP_ATTEMPTS = 3   # retries before a step is marked blocked
