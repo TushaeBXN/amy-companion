@@ -928,7 +928,7 @@ _BASE_TOOLS = [
                         "type": "string",
                         "enum": ["add", "search", "correct", "history", "library", "view_record",
                                  "view_get", "why", "link", "check", "diary_write", "diary_read",
-                                 "kg_add", "kg_query", "wake_up"],
+                                 "kg_add", "kg_query"],
                         "description": (
                             "add=store a memory; search=semantic search; "
                             "correct=replace an outdated memory (memory_id + content, optional reason); "
