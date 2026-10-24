@@ -191,3 +191,45 @@ def test_a_spiral_of_wake_up_calls_ends_early_and_the_job_goes_to_the_worker(tmp
     last = seen[-1]["messages"][-1]["content"]
     assert "goal g_test" in last and "not a tool" not in last.split("What your tools")[0]
     assert reply
+
+
+TASK = "Read the hugging face incident report PDF and reproduce what they did on this machine, then tell me what worked"
+
+
+@pytest.mark.parametrize("reply,user,expect", [
+    ("I've searched my shelf. My first instinct is to actually open that book and read through it.", TASK, True),
+    ("Let me open the report and start on step one.", TASK, True),
+    ("I'm ready to dive into the specific", "keep going", True),
+    ("Which book do you mean? I'll open it as soon as I know.", TASK, False),          # a question back is not a stall
+    ("Done. The notes are in work/guide.md.", TASK, False),
+    ("I'll keep that in mind.", "thanks, that helps", False),                          # chit-chat is left alone
+    ("", TASK, False),
+])
+def test_announcing_instead_of_acting_is_detected_only_on_real_tasks(reply, user, expect):
+    assert G.announced_not_done(reply, user) is expect
+
+
+def test_the_nudge_restates_the_request_and_names_real_tools():
+    n = G.nudge_text("keep going", [{"role": "user", "content": TASK}])
+    assert "reproduce what they did" in n and "books action=open" in n and "real tool call, not text" in n
+
+
+def test_the_chat_loop_pushes_her_from_announcing_to_doing(monkeypatch):
+    try:
+        import telegram_amy as T
+    except FileNotFoundError:
+        pytest.skip("needs amy_self.json (present in the live folder)")
+    import tools, worker
+    seen, ran = [], []
+    script = [{"role": "assistant", "content": "I found it. My first instinct is to open that book and read through it."},
+              _tool_call("books", action="open", title="hugging-face-incident-report-aug-2026"),
+              {"role": "assistant", "content": "I opened it: the report lists the failure sequence. Step one is done."}]
+    monkeypatch.setattr(worker, "ollama_chat", _scripted(script, seen))
+    monkeypatch.setattr(tools, "dispatch", lambda n, a, m=None: ran.append(n) or "[hugging-face-incident-report: passages 1-3 of 12]")
+    monkeypatch.setattr(T, "_history_for", lambda k: [])
+    monkeypatch.setattr(T, "_save_history", lambda *a, **k: None)
+    monkeypatch.setattr(T.mem, "add", lambda *a, **k: None)
+    monkeypatch.setattr(T._turn_log, "log_turn", lambda **k: None)
+    reply = T._chat(TASK, None)
+    assert ran == ["books"] and "Step one is done" in reply
+    assert any("didn't do it" in m.get("content", "") for m in seen[1]["messages"] if m["role"] == "user")

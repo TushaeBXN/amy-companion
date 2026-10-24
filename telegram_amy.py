@@ -582,6 +582,7 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
     }
     _logged_tool_calls: list = []
     _declared = _turn_guard.tool_names(tools)
+    _nudges = 0               # times she was pushed to act instead of announcing
     _wasted = 0               # consecutive calls that did nothing: not a tool, repeated, or over its cap
     for step in range(1, MAX_HOPS + 1):
         _t0 = time.time()
@@ -615,6 +616,13 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
         history.append(msg)
         calls = msg.get("tool_calls") or []
         if not calls:
+            # She said what she'd do and stopped ("My first instinct is to open that book..."): push her to do it.
+            if (is_owner and not _bare and _nudges < 2 and step < MAX_HOPS
+                    and _turn_guard.announced_not_done(msg.get("content") or "", user_text)):
+                _nudges += 1
+                _log(f"  … {who}: announced instead of acting — nudging ({_nudges})")
+                messages.append({"role": "user", "content": _turn_guard.nudge_text(user_text, history[:-1])})
+                continue
             break
         if progress:
             progress([c["function"]["name"] for c in calls], step)
