@@ -581,6 +581,8 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
         "system_status": 1,
     }
     _logged_tool_calls: list = []
+    _declared = _turn_guard.tool_names(tools)
+    _wasted = 0               # consecutive calls that did nothing: not a tool, repeated, or over its cap
     for step in range(1, MAX_HOPS + 1):
         _t0 = time.time()
         worker._fit(messages)
@@ -620,8 +622,14 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
             fn   = call["function"]
             name = fn["name"]
             args = fn.get("arguments", {})
+            if name in _turn_guard.ENGRAM_ACTIONS and isinstance(args, dict):
+                # she turns a menu option into a tool name; run it as the memory tool call it means
+                name, args = "engram_memory", {"action": name, **args}
             key  = (name, tuple(sorted((k, str(v)) for k, v in args.items()) if isinstance(args, dict) else ()))
-            if not is_owner and name not in GUEST_TOOLS:
+            if name not in _declared:
+                result = _turn_guard.not_a_tool(name, _declared)
+                _wasted += 1
+            elif not is_owner and name not in GUEST_TOOLS:
                 result = "That tool is only available to Brian."
             elif name == "generate_image" and not image_request.asked_for_image(user_text):   # only when he asks
                 result = ("Not done: Brian didn't ask for an image. Tell him what you had in mind "
@@ -638,18 +646,21 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
                 cap = _STARTUP_TOOL_CAP.get(name)
                 _tool_counts[name] = _tool_counts.get(name, 0) + 1
                 if cap and _tool_counts[name] > cap:
+                    _wasted += 1
                     result = (f"[{name} already called {cap}x this turn — "
                               f"your context is loaded. Stop and respond to {who}.]")
                     # She ignored the message and kept calling it (10 hops in a row, then out of
                     # steps): take the tool away so the next hop has to be a real answer.
                     tool_list = [t for t in tool_list if t.get("function", {}).get("name") != name]
                 elif key in seen:
+                    _wasted += 1
                     result = (f"[Already called {name} with these exact args — use the result above, and do the "
                               f"next thing. {name} has been removed from your tools for this message.]")
                     # A repeated identical call never helps. Take the tool away so the remaining steps go to
                     # real work (the log shows whole turns lost to one tool being called again and again).
                     tool_list = [t for t in tool_list if t.get("function", {}).get("name") != name]
                 else:
+                    _wasted = 0
                     try:
                         result = tools.dispatch(name, args, mem)
                     except Exception as _te:
@@ -665,13 +676,26 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
             messages.append({"role": "tool", "content":
                 (worker._cap(str(result)) if result else "done") + f"\n[step {step} of {MAX_HOPS}]"})
             history.append(messages[-1])
+        if _wasted >= 3:
+            _log(f"  … {who}: {_wasted} wasted calls in a row — ending the tool loop")
+            break
 
     # Out of steps while still calling tools: give her one last turn, without
     # tools, to tell the person what she did instead of going silent.
-    if msg is not None and (msg.get("tool_calls") or not msg.get("content")):
+    if msg is not None and (msg.get("tool_calls") or not msg.get("content") or _wasted >= 3):
         _log(f"  … {who}: " + ("out of steps" if msg.get("tool_calls") else "no final answer yet")
              + " — asking Amy to wrap up")
-        messages.append({"role": "user", "content": _turn_guard.wrapup_prompt(_logged_tool_calls)})
+        _gid = ""
+        if is_owner and not _bare:
+            try:
+                _g, _ = _turn_guard.queue_goal(_turn_guard.objective_for(user_text, history[:-1]),
+                                               "Brian asked for this in chat; the chat turn ran out of steps")
+                _gid = _g["goal_id"] if _g else ""
+                if _gid:
+                    _log(f"  [goal] handed to the worker: {_gid}")
+            except Exception as _ge:
+                _log(f"  [goal] hand-off skipped: {type(_ge).__name__}: {_ge}")
+        messages.append({"role": "user", "content": _turn_guard.wrapup_prompt(_logged_tool_calls, _gid)})
         worker._fit(messages)
         try:
             resp = worker.ollama_chat(_priority="chat", think=False, model=MODEL,
