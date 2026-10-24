@@ -28,17 +28,17 @@ anyway.
 I didn't come up through computer science. I studied entertainment business
 at Full Sail. Cybersecurity and AI are things I taught myself after that, and
 I learned pretty quickly that watching videos and reading about this stuff
-only gets you so far — I actually had to build something real to understand
+only gets you so far I actually had to build something real to understand
 how it works underneath. Amy is that something.
 
 She runs on a $600-ish Mac mini, no cloud, nothing phoned home. And the thing
 I kept running into while building her: a local model this size will straight
 up lie to you about what it did. It'll tell you it opened a file it never
 opened, or say a step is finished when nothing actually checked. I didn't
-want to just paper over that with a longer prompt telling it to behave — I
+want to just paper over that with a longer prompt telling it to behave I
 wanted the code itself to catch it. So now when I give Amy a real job, it
 becomes a goal with steps, and each step only counts as done if a tool
-actually ran and actually did the thing — not because she said so. That part
+actually ran and actually did the thing not because she said so. That part
 took way more work than I expected, and it's the part I'm proudest of.
 
 Past that, she's got a few ways to talk to her (Telegram, a web UI, a
