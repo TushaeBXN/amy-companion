@@ -1093,7 +1093,7 @@ def _run_goal(goal: dict):
         elif advance:
             print(f"  [worker] goal '{goal_id}' step {step_idx + 1} done → step {step_idx + 2}",
                   flush=True)
-            _send(f"Step {step_idx + 1} of {len(plan)} done and verified: {step_desc[:100]}\n{(next_action or '')[:160]}")
+            _send(_turn_guard.step_message(step_idx, plan, result, tool_log, decision))
 
     except Exception as e:
         _goals.record_step_result(goal_id, step_idx, f"Exception: {e}",
@@ -1236,6 +1236,10 @@ def _execute_goal_planning(goal_id: str, goal: dict):
 
         _goals.set_plan(goal_id, steps, criteria)
         _goals._update(goal_id, max_hops=goal_max_hops)
+        try:
+            _send(_turn_guard.plan_message(goal["objective"], steps))
+        except Exception as _pe:
+            print(f"  [worker] couldn't send the plan: {_pe}", flush=True)
         print(f"  [worker] goal '{goal_id}' plan ({len(steps)} steps, {complexity}, "
               f"max_hops={goal_max_hops}) set", flush=True)
     except Exception as e:
