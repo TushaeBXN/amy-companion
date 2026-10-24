@@ -1137,6 +1137,15 @@ def main():
     token = os.environ.get("TELEGRAM_TOKEN")
     if not token:
         sys.exit("TELEGRAM_TOKEN not set — check your .env.amy file")
+    if not os.environ.get("AMY_SERVICE"):
+        try:
+            import amy_service as _svc
+            if _svc.service_running():
+                sys.exit("Amy is already running as a service (pid %s). Don't start a second copy: it would kill the "
+                         "first.\n  restart:  python3 amy_service.py restart\n  logs:     python3 amy_service.py logs\n"
+                         "  to run her by hand instead: python3 amy_service.py stop" % _svc.info()["pid"])
+        except ImportError:
+            pass
     _acquire_pid()
     app = Application.builder().token(token).concurrent_updates(True).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
