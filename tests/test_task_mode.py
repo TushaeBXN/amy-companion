@@ -166,3 +166,21 @@ def test_status_in_chat_reports_the_record_not_her_opinion(monkeypatch):
     monkeypatch.setattr(T.mem, "add", lambda *a, **k: None)
     monkeypatch.setattr(T._turn_log, "log_turn", lambda **k: None)
     assert "Steps verified so far: 1 of 3" in T._chat("keep going", None) and asked == []
+
+
+def test_a_step_that_ends_after_a_working_tool_uses_the_tool_output_as_its_result():
+    ok = {"name": "read_pdf", "args": {}, "result_snippet": "[PDF report.pdf, pages 1-5 of 12] --- page 1 --- Incident summary"}
+    bad = {"name": "books", "args": {}, "result_snippet": "books: no book on your shelf matches 'x'"}
+    out = G.result_from_tools("", [ok])
+    assert "pages 1-5 of 12" in out and "no closing summary" in out
+    assert G.result_from_tools("I read pages 1-5.", [ok]) == "I read pages 1-5."          # her own account wins when she gives one
+    assert G.result_from_tools("", [bad]) == "(no output)"                                # a failed tool is not a result
+    assert G.result_from_tools("(no output)", []) == "(no output)"
+
+
+def test_such_a_step_can_now_pass_the_check(monkeypatch):
+    monkeypatch.setattr(W, "ollama_chat", lambda **k: {"message": {"content": "YES the PDF text was returned"}})
+    ok = {"name": "read_pdf", "args": {}, "result_snippet": "[PDF report.pdf, pages 1-5 of 12] Incident summary"}
+    result = G.result_from_tools("", [ok])
+    passed, decision, _ = W._verify_step(GOAL, 0, "Open the report and read the first section", result, calls=[ok])
+    assert passed
