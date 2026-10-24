@@ -146,3 +146,50 @@ def test_the_books_tool_and_context_are_wired():
     assert tools.dispatch("books", {"action": "open", "title": "cooking"}).startswith("books: ")
     assert tools.dispatch("books", {"action": "burn"}).startswith("unknown books action")
     assert "2 books you can open" in worker._learning_context("anything at all")
+
+
+# ── skipping what a reader skips ─────────────────────────────────────────────
+
+COPY = "[From: Front Book]\nFront Book Copyright © 2018 Packt Publishing All rights reserved. No part of this book may be reproduced, stored in a retrieval system, without the prior written permission of the publisher. ISBN 978-1-78862-689-7"
+TOC = "[From: Front Book]\nTable of Contents\nPreface\nChapter 1: Basics of Bug Bounty Hunting\nBug bounty hunting platforms\nHackerOne\nBugcrowd"
+TOC2 = "[From: Front Book]\nInstalling the tools ................ 39\nBasics of the shell ............... 43\nChanging the defaults ............. 51\nWorking with files ................ 60\nSearching text .................... 72"
+IDX = "[From: Front Book]\nIndex\nadmin panel, 12\nauthentication, 40, 41\nbrute force, 77-79\ncookies, 15\nCSRF, 88\nencoding, 91"
+BODY = "[From: Front Book]\nA session cookie identifies a logged in user, so protect it from scripts. Servers should mark it HttpOnly."
+SLIDES = "[From: Front Book]\nXSS\n●user-supplied data presented to users\n●mostly a problem of insufficient\nsanitization\n●Reflected\n●persistent\n●DOM-based"
+
+
+@pytest.mark.parametrize("text,kind", [(COPY, "copyright"), (TOC, "contents"), (TOC2, "contents"), (IDX, "index"),
+                                       (BODY, "body"), (SLIDES, "body"), ("[From: X]\nChapter 1 Recon\nFirst map the target.", "body")])
+def test_front_and_back_matter_is_recognised_and_slide_bullets_are_not(text, kind):
+    assert B.classify(text) == kind
+
+
+def _front_book(db, rows):
+    con = sqlite3.connect(db)
+    for t in rows:
+        con.execute("INSERT INTO mem (role,text,emb,source) VALUES ('knowledge',?,?,?)", (t, blob(vec(t)), "Front Book"))
+    con.commit()
+    con.close()
+
+
+def test_opening_a_book_skips_the_copyright_page_and_contents_but_says_so(shelf_db):
+    _front_book(shelf_db, [COPY, TOC, TOC2, BODY, BODY.replace("session", "login"), BODY.replace("session", "csrf"), IDX])
+    out = B.open_book("front book")
+    assert "Passages 1-3 are front matter" in out and "passages 4-6 of 7" in out
+    assert "All rights reserved" not in out.split("--- passage 4")[0].split("]\n", 1)[1]
+    assert "read start=1 shows them" in out
+
+
+def test_a_book_that_starts_with_its_content_opens_at_the_start(shelf_db):
+    assert B.body_start("Becoming the Hacker") == 1
+    assert "front matter" not in B.open_book("hacker")
+
+
+def test_reading_labels_pages_she_would_skip_and_search_ignores_them(shelf_db):
+    _front_book(shelf_db, [COPY, TOC, BODY, BODY, BODY])
+    out = B.read("front book", 1, 3)
+    assert "passage 1 (copyright page" in out and "passage 2 (contents page" in out and "passage 3 ---" in out
+    monkey_vec = lambda t: np.array([1.0, 0, 0, 0], dtype=np.float32)
+    B._cache.update(key=None)
+    res = B.search("rights", title="front book", embed=monkey_vec)
+    assert "passage 1" not in res and "passage 2" not in res
