@@ -38,15 +38,33 @@ def work_summary(calls: list, limit: int = 12) -> str:
     return "What your tools actually did this turn:\n" + "\n".join(lines)
 
 
-def wrapup_prompt(calls: list) -> str:
-    """The message that makes her give an honest account when she runs out of steps."""
+def wrapup_prompt(calls: list, goal_id: str = "") -> str:
+    """What she is told when a turn can't finish in chat. Built from what her tools actually returned."""
     done = real_work(calls)
-    return (f"[You've used all your tool steps for this message. {work_summary(calls)}\n"
-            "Don't call any more tools. In a few sentences, tell Brian only what is true from that list: what you "
-            + ("got done, " if done else "") +
-            "what failed and why, and the single next step you would take. "
-            + ("" if done else "You have not done the task yet, so say so plainly. ") +
-            "Do not describe anything you did not do. Do not ask whether to continue: name the next step.]")
+    handed = (f"The rest of this job has been handed to your background worker as goal {goal_id}: it plans the steps "
+              "and does them one at a time, checks each, and messages Brian when a step is done or stuck. Say that. "
+              if goal_id else "")
+    return (f"[This message ran out of tool steps. {work_summary(calls)}\n{handed}"
+            "Don't call any more tools. In a few sentences tell Brian only what is true from that list: what you "
+            + ("got done, " if done else "") + "what failed and why, and the next step."
+            + ("" if done else " You have not done the task yet, so say so plainly.")
+            + " Do not describe anything you did not do. Do not ask whether to continue.]")
+
+
+# Options of the memory tool that she sometimes calls as if they were tools of their own.
+ENGRAM_ACTIONS = {"diary_read", "diary_write", "view_get", "view_record", "kg_add", "kg_query"}
+
+
+def tool_names(tools_module) -> set:
+    return {t["function"]["name"] for t in tools_module.TOOLS}
+
+
+def not_a_tool(name: str, declared: set) -> str:
+    """The answer to a call to something that isn't a tool (she turns menu options like wake_up into tool names)."""
+    pick = ", ".join(sorted(n for n in declared if n in ("books", "study", "anchor", "run_code", "consult", "read_pdf",
+                                                         "browse", "write_file", "read_file", "create_autonomous_goal")))
+    return (f"[{name} is not a tool, so nothing was run. Your memory and identity are already loaded. "
+            f"Do the task with a real tool, for example: {pick}. Or answer.]")
 
 
 def unbacked_claim_note(reply: str, calls: list) -> str:

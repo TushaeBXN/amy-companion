@@ -136,3 +136,58 @@ def test_a_miss_names_the_closest_books_and_ambiguity_lists_them(shelf):
         B.resolve("bug bounty")
     with pytest.raises(B.BookError, match="no book"):
         B.resolve("cooking")
+
+
+# ── the chat loop itself, with a scripted model that does what she did ───────
+
+def test_not_a_tool_answer_names_real_tools():
+    import tools
+    msg = G.not_a_tool("wake_up", G.tool_names(tools))
+    assert "wake_up is not a tool, so nothing was run" in msg and "books" in msg and "run_code" in msg
+    assert "wake_up" not in [t["function"]["name"] for t in tools.TOOLS]
+    enum = next(t for t in tools.TOOLS if t["function"]["name"] == "engram_memory")["function"]["parameters"]["properties"]["action"]["enum"]
+    assert "wake_up" not in enum and "diary_read" in enum
+
+
+def test_the_wrapup_names_the_goal_when_one_was_queued():
+    p = G.wrapup_prompt([GOOD_OPEN], "study_guide_ab12")
+    assert "handed to your background worker as goal study_guide_ab12" in p and "Do not ask whether to continue" in p
+    assert "handed to your background worker" not in G.wrapup_prompt([GOOD_OPEN])
+
+
+def _scripted(script, seen):
+    def fake(**kw):
+        seen.append(kw)
+        msg = script.pop(0) if script else {"role": "assistant", "content": "ok"}
+        return {"message": msg}
+    return fake
+
+
+def _tool_call(name, **args):
+    return {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": name, "arguments": args}}]}
+
+
+def test_a_spiral_of_wake_up_calls_ends_early_and_the_job_goes_to_the_worker(tmp_path, monkeypatch):
+    try:
+        import telegram_amy as T
+    except FileNotFoundError:
+        pytest.skip("needs amy_self.json (present in the live folder)")
+    import tools, worker
+    seen, ran = [], []
+    script = [_tool_call("books", action="search", query="Hugging Face PDF")] + [_tool_call("wake_up")] * 9 \
+        + [{"role": "assistant", "content": "I searched my shelf and found the report. The rest is queued for my worker."}]
+    monkeypatch.setattr(worker, "ollama_chat", _scripted(script, seen))
+    monkeypatch.setattr(tools, "dispatch", lambda n, a, m=None: ran.append(n) or "[Matches from your books. passage 1]")
+    monkeypatch.setattr(T, "_history_for", lambda k: [])
+    monkeypatch.setattr(T, "_save_history", lambda *a, **k: None)
+    queued = []
+    monkeypatch.setattr(G, "queue_goal", lambda obj, why, ag=None: (queued.append(obj) or {"goal_id": "g_test"}, True))
+    monkeypatch.setattr(T.mem, "add", lambda *a, **k: None)
+    monkeypatch.setattr(T._turn_log, "log_turn", lambda **k: None)
+    reply = T._chat("Read the hugging face incident report PDF and reproduce what they did on this machine, then tell me what worked", None)
+    assert ran == ["books"]                                   # wake_up never ran as a tool
+    assert len(seen) <= 6                                    # 1 real call + 3 wasted + wrap-up, not 10 hops
+    assert queued and "hugging face incident report" in queued[0].lower()
+    last = seen[-1]["messages"][-1]["content"]
+    assert "goal g_test" in last and "not a tool" not in last.split("What your tools")[0]
+    assert reply
