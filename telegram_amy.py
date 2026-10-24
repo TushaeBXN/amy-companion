@@ -531,6 +531,36 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
     if not _bare:
         mem.add("user", user_text[:500], source=source)
 
+    # Task mode: a real instruction becomes a goal for the worker, and the reply is built from the goal's record.
+    # "status" / "yes" / "keep going" report where that job really stands. Outcomes decide, not her wording.
+    if is_owner and not _bare and not image_bytes:
+        try:
+            _task_reply = None
+            if _turn_guard.is_status_request(user_text):
+                _task_reply = _turn_guard.goal_status()
+            elif _turn_guard.is_task_request(user_text):
+                _g, _new = _turn_guard.queue_goal(user_text.strip(), "Brian gave this instruction in chat")
+                if _g:
+                    _task_reply = _turn_guard.task_reply(_g, _new)
+                    worker.start_goal_now()
+                    _log(f"  [task] {'queued' if _new else 'already queued'}: {_g['goal_id']}")
+            if _task_reply:
+                _a = {"role": "assistant", "content": _task_reply}
+                history.append(_a)
+                mem.add("assistant", _task_reply, source=source)
+                amy_state.after_turn()
+                _save_history(history, _history_file(pkey))
+                try:
+                    _turn_log.log_turn(condition=_cond.CONDITION, model=MODEL,
+                                       system_prompt="(task mode: reply composed from the goal record)",
+                                       mood=amy_state.mood, energy_pct=int(amy_state.energy * 100),
+                                       tool_calls=[], user_msg=user_text, assistant_reply=_task_reply, outcome="task_mode")
+                except Exception as _tl:
+                    _log(f"  [turn_log] {_tl}")
+                return _task_reply
+        except Exception as _te:
+            _log(f"  [task] task mode skipped: {type(_te).__name__}: {_te}")
+
     # ── Morning brief: pre-fetch live data so amy-vl only has to write ───────
     if _BRIEFING_RE.search(user_text):
         import web as _web
