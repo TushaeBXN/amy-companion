@@ -30,6 +30,7 @@ from amy_persona import get_core_prompt, playbooks_for, BIRTH_DATE
 from memory import Memory
 import state as _state
 import tools
+import turn_guard as _turn_guard
 import worker
 import guest_docs
 import condition as _cond
@@ -340,6 +341,10 @@ def _turn_context(history_len: int, person: dict, message: str, prior: str = "")
         _ctx = _st.context(message)
         if _ctx:
             s += "\n\n" + _ctx
+        import turn_guard as _tg
+        _gc = _tg.goal_context()
+        if _gc:
+            s += "\n\n" + _gc
         import bookshelf as _bsh
         _n = len(_bsh.shelf())
         if _n:
@@ -571,6 +576,9 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
     _STARTUP_TOOL_CAP = {     # tools that should rarely repeat in one turn
         "engram_memory": 2,
         "moltbook_check_in": 1,
+        "wake_up": 1,             # her identity is already in her prompt; she re-called it 9x and ran out of steps
+        "read_event_log": 2,
+        "system_status": 1,
     }
     _logged_tool_calls: list = []
     for step in range(1, MAX_HOPS + 1):
@@ -636,7 +644,11 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
                     # steps): take the tool away so the next hop has to be a real answer.
                     tool_list = [t for t in tool_list if t.get("function", {}).get("name") != name]
                 elif key in seen:
-                    result = f"[Already called {name} with these exact args — use the result above.]"
+                    result = (f"[Already called {name} with these exact args — use the result above, and do the "
+                              f"next thing. {name} has been removed from your tools for this message.]")
+                    # A repeated identical call never helps. Take the tool away so the remaining steps go to
+                    # real work (the log shows whole turns lost to one tool being called again and again).
+                    tool_list = [t for t in tool_list if t.get("function", {}).get("name") != name]
                 else:
                     try:
                         result = tools.dispatch(name, args, mem)
@@ -659,10 +671,7 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
     if msg is not None and (msg.get("tool_calls") or not msg.get("content")):
         _log(f"  … {who}: " + ("out of steps" if msg.get("tool_calls") else "no final answer yet")
              + " — asking Amy to wrap up")
-        messages.append({"role": "user", "content":
-            "[You've used all your tool steps for this message. Don't call any more tools and "
-            "don't promise to do more right now. In a few sentences: what you did, what you "
-            "found, and what's left — then ask if they want you to continue.]"})
+        messages.append({"role": "user", "content": _turn_guard.wrapup_prompt(_logged_tool_calls)})
         worker._fit(messages)
         try:
             resp = worker.ollama_chat(_priority="chat", think=False, model=MODEL,
@@ -702,6 +711,32 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
                 _reply_text += _qc.notes(_bad, _cases, _weak)
         except Exception as _qe:
             _log(f"  [quotes] check skipped: {type(_qe).__name__}: {_qe}")
+    if _reply_text and is_owner and not _bare:
+        try:
+            _note = _turn_guard.unbacked_claim_note(_reply_text, _logged_tool_calls)
+            if _note:
+                _log("  [honesty] reply claims work that no tool did; added a note")
+                _reply_text += _note
+                if msg:
+                    msg = dict(_msg_to_dict(msg), content=_reply_text)
+                    history[-1] = msg
+            _unfinished = (msg is not None and bool(_turn_guard.real_work(_logged_tool_calls)) is False
+                           and (_turn_guard.asks_to_continue(_reply_text) or _turn_guard.is_continue_word(user_text)))
+            if _unfinished or _turn_guard.asks_to_continue(_reply_text):
+                _obj = _turn_guard.objective_for(user_text, history[:-1])
+                _goal, _new = _turn_guard.queue_goal(_obj, "Brian asked for this in chat and the chat turn couldn't finish it")
+                if _goal:
+                    _tail = (f"\n\nI've handed this to my background worker as a goal ({_goal['goal_id']}) so I keep "
+                             "working through it step by step while you're away, and I'll message you when a step is "
+                             "done or I'm stuck." if _new else
+                             f"\n\nThis is already running as a goal ({_goal['goal_id']}); I'm continuing it in the background.")
+                    _reply_text += _tail
+                    if msg:
+                        msg = dict(_msg_to_dict(msg), content=_reply_text)
+                        history[-1] = msg
+                    _log(f"  [goal] {'queued' if _new else 'already queued'}: {_goal['goal_id']}")
+        except Exception as _ge:
+            _log(f"  [goal] hand-off skipped: {type(_ge).__name__}: {_ge}")
     _outcome = "ok" if _reply_text else "no_content"
 
     # Always log — captures tool-error and no-content turns too.
