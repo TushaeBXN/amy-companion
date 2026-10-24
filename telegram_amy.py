@@ -340,6 +340,10 @@ def _turn_context(history_len: int, person: dict, message: str, prior: str = "")
         _ctx = _st.context(message)
         if _ctx:
             s += "\n\n" + _ctx
+        import bookshelf as _bsh
+        _n = len(_bsh.shelf())
+        if _n:
+            s += f"\n[Your bookshelf] {_n} books you can open (books action=shelf to see them, then open, read, search)."
         _pull = _st.curiosity()[:1]
         if _pull:
             s += "\n[Pulling at you to learn] " + _pull[0]

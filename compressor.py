@@ -218,7 +218,7 @@ def maybe_compress(
     global _last_compress_ts
 
     if model is None:
-        model = os.environ.get("AMY_COMPRESS_MODEL") or os.environ.get("AMY_MODEL", "amy-vl")
+        model = os.environ.get("AMY_COMPRESS_MODEL") or os.environ.get("AMY_MODEL", "gemma12-test")
 
     tokens = estimate_tokens(messages)
     if tokens < ctx_window * threshold:

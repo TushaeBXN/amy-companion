@@ -98,16 +98,22 @@ def parse_source_ref(ref: str):
         return "teacher", name
     kind, value = A.parse_origin(ref)
     if kind == "receipt":
-        raise AnchorError("a source must be url:, file:, brian: or teacher:")
+        raise AnchorError("a source must be url:, file:, book:, brian: or teacher:")
     return kind, value
 
 
 def _source(ref: str, excerpt: str) -> dict:
-    kind, _ = parse_source_ref(ref)
+    kind, value = parse_source_ref(ref)
     excerpt = re.sub(r"\s+", " ", (excerpt or "").strip())
     if not EXCERPT_MIN <= len(excerpt) <= EXCERPT_MAX:
         raise AnchorError(f"each source needs the short passage that backs it ({EXCERPT_MIN}-{EXCERPT_MAX} characters), "
                           "so your drills can be checked against it")
+    if kind == "book":
+        import bookshelf
+        title, _, num = value.rpartition("#")
+        if not bookshelf.has_quote(title, int(num), excerpt):
+            raise AnchorError("that passage doesn't appear in the book at that spot. Copy a short stretch of the "
+                              "text exactly as books action=read showed it")
     return {"ref": ref.strip(), "kind": kind, "excerpt": excerpt, "added": date.today().isoformat()}
 
 
