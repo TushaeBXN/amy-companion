@@ -6,6 +6,7 @@ straight from raw model output.
 """
 import json
 import os
+from pathlib import Path
 import threading
 import time
 import web
@@ -1284,6 +1285,28 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "consult",
+            "description": (
+                "Ask a stronger model for help when you're stuck, especially for code: model='claude' (needs the "
+                "API key Brian adds, a paid service) or model='ollama:<name>' for a free local one. Any open model on "
+                "Hugging Face works: pull it with run_code, e.g. ollama pull hf.co/<user>/<repo>:Q4_K_M, then "
+                "consult with model='ollama:hf.co/<user>/<repo>:Q4_K_M'. This Mac has 16 GB, so pick a small coder "
+                "model (about 7B or less at 4-bit); it loads only while it answers. Include the code or error and what you tried. Its answer "
+                "is a source, not a fact: run it and check the result before you trust it. Limited calls per day."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string", "description": "What you're stuck on, with the code or error."},
+                    "model": {"type": "string", "description": "'claude' (default) or 'ollama:<model name>'."},
+                },
+                "required": ["question"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "books",
             "description": (
                 "Your bookshelf: the books Brian ingested for you. Like a person with a shelf: look at it (shelf), "
@@ -1484,7 +1507,7 @@ _BASE_TOOLS = [
         "type": "function",
         "function": {
             "name": "run_code",
-            "description": "Run a Python snippet and return the output. Use for math, data analysis, file processing, or any calculation that needs real execution rather than estimation. Code runs in a restricted sandbox — no network, no file writes outside /tmp.",
+            "description": "Run a Python snippet on this computer and return the output. It runs as Brian's user from your workbench (~/amy-workbench): it can use the network, read and write files, and start any program with subprocess, so it is also how you use a shell. Use it for math, data, files, installing and trying tools, or testing code for real instead of guessing. Every run is logged in the workbench.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1747,6 +1770,9 @@ _EVENT_LOG_TOOLS = [
         },
     },
 ]
+
+# Her workbench: where run_code runs and where she can build and break things freely.
+WORKBENCH = Path(os.environ.get("AMY_WORKBENCH", str(Path.home() / "amy-workbench")))
 
 # Pending voice file path — set by speak(), consumed by worker._run_task
 _pending_voice: "Path | None" = None
@@ -2995,6 +3021,14 @@ def dispatch(name, args, memory=None):
         except _br.BrowseError as e:
             return f"browse: {e}"
 
+    if name == "consult":
+        import consult as _co
+        print(f"  [consult] {args.get('model', 'claude')}")
+        try:
+            return _co.ask(args.get("question", ""), args.get("model", "claude"))
+        except _co.ConsultError as e:
+            return f"consult: {e}"
+
     if name == "books":
         import bookshelf as _bs
         act = args.get("action", "shelf")
@@ -3165,10 +3199,17 @@ def dispatch(name, args, memory=None):
             f.write(code)
             script_path = f.name
         try:
+            WORKBENCH.mkdir(parents=True, exist_ok=True)
             result = _sp.run(
                 [_sys.executable, "-I", script_path],
-                capture_output=True, text=True, timeout=timeout,
+                capture_output=True, text=True, timeout=timeout, cwd=str(WORKBENCH),
             )
+            try:
+                with open(WORKBENCH / ".run_log.jsonl", "a") as _lf:
+                    _lf.write(json.dumps({"ts": time.strftime("%Y-%m-%d %H:%M:%S"), "rc": result.returncode,
+                                          "code": code[:400]}) + "\n")
+            except OSError:
+                pass
             output = result.stdout.strip()
             err = result.stderr.strip()
             if result.returncode != 0:
