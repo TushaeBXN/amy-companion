@@ -23,6 +23,34 @@ anyway.
 
 ---
 
+## Why I built this
+
+I didn't come up through computer science. I studied entertainment business
+at Full Sail. Cybersecurity and AI are things I taught myself after that, and
+I learned pretty quickly that watching videos and reading about this stuff
+only gets you so far — I actually had to build something real to understand
+how it works underneath. Amy is that something.
+
+She runs on a $600-ish Mac mini, no cloud, nothing phoned home. And the thing
+I kept running into while building her: a local model this size will straight
+up lie to you about what it did. It'll tell you it opened a file it never
+opened, or say a step is finished when nothing actually checked. I didn't
+want to just paper over that with a longer prompt telling it to behave — I
+wanted the code itself to catch it. So now when I give Amy a real job, it
+becomes a goal with steps, and each step only counts as done if a tool
+actually ran and actually did the thing — not because she said so. That part
+took way more work than I expected, and it's the part I'm proudest of.
+
+Past that, she's got a few ways to talk to her (Telegram, a web UI, a
+terminal with voice and webcam), real memory that sticks around instead of
+resetting every conversation, and a library of books she can actually open
+and read instead of just pretending to know what's in them.
+
+None of this was me consuming a course. It was me breaking it, reading the
+error, and fixing it, over and over, until I understood why it broke.
+
+---
+
 ## Architecture
 
 → **[ARCHITECTURE.md](ARCHITECTURE.md)** — full system diagram + per-component breakdown
