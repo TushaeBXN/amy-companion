@@ -184,7 +184,7 @@ def test_a_spiral_of_wake_up_calls_ends_early_and_the_job_goes_to_the_worker(tmp
     monkeypatch.setattr(G, "queue_goal", lambda obj, why, ag=None: (queued.append(obj) or {"goal_id": "g_test"}, True))
     monkeypatch.setattr(T.mem, "add", lambda *a, **k: None)
     monkeypatch.setattr(T._turn_log, "log_turn", lambda **k: None)
-    reply = T._chat("Read the hugging face incident report PDF and reproduce what they did on this machine, then tell me what worked", None)
+    reply = T._chat("chat: Read the hugging face incident report PDF and reproduce what they did on this machine, then tell me what worked", None)
     assert ran == ["books"]                                   # wake_up never ran as a tool
     assert len(seen) <= 6                                    # 1 real call + 3 wasted + wrap-up, not 10 hops
     assert queued and "hugging face incident report" in queued[0].lower()
@@ -230,6 +230,6 @@ def test_the_chat_loop_pushes_her_from_announcing_to_doing(monkeypatch):
     monkeypatch.setattr(T, "_save_history", lambda *a, **k: None)
     monkeypatch.setattr(T.mem, "add", lambda *a, **k: None)
     monkeypatch.setattr(T._turn_log, "log_turn", lambda **k: None)
-    reply = T._chat(TASK, None)
+    reply = T._chat("chat: " + TASK, None)    # 'chat:' keeps it out of task mode, so the free-form loop runs
     assert ran == ["books"] and "Step one is done" in reply
     assert any("didn't do it" in m.get("content", "") for m in seen[1]["messages"] if m["role"] == "user")

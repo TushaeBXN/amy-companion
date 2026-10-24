@@ -161,3 +161,85 @@ def nudge_text(user_text: str, history: list) -> str:
     return ("[You said what you would do but didn't do it. Brian's request: " + job[:260] + "\n"
             "Do the next step now with a real tool call, not text. To read a book: books action=open title=<title>, "
             "then books action=read. To try something on this Mac: run_code. Then keep going until the task is done.]")
+
+
+# ── task mode: outcomes decide, not her wording ──────────────────────────────
+# A real instruction from Brian becomes a goal at once. The worker plans it, does one step at a time, and checks each
+# step against what tools did and which files changed. Chat reports that record; she doesn't narrate her own progress.
+
+_TASK_VERB = re.compile(r"(?i)\b(read|open|research|find|search|learn|study|build|make|create|write|draft|set ?up|install|"
+                        r"download|fix|debug|test|try|reproduce|run|figure out|work out|look into|go through|go research|"
+                        r"summari[sz]e|analy[sz]e|compare|implement|prepare|put together|check|review|organi[sz]e)\b")
+_CHAT_ONLY = re.compile(r"(?i)^\s*(?:chat|just chat|just talk|no tools)\b")
+_STATUS = re.compile(r"(?i)\b(status|progress|where (?:are|is) (?:you|it|that)|how(?:'s| is) it going|what are you "
+                     r"(?:doing|working on)|any update|update me|did you finish|are you (?:done|finished))\b")
+
+
+def is_task_request(text: str) -> bool:
+    """A real instruction, not conversation. A wrong guess is cheap: it only chooses chat or goal."""
+    t = (text or "").strip()
+    if len(t) < 80 or _CHAT_ONLY.match(t) or is_continue_word(t):
+        return False
+    first = re.split(r"(?<=[.!])\s", t, maxsplit=1)[0]
+    if first.rstrip().endswith("?") and not re.search(r"(?i)\b(please|can you|could you|i want you to|go )", first):
+        return False
+    return bool(_TASK_VERB.search(t))
+
+
+def is_status_request(text: str) -> bool:
+    t = (text or "").strip()
+    return is_continue_word(t) or (len(t) < 90 and bool(_STATUS.search(t)))
+
+
+def goal_status(agent_state=None) -> str:
+    """Where the job really stands, from the goal record only. '' when there is no goal to report on."""
+    if agent_state is None:
+        import agent_state
+    goals = agent_state.list_goals("active") + agent_state.list_goals("pending") + agent_state.list_goals("blocked")
+    goals = sorted(goals, key=lambda g: g.get("updated_at", ""), reverse=True)
+    if not goals:
+        return ""
+    g = goals[0]
+    plan, step = g.get("plan") or [], g.get("current_step", 0)
+    lines = [f"Job: {g['objective'][:200]}", f"Status: {g['status']}"]
+    if not plan:
+        lines.append("The plan is still being written; no step has been done yet.")
+    else:
+        done = min(step, len(plan))
+        lines.append(f"Steps verified so far: {done} of {len(plan)}")
+        lines += [f"  {'done' if i < done else 'next' if i == done else 'later'}: {s[:110]}" for i, s in enumerate(plan[:8])]
+    ev = g.get("evidence") or []
+    if ev:
+        last = ev[-1]
+        lines.append(f"Last check (step {last.get('step', 0) + 1}): {str(last.get('decision', '?')).upper()} - "
+                     f"{str(last.get('observed', ''))[:160]}")
+    if g["status"] == "blocked":
+        lines.append(f"Stuck: {str(g.get('next_action') or 'see the last check')[:200]}")
+    return "\n".join(lines)
+
+
+def task_reply(goal: dict, created: bool) -> str:
+    head = ("On it. I've made this a goal and my worker will plan it and do it one step at a time."
+            if created else "I'm already on this, and it's running in the background.")
+    return (f"{head}\n\nJob: {goal['objective'][:220]}\nGoal: {goal['goal_id']}\n\n"
+            "Each step is checked against what my tools actually did before it counts, and I'll message you when a "
+            "step is verified or when I'm stuck. Say \"status\" any time for where it stands.")
+
+
+# ── proof that a step was done ───────────────────────────────────────────────
+
+_ACTION_STEP = re.compile(r"(?i)\b(read|open|search|find|look up|run|try|test|reproduce|install|download|fetch|browse|"
+                          r"create|write|save|build|check|list|scan|execute|measure|compare|call|query)\b")
+_THINK_STEP = re.compile(r"(?i)^\s*(decide|think|reflect|plan|summari[sz]e|conclude|explain|report|tell|answer)\b")
+
+
+def step_needs_tools(step_desc: str) -> bool:
+    return bool(_ACTION_STEP.search(step_desc or "")) and not _THINK_STEP.match(step_desc or "")
+
+
+def tool_proof_problem(step_desc: str, calls: list) -> str:
+    """Why a step cannot count as done, or ''. Describing work is not doing it: a tool has to have worked."""
+    if not step_needs_tools(step_desc) or real_work(calls):
+        return ""
+    return ("no tool did any work in this step (" + (", ".join(f"{c['name']}: {'failed' if failed(c.get('result_snippet')) else 'context only'}"
+                                                          for c in calls[:4]) or "no tool calls") + "); describing work does not count")

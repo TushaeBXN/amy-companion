@@ -18,6 +18,7 @@ import requests
 
 import heavy_job
 import tools
+import turn_guard as _turn_guard
 import compressor as _compressor
 import trajectory as _trajectory
 import agent_state as _goals
@@ -305,6 +306,12 @@ def _is_due(task, last, now):
 
 def _quiet(now):
     return now.hour >= QUIET_START or now.hour < QUIET_END
+
+
+def start_goal_now():
+    """A goal was just made from chat: let the worker begin without waiting for Brian to go quiet."""
+    global _last_user
+    _last_user = time.time() - IDLE_GRACE - 1
 
 
 def _pick():
@@ -1034,9 +1041,11 @@ def _run_goal(goal: dict):
 
     goal_finished = False
     try:
-        result, files_written = _execute_goal_step(goal_id, goal, step_idx, step_desc)
+        step_started = time.time()
+        result, files_written, tool_log = _execute_goal_step(goal_id, goal, step_idx, step_desc)
         verified, decision, next_action = _verify_step(
-            goal, step_idx, step_desc, result, files_written=files_written)
+            goal, step_idx, step_desc, result, files_written=files_written,
+            calls=tool_log, since=step_started - 1)
         advance = verified
         if not verified and goal["attempts"] >= MAX_STEP_ATTEMPTS * (step_idx + 1):
             _goals.block_goal(goal_id,
@@ -1073,6 +1082,7 @@ def _run_goal(goal: dict):
         elif advance:
             print(f"  [worker] goal '{goal_id}' step {step_idx + 1} done → step {step_idx + 2}",
                   flush=True)
+            _send(f"Step {step_idx + 1} of {len(plan)} done and verified: {step_desc[:100]}\n{(next_action or '')[:160]}")
 
     except Exception as e:
         _goals.record_step_result(goal_id, step_idx, f"Exception: {e}",
@@ -1243,7 +1253,7 @@ def _parse_criteria(raw: str, n_steps: int) -> list[dict]:
     return criteria
 
 
-def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) -> str:
+def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) -> tuple:
     """Run one step of a goal using Amy's tools. Returns a result string."""
     goal_max_hops = goal.get("max_hops", MAX_HOPS)
     context = _goals.goal_summary(goal)
@@ -1263,6 +1273,9 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
     final = ""
     used = []
     files_written: list[str] = []
+    tool_log: list[dict] = []     # what her tools really did this step (the proof the check uses)
+    wasted, nudged = 0, 0
+    declared = {t["function"]["name"] for t in allowed}
     for step in range(1, goal_max_hops + 1):
         _fit(messages)
         msg = _chat(messages, allowed)["message"]
@@ -1270,6 +1283,11 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
         calls = msg.get("tool_calls") or []
         if not calls:
             final = _clean(msg.get("content", ""))
+            # She said what she'd do next and stopped: push her to do it (same idea as the chat loop).
+            if nudged < 2 and step < goal_max_hops and _turn_guard.announced_not_done(final, "x" * 80):
+                nudged += 1
+                messages.append({"role": "user", "content": _turn_guard.nudge_text(step_desc, [])})
+                continue
             # Nudge to write if: step or goal's plan involves writing AND Amy did information
             # gathering (web or memory tools — NOT file-system ops; we don't want Amy to
             # create files that a task expects to be missing)
@@ -1302,23 +1320,34 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
                 except json.JSONDecodeError:
                     continue
             used.append(name)
-            if name == "write_file" and args.get("path"):
-                files_written.append(args["path"])
-            result_text = _cap(str(_guarded_dispatch(name, args) or "done"))
+            if name not in declared:       # a menu option or invented name, not a tool: never run it
+                wasted += 1
+                result_text = _turn_guard.not_a_tool(name, declared)
+            else:
+                wasted = 0
+                if name == "write_file" and args.get("path"):
+                    files_written.append(args["path"])
+                result_text = _cap(str(_guarded_dispatch(name, args) or "done"))
+            tool_log.append({"name": name, "args": args, "result_snippet": result_text[:200]})
             messages.append({"role": "tool",
                              "content": result_text + f"\n[step {step} of {goal_max_hops}]"})
-    return final or "(no output)", files_written
+        if wasted >= 3:
+            break
+    return final or "(no output)", files_written, tool_log
 
 
 MAX_STEP_ATTEMPTS = 3   # retries before a step is marked blocked
 MAX_INCONCLUSIVE  = 2   # max consecutive inconclusive judgments before blocking a step
 
 
-def _check_file(path: str) -> tuple[bool, str]:
-    """Verify a file is non-empty and doesn't look like an error dump."""
+def _check_file(path: str, since: float | None = None) -> tuple[bool, str]:
+    """Verify a file is non-empty and doesn't look like an error dump. With `since`, it must also have been
+    changed after that time, so a file that merely already exists (or is only mentioned) proves nothing."""
     full = os.path.join(HERE, path) if not os.path.isabs(path) else path
     if not os.path.exists(full):
         return False, f"file not found: {path}"
+    if since is not None and os.path.getmtime(full) < since:
+        return False, f"file was not changed in this step: {path}"
     size = os.path.getsize(full)
     if size == 0:
         return False, f"file is empty: {path}"
@@ -1334,7 +1363,7 @@ def _check_file(path: str) -> tuple[bool, str]:
 
 
 def _deterministic_check(step_desc: str, evidence_required: str,
-                         result: str) -> tuple[bool | None, str]:
+                         result: str, since: float | None = None) -> tuple[bool | None, str]:
     """Run hard checks that don't require a model call.
 
     Returns (passed, reason) where passed=None means inconclusive.
@@ -1363,7 +1392,7 @@ def _deterministic_check(step_desc: str, evidence_required: str,
     path_re = re.compile(r"(work/[\w/.\-]+\.\w+|/[\w/.\-]{8,}\.\w+)")
     for p in path_re.findall(result):
         p = p.strip().rstrip(".,)")
-        ok, reason = _check_file(p)
+        ok, reason = _check_file(p, since)
         if ok:
             return True, f"file produced: {reason}"
 
@@ -1404,7 +1433,8 @@ def _deterministic_check(step_desc: str, evidence_required: str,
 
 
 def _verify_step(goal: dict, step_idx: int, step_desc: str,
-                 result: str, files_written: list[str] | None = None) -> tuple[bool, str, str]:
+                 result: str, files_written: list[str] | None = None,
+                 calls: list | None = None, since: float | None = None) -> tuple[bool, str, str]:
     """Verify a step result. Returns (passed, decision, next_action).
 
     Strategy:
@@ -1421,17 +1451,23 @@ def _verify_step(goal: dict, step_idx: int, step_desc: str,
     evidence_required = crit.get("evidence_required", "")
     expected = crit.get("expected", "")
 
+    # -1. Describing work is not doing it: an action step needs a tool call that worked.
+    if calls is not None:
+        problem = _turn_guard.tool_proof_problem(step_desc, calls)
+        if problem:
+            return False, "deterministic_fail", f"Failed: {problem}. Retry this step by actually doing it with a tool."
+
     # 0. Files explicitly written by Amy this step — strongest evidence of completion
     for path in (files_written or []):
         if path:
-            ok, reason = _check_file(path)
+            ok, reason = _check_file(path, since)
             if ok:
                 return True, "deterministic_pass", (
                     f"Verified: file written this step — {reason}. Proceed to step {step_idx + 2}."
                 )
 
     # 1. Deterministic check
-    det_passed, det_reason = _deterministic_check(step_desc, evidence_required, result)
+    det_passed, det_reason = _deterministic_check(step_desc, evidence_required, result, since)
     if det_passed is True:
         return True, "deterministic_pass", (
             f"Verified: {det_reason}. Proceed to step {step_idx + 2}."
@@ -1458,7 +1494,8 @@ def _verify_step(goal: dict, step_idx: int, step_desc: str,
         f"Step {step_idx + 1}: {step_desc}\n"
         f"Expected: {expected or '(not specified)'}\n"
         f"Evidence required: {evidence_required or '(not specified)'}\n"
-        f"Observed result: {result[:1500]}\n\n"
+        f"Observed result (her own account): {result[:1200]}\n"
+        + (f"{_turn_guard.work_summary(calls)}\n" if calls is not None else "") + "\n"
         "Did this step succeed based on the evidence required? "
         "Answer YES or NO on the first line. "
         "If YES, say specifically what in the result confirms success. "
