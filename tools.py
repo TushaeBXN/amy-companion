@@ -1284,6 +1284,74 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "anchor",
+            "description": (
+                "Save and use lessons you have really learned. An anchor is a lesson WITH its limits: what it is, "
+                "when it applies, when it does not, and where it breaks, tied to where you got it (url:, file:, "
+                "receipt:, or brian:). Actions: add, recall (look up what you know), attempt (record trying it, with "
+                "evidence), stretch (a new way to apply it, with a test), review, defer (put a deep dive off, with "
+                "why), contradict, resolve, growth (what to learn next). Confidence is computed from evidence; you "
+                "cannot set it and cannot confirm your own results: only Brian confirms."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["add", "recall", "attempt", "stretch", "review", "defer",
+                                                          "contradict", "resolve", "growth"]},
+                    "id": {"type": "string", "description": "Anchor id (attempt, stretch, review, contradict, resolve)."},
+                    "title": {"type": "string"}, "what_it_is": {"type": "string"},
+                    "applies_when": {"type": "string"}, "do_not_apply_when": {"type": "string"},
+                    "breaks_when": {"type": "string"},
+                    "origin": {"type": "string", "description": "url:https://..., file:/path, receipt:<id>, or brian:<what he said>."},
+                    "topic": {"type": "string", "description": "Study topic id this lesson belongs to (optional)."},
+                    "query": {"type": "string", "description": "What you are trying to remember (recall)."},
+                    "result": {"type": "string", "enum": ["worked", "failed", "inconclusive"]},
+                    "evidence": {"type": "string", "description": "What happened (attempt, contradict)."},
+                    "kind": {"type": "string", "description": "Stretch kind."}, "idea": {"type": "string"},
+                    "test": {"type": "string", "description": "How you will know a stretch worked."},
+                    "note": {"type": "string"}, "concept": {"type": "string"},
+                    "trigger": {"type": "string"}, "why": {"type": "string"},
+                    "resolution": {"type": "string"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "study",
+            "description": (
+                "Learn a topic you find interesting until you know it cold. Save it in your own words with sources "
+                "that back it, write drills (questions whose answers are in your saved sources), and run closed-book "
+                "drills that are scored by code, not by you. Actions: save_topic, add_notes, add_source, add_drill, "
+                "drill (run a closed-book session), read (your saved topic), teach (record a session with a stronger model: the answer, the "
+                "method steps, what you can't do reliably, and a scaffold), status, due, summary, context."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["save_topic", "add_notes", "add_source", "add_drill", "drill",
+                                                          "teach", "status", "due", "summary", "context"]},
+                    "topic": {"type": "string", "description": "Topic id or title."},
+                    "title": {"type": "string"}, "why_interesting": {"type": "string"},
+                    "notes": {"type": "object", "description": "what_it_is, how_it_works (required), why, worked_example, common_mistakes, where_it_breaks."},
+                    "sources": {"type": "array", "items": {"type": "object"}, "description": "[{ref, excerpt}] with ref url:/file:/receipt:/brian:/teacher:"},
+                    "field": {"type": "string"}, "text": {"type": "string"},
+                    "ref": {"type": "string"}, "excerpt": {"type": "string"},
+                    "q": {"type": "string"}, "key_points": {"type": "array", "items": {"type": "string"}},
+                    "model": {"type": "string"}, "question": {"type": "string"}, "answer": {"type": "string"},
+                    "method": {"type": "array", "items": {"type": "string"}},
+                    "cannot_do_reliably": {"type": "string"}, "scaffold": {"type": "string"},
+                    "message": {"type": "string", "description": "Text to find related topics for (context)."},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "read_feed",
             "description": (
                 "Read live intelligence feeds to stay current: Hacker News top stories, "
@@ -1697,6 +1765,60 @@ def _is_guest_private(path):
     return (real == people_dir or real.startswith(people_dir + os.sep)
             or (base.startswith("telegram_history_") and base.endswith(".json"))
             or real == os.path.join(_HERE, "people.json"))
+
+
+def _learning_call(name, act, a, an, st):
+    """anchor/study tool actions. There is deliberately no 'confirm': only Brian's Telegram message confirms."""
+    def j(x):
+        return json.dumps(x, indent=1, default=str)[:3500]
+    if name == "anchor":
+        aid = a.pop("id", None)
+        if act == "add":
+            return j(an.add_anchor(**{k: a[k] for k in ("title", "what_it_is", "applies_when", "do_not_apply_when",
+                                                         "breaks_when", "origin", "topic") if k in a}))
+        if act == "recall":
+            return an.context_for(a.get("query", "")) or "nothing saved matches that yet (logged as something to learn)"
+        if act == "attempt":
+            return j(an.attempt(aid, result=a.get("result"), evidence=a.get("evidence", "")))
+        if act == "stretch":
+            return j(an.stretch(aid, kind=a.get("kind"), idea=a.get("idea"), test=a.get("test")))
+        if act == "review":
+            return j(an.review(aid, note=a.get("note", "")))
+        if act == "defer":
+            return j(an.defer(a.get("concept"), trigger=a.get("trigger"), why=a.get("why")))
+        if act == "contradict":
+            return j(an.contradict(aid, evidence=a.get("evidence", "")))
+        if act == "resolve":
+            return j(an.resolve(aid, resolution=a.get("resolution", "")))
+        if act == "growth":
+            return "\n".join(f"- {x}" for x in an.growth()) or "nothing pulling right now"
+        return f"unknown anchor action: {act}"
+    if act == "save_topic":
+        return j(st.save_topic(title=a.get("title"), why_interesting=a.get("why_interesting"),
+                               notes=a.get("notes") or {}, sources=a.get("sources") or []))
+    if act == "add_notes":
+        return j(st.add_notes(a.get("topic"), field=a.get("field"), text=a.get("text")))
+    if act == "add_source":
+        return j(st.add_source(a.get("topic"), ref=a.get("ref"), excerpt=a.get("excerpt")))
+    if act == "add_drill":
+        return j(st.add_drill(a.get("topic"), q=a.get("q"), key_points=a.get("key_points")))
+    if act == "drill":
+        return st.run_drill(a.get("topic"))["report"]
+    if act == "teach":
+        r = st.teach(a.get("topic"), model=a.get("model"), question=a.get("question"), answer=a.get("answer"),
+                     method=a.get("method"), cannot_do_reliably=a.get("cannot_do_reliably"), scaffold=a.get("scaffold"))
+        return r["reminder"]
+    if act == "read":
+        return j(st.get_topic(a.get("topic")))
+    if act == "status":
+        return j(st.status(a.get("topic")))
+    if act == "due":
+        return j(st.due()) if st.due() else "no drills due"
+    if act == "summary":
+        return st.summary()
+    if act == "context":
+        return st.context(a.get("message", "")) or "no matching topic"
+    return f"unknown study action: {act}"
 
 
 def dispatch(name, args, memory=None):
@@ -2846,6 +2968,18 @@ def dispatch(name, args, memory=None):
             return _br.call(**cmd)
         except _br.BrowseError as e:
             return f"browse: {e}"
+
+    if name in ("anchor", "study"):
+        import anchors as _an, study as _st
+        a = {k: v for k, v in args.items() if v not in (None, "")}
+        act = a.pop("action", "")
+        print(f"  [{name}] {act}")
+        try:
+            return _learning_call(name, act, a, _an, _st)
+        except _an.AnchorError as e:
+            return f"{name}: {e}"
+        except TypeError as e:
+            return f"{name} {act}: missing or unexpected field ({e})"
 
     if name == "read_feed":
         import feeds as _feeds

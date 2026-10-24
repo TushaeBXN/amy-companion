@@ -29,7 +29,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 # self_check.py is the only file that cannot self-modify (guard integrity).
 # All other files: syntax check + backup + auto-revert is the safety net.
-PROTECTED_FILES = {"self_check.py"}
+PROTECTED_FILES = {"self_check.py", "anchors.py", "study.py"}
 
 # Legacy aliases kept so existing callers don't break.
 CORE_FILES = PROTECTED_FILES
