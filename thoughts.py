@@ -170,7 +170,7 @@ class ThoughtBuffer:
                     messages=messages,
                     tools=allowed,
                     keep_alive="30m",
-                    options={"temperature": 0.7, "num_predict": 512},
+                    options={"temperature": 0.7, "num_predict": 1024},
                 )
                 msg = resp["message"]
                 messages.append({"role": "assistant", "content": msg.get("content", ""),
@@ -223,7 +223,7 @@ class ThoughtBuffer:
                 model=THOUGHT_MODEL,
                 messages=messages,
                 keep_alive="30m",
-                options={"num_predict": 80, "temperature": 0.9}
+                options={"num_predict": 300, "temperature": 0.9}
             )
             text = resp["message"].get("content", "").strip()
             if not text:

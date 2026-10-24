@@ -45,9 +45,9 @@ MODEL        = os.environ.get("AMY_MODEL", "gemma12-test")
 # Longest reply, in tokens. Without this the model's own default applied, which cut long answers off
 # mid-sentence at about 300 tokens. At roughly 11 tokens a second, 1200 is at most a couple of minutes,
 # and she stops sooner when she's done. Override with AMY_MAX_REPLY_TOKENS.
-MAX_REPLY_TOKENS = int(os.environ.get("AMY_MAX_REPLY_TOKENS", "1200"))
+MAX_REPLY_TOKENS = int(os.environ.get("AMY_MAX_REPLY_TOKENS", "4096"))   # a ceiling, not a target
 VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "gemma12-test")
-MAX_HOPS     = 10
+MAX_HOPS     = 16
 CTX_WINDOW   = 16384
 HISTORY_FILE = os.path.join(_here, "telegram_history.json")
 HISTORY_KEEP = 60   # messages to persist across restarts
