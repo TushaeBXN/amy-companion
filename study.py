@@ -224,7 +224,7 @@ def default_ask(question: str) -> str:
         messages=[{"role": "system", "content": "Answer from memory in 2 to 4 sentences. You have no notes and no tools. "
                                                 "If you don't know, say 'I don't know'."},
                   {"role": "user", "content": question}],
-        options={"num_ctx": worker.CTX_WINDOW, "num_predict": 220, "temperature": 0.2})
+        options={"num_ctx": worker.CTX_WINDOW, "num_predict": 600, "temperature": 0.2})
     msg = resp["message"] if isinstance(resp, dict) or hasattr(resp, "__getitem__") else resp.message
     return (msg["content"] if isinstance(msg, dict) or hasattr(msg, "__getitem__") else msg.content) or ""
 
