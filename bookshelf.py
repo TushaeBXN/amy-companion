@@ -59,22 +59,33 @@ def shelf_text() -> str:
             "\nPick one up with books action=open title=<title>.")
 
 
+def _title_key(title: str) -> str:
+    """A title as she is likely to type it: ignore a file extension and punctuation."""
+    t = re.sub(r"\.(pdf|epub|txt|md|docx?)$", "", (title or "").strip(), flags=re.I)
+    return _norm(t)
+
+
 def resolve(title: str) -> dict:
-    """The one book she means: exact title first, then a unique match on the words."""
-    want = _norm(title)
+    """The one book she means: exact title first, then a unique match on the words. A file name like
+    'report-2026.pdf' finds the book 'report-2026'. If nothing fits, the error names the closest books."""
+    want = _title_key(title)
     if not want:
         raise BookError("which book? Say books action=shelf to see what's on your shelf")
     books = shelf()
-    exact = [b for b in books if _norm(b["title"]) == want]
+    exact = [b for b in books if _title_key(b["title"]) == want]
     if exact:
         return exact[0]
-    words = want.split()
+    words = [w for w in want.split() if w not in ("pdf", "the", "a", "of")]
     hits = [b for b in books if all(w in _norm(b["title"]) for w in words)]
     if len(hits) == 1:
         return hits[0]
-    if not hits:
-        raise BookError(f"no book on your shelf matches {title!r}. Say books action=shelf to see the list")
-    raise BookError("more than one book matches: " + "; ".join(b["title"] for b in hits[:6]) + ". Use the full title")
+    if hits:
+        raise BookError("more than one book matches: " + "; ".join(b["title"] for b in hits[:6]) + ". Use the full title")
+    scored = sorted(books, key=lambda b: -sum(w in _norm(b["title"]) for w in words))
+    near = [b["title"] for b in scored[:3] if any(w in _norm(b["title"]) for w in words)]
+    raise BookError(f"no book on your shelf matches {title!r}."
+                    + (f" Closest: {'; '.join(near)}." if near else "")
+                    + " Say books action=shelf to see the list")
 
 
 _LEGAL = re.compile(r"all rights reserved|\bisbn\b|library of congress|copyright ©|©\s*\d{4}|no part of this (?:book|publication|work)|"
