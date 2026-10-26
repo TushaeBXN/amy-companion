@@ -167,23 +167,64 @@ def nudge_text(user_text: str, history: list) -> str:
 # A real instruction from Brian becomes a goal at once. The worker plans it, does one step at a time, and checks each
 # step against what tools did and which files changed. Chat reports that record; she doesn't narrate her own progress.
 
-_TASK_VERB = re.compile(r"(?i)\b(read|open|research|find|search|learn|study|build|make|create|write|draft|set ?up|install|"
-                        r"download|fix|debug|test|try|reproduce|run|figure out|work out|look into|go through|go research|"
-                        r"summari[sz]e|analy[sz]e|compare|implement|prepare|put together|check|review|organi[sz]e)\b")
+# Strong verbs commit to a real, multi-step job on her own machine (build it, install it, reproduce it).
+# A wrong "yes" here is not cheap any more: it skips the chat reply entirely. Weak verbs ("check", "look into",
+# "read", "try") show up constantly in ordinary conversation too ("check out this site, what do you think"),
+# so a weak verb alone is not enough to commit to a goal — see needs_clarifying_ask below.
+_STRONG_TASK_VERB = re.compile(r"(?i)\b(build(?:s|ing|ed)?|creat(?:e|es|ed|ing)|install(?:s|ing|ed)?|set ?up|"
+                               r"download(?:s|ing|ed)?|debug(?:s|ging|ged)?|fix(?:es|ing|ed)?|implement(?:s|ing|ed)?|"
+                               r"reproduc(?:e|es|ed|ing)|put together|organi[sz](?:e|es|ed|ing)|"
+                               r"writ(?:e|es|ing) (?:a|the|me|up) (?:file|script|guide|summary|report|notes))\b")
+# Explicit multi-step or report-back commitment, even without a build/fix-style verb — "I want you to learn it
+# properly... try them on your machine and tell me what worked" is clearly a real job, not small talk.
+_COMMITMENT_PHRASE = re.compile(r"(?i)\b(step by step|break (?:it|this|them) (?:down\b|into )|one (?:step|thing) at a time|"
+                                r"tell me what worked|what worked and what didn'?t|"
+                                r"try (?:it|them|the steps)[^.?!]{0,25}\bmachine\b|"
+                                r"i want you to (?:learn|try|build|figure|do|go|read|study)|"
+                                r"try (?:it|them|this)(?: yourself)? on your (?:own )?machine)\b")
+_WEAK_TASK_VERB = re.compile(r"(?i)\b(read|open|research|find|search|learn|study|try|run|figure out|work out|"
+                             r"look into|go through|go research|summari[sz]e|analy[sz]e|compare|prepare|review|check)\b")
+# Asking for her take, not a job to run: "tell me what you think" etc. This matters anywhere in the message,
+# not just at the end — a trailing URL or afterthought after the "?" must not defeat it.
+_OPINION_ASK = re.compile(r"(?i)\b(what(?:'s| is| do| did) your (?:take|opinion|view|thought)|your thoughts?\b|"
+                          r"what (?:do|did) you (?:think|make of)|curious what you (?:think|make of)|"
+                          r"how (?:does|did) (?:that|this|it) (?:sound|look|feel)|"
+                          r"what'?s your take)\b")
 _CHAT_ONLY = re.compile(r"(?i)^\s*(?:chat|just chat|just talk|no tools)\b")
 _STATUS = re.compile(r"(?i)\b(status|progress|where (?:are|is) (?:you|it|that)|how(?:'s| is) it going|what are you "
                      r"(?:doing|working on)|any update|update me|did you finish|are you (?:done|finished))\b")
 
 
+def _is_plain_question(text: str) -> bool:
+    first = re.split(r"(?<=[.!])\s", text, maxsplit=1)[0]
+    return bool(first.rstrip().endswith("?") and not re.search(r"(?i)\b(please|can you|could you|i want you to|go )", first))
+
+
 def is_task_request(text: str) -> bool:
-    """A real instruction, not conversation. A wrong guess is cheap: it only chooses chat or goal."""
+    """A real instruction committing to a job, not conversation. Only strong, unambiguous verbs qualify —
+    a weak one goes to needs_clarifying_ask instead of a silent guess."""
     t = (text or "").strip()
-    if len(t) < 80 or _CHAT_ONLY.match(t) or is_continue_word(t):
+    if len(t) < 80 or _CHAT_ONLY.match(t) or is_continue_word(t) or _OPINION_ASK.search(t):
         return False
-    first = re.split(r"(?<=[.!])\s", t, maxsplit=1)[0]
-    if first.rstrip().endswith("?") and not re.search(r"(?i)\b(please|can you|could you|i want you to|go )", first):
+    if _is_plain_question(t):
         return False
-    return bool(_TASK_VERB.search(t))
+    return bool(_STRONG_TASK_VERB.search(t) or _COMMITMENT_PHRASE.search(t))
+
+
+def needs_clarifying_ask(text: str) -> bool:
+    """A message long enough and action-flavored enough that it *might* be a job, but not clearly one —
+    ask plainly rather than silently deciding either way."""
+    t = (text or "").strip()
+    if is_task_request(t) or len(t) < 80 or _CHAT_ONLY.match(t) or is_continue_word(t) or _OPINION_ASK.search(t):
+        return False
+    if _is_plain_question(t):
+        return False
+    return bool(_WEAK_TASK_VERB.search(t))
+
+
+def clarify_reply(text: str) -> str:
+    return ("Quick check before I dive in: do you want me to track this as a goal — I'll work it step by step "
+            "in the background and tell you when it's done or stuck — or are we just talking it through right now?")
 
 
 def is_status_request(text: str) -> bool:
