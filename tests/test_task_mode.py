@@ -208,3 +208,86 @@ def test_a_step_message_shows_the_evidence_not_just_a_tick():
 def test_the_last_step_says_so():
     m = G.step_message(3, PLAN, "Wrote the notes.", [{"name": "write_file", "args": {}, "result_snippet": "wrote 300 bytes"}], "deterministic_pass")
     assert "That was the last step" in m and "hard check" in m
+
+
+# ── not everything is a task: real regressions from live chat (2026-10-25) ──────
+
+REAL_CHAT = [
+    "Check out Bruce's site tell me what you think? Www.ishikiai.com",
+    "This is the site https://sentientartificialintelligence.com/ tell me what you think?",
+    "What do you think about the new model and how it compares with the old one that you used before?",
+    "I read an interesting article today about how local models are getting better at tool use, curious what you make of it",
+]
+
+
+@pytest.mark.parametrize("text", REAL_CHAT)
+def test_opinion_requests_are_never_tasks_even_with_a_task_flavored_verb(text):
+    assert not G.is_task_request(text)
+    assert not G.needs_clarifying_ask(text)
+
+
+def test_a_question_mark_followed_by_more_text_still_counts_as_a_question():
+    # the real bug: a URL tacked on after "?" defeated the old end-of-string check
+    t = "Check out Bruce's site tell me what you think? Www.ishikiai.com"
+    assert not G.is_task_request(t)
+
+
+AMBIGUOUS = [
+    "Can you check my inbox for anything from the Full Sail career office and let me know if there's anything time-sensitive",
+    "I was thinking we should look into whether the new benchmark numbers hold up, could you dig into that a bit",
+]
+
+
+@pytest.mark.parametrize("text", AMBIGUOUS)
+def test_a_weak_verb_without_commitment_language_asks_instead_of_guessing(text):
+    assert not G.is_task_request(text)
+    assert G.needs_clarifying_ask(text)
+
+
+@pytest.mark.parametrize("text", BRIAN)  # the PDF-study instruction etc. from earlier — must still commit directly
+def test_a_real_strong_instruction_still_commits_without_asking(text):
+    assert G.is_task_request(text)
+    assert not G.needs_clarifying_ask(text)
+
+
+def test_the_clarifying_reply_states_the_choice_plainly():
+    r = G.clarify_reply("x")
+    assert "track this as a goal" in r and "just talking it through" in r
+
+
+def test_chat_asks_once_instead_of_silently_choosing(monkeypatch):
+    try:
+        import telegram_amy as T
+    except FileNotFoundError:
+        pytest.skip("needs amy_self.json (present in the live folder)")
+    asked = []
+    monkeypatch.setattr(T.worker, "ollama_chat", lambda **k: asked.append(k) or {"message": {"content": "x"}})
+    monkeypatch.setattr(T, "_history_for", lambda k: [])
+    monkeypatch.setattr(T, "_save_history", lambda *a, **k: None)
+    monkeypatch.setattr(T.mem, "add", lambda *a, **k: None)
+    monkeypatch.setattr(T._turn_log, "log_turn", lambda **k: None)
+    reply = T._chat(AMBIGUOUS[0], None)
+    assert asked == [] and "just talking it through" in reply
+
+
+def test_a_finished_normal_reply_is_never_hijacked_into_a_goal(monkeypatch):
+    """The real 2026-10-25 bug: she answers a question completely, with real tool work, and the reply's own
+    wording (a forward-looking remark) must not get auto-converted into a tracked goal."""
+    try:
+        import telegram_amy as T
+    except FileNotFoundError:
+        pytest.skip("needs amy_self.json (present in the live folder)")
+    queued = []
+    script = [T_tool_call_articl := {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "read_article", "arguments": {"url": "x"}}}]},
+              {"role": "assistant", "content": "It feels like it's trying to bridge that gap between calculating and "
+                                               "being, and worth digging into the next layer of what they mean by that."}]
+    seen = []
+    monkeypatch.setattr(T.worker, "ollama_chat", lambda **k: seen.append(k) or {"message": script.pop(0) if script else {"content": "ok"}})
+    monkeypatch.setattr(T.tools, "dispatch", lambda n, a, m=None: "Article: AI moving toward being, not just calculating.")
+    monkeypatch.setattr(G, "queue_goal", lambda obj, why, ag=None: (queued.append(obj) or {"goal_id": "SHOULD_NOT_HAPPEN"}, True))
+    monkeypatch.setattr(T, "_history_for", lambda k: [])
+    monkeypatch.setattr(T, "_save_history", lambda *a, **k: None)
+    monkeypatch.setattr(T.mem, "add", lambda *a, **k: None)
+    monkeypatch.setattr(T._turn_log, "log_turn", lambda **k: None)
+    reply = T._chat("This is the site https://sentientartificialintelligence.com/ tell me what you think?", None)
+    assert queued == [] and "background worker" not in reply and "goal" not in reply.lower()

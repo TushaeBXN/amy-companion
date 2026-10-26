@@ -544,6 +544,9 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
                     _task_reply = _turn_guard.task_reply(_g, _new)
                     worker.start_goal_now()
                     _log(f"  [task] {'queued' if _new else 'already queued'}: {_g['goal_id']}")
+            elif _turn_guard.needs_clarifying_ask(user_text):
+                _task_reply = _turn_guard.clarify_reply(user_text)
+                _log("  [task] ambiguous — asked instead of guessing")
             if _task_reply:
                 _a = {"role": "assistant", "content": _task_reply}
                 history.append(_a)
@@ -784,7 +787,7 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
                     history[-1] = msg
             _unfinished = (msg is not None and bool(_turn_guard.real_work(_logged_tool_calls)) is False
                            and (_turn_guard.asks_to_continue(_reply_text) or _turn_guard.is_continue_word(user_text)))
-            if _unfinished or _turn_guard.asks_to_continue(_reply_text):
+            if _unfinished:
                 _obj = _turn_guard.objective_for(user_text, history[:-1])
                 _goal, _new = _turn_guard.queue_goal(_obj, "Brian asked for this in chat and the chat turn couldn't finish it")
                 if _goal:
