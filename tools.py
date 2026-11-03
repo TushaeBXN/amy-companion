@@ -672,6 +672,8 @@ _BASE_TOOLS = [
                 "Read, understand, and improve your own codebase. "
                 "Use read_codebase FIRST to deeply understand which files do what before touching anything. "
                 "Then check impact, then run tests to get the baseline score. "
+"Use read_symbol to pull just one function or class (or Class.method) instead of a whole file -- "
+                "the way to work in a large file without loading all of it. "
                 "ALL project files are editable — the test suite is your safety net (backup + auto-revert "
                 "if score drops). Successful edits that improve the test score earn the highest "
                 "code_improvement reward token (5/5). Reverted edits earn 2/5. "
@@ -684,16 +686,22 @@ _BASE_TOOLS = [
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["read_codebase", "impact", "test", "edit", "depmap", "learn"],
+                        "enum": ["read_codebase", "read_symbol", "impact", "test", "edit", "depmap", "learn"],
                         "description": (
                             "read_codebase: get a full structured map of all .py files — functions, "
                             "classes, docstrings. Use this first. Optional 'focus' to narrow to one file. "
+                            "read_symbol: the exact source of one function/class/Class.method (requires 'name'; "
+                            "optional 'filename' to narrow which file, e.g. when the name exists in more than one). "
                             "impact: check blast radius for a file before touching it. "
                             "test: run the full test suite and see the score. "
                             "edit: apply a guarded change (requires old_text, new_text, filename, reason). "
                             "learn: write a behavioral rule to amy_learnings.md (active immediately). "
                             "depmap: print the full dependency map."
                         ),
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Function, class, or Class.method name to look up (action=read_symbol)",
                     },
                     "filename": {
                         "type": "string",
@@ -2555,6 +2563,11 @@ def dispatch(name, args, memory=None):
             focus = args.get("focus", "").strip()
             print(f"  [self_improve] reading codebase{' (focus: '+focus+')' if focus else ''}...")
             return _sc.read_codebase(focus=focus)
+        elif action == "read_symbol":
+            sym = args.get("name", "").strip()
+            fn = args.get("filename", "").strip()
+            print(f"  [self_improve] read_symbol: {sym}" + (f" in {fn}" if fn else ""))
+            return _sc.read_symbol(sym, file=fn)
         elif action == "edit":
             filename = args.get("filename", "").strip()
             old_text = args.get("old_text", "")
