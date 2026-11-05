@@ -241,6 +241,13 @@ def build_context(mem, user_text, amy_state=None, absence=None,
         system += ("\n\n[Interface: browser — Brian is messaging you through the web UI. "
                    "Your reply goes to the browser chat, not the terminal. "
                    "Do not reference the terminal. This is a chat interface.]")
+    elif channel == "voice":
+        system += ("\n\n[Interface: live voice — Brian is talking to you out loud and you are "
+                   "speaking back, not typing. Keep replies SHORT: 1-3 sentences, like a real "
+                   "conversation. No lists, no markdown, no code blocks unless he explicitly "
+                   "asks for code. Use contractions and talk naturally. Ask a follow-up question "
+                   "only when it feels natural, not every turn. If he cuts you off mid-reply, "
+                   "that's normal — just listen to what he says next.]")
     else:
         system += "\n\n[Interface: terminal — Brian is typing in the terminal.]"
     if _session_learnings:
@@ -516,7 +523,7 @@ def run_turn(history, mem, image=None, amy_state=None,
     if msg.get("content"):
         clean = _strip_trailers(msg["content"])
         msg["content"] = clean
-        voice.speak_streamed(clean)
+        voice.speak_streamed(clean, interruptible=(channel == "voice"))
         mem.add("assistant", clean)
         _reply_text = clean
     if amy_state:
@@ -994,7 +1001,8 @@ def main():
                         amy_state.touch()
                         amy_state.busy = True
                         try:
-                            history = run_turn(history, mem, amy_state=amy_state)
+                            history = run_turn(history, mem, amy_state=amy_state,
+                                               channel="voice")
                         finally:
                             amy_state.busy = False
                         if len(history) > HISTORY_WINDOW:
