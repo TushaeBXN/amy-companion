@@ -80,6 +80,32 @@ def _play_wav(wav):
         os.remove(wav)
 
 
+def _play_wav_interruptible(wav, monitor, poll_interval=0.1):
+    """Like _play_wav, but kills playback as soon as `monitor` hears speech.
+
+    Returns True if playback was cut short by barge-in, False if it played
+    to completion (or there was nothing to play).
+    """
+    player = _player()
+    if not (player and wav and os.path.exists(wav)):
+        if wav and os.path.exists(wav):
+            os.remove(wav)
+        return False
+    proc = subprocess.Popen(player + [wav], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    interrupted = False
+    while proc.poll() is None:
+        if monitor.interrupted():
+            proc.terminate()
+            interrupted = True
+            break
+        time.sleep(poll_interval)
+    try:
+        os.remove(wav)
+    except OSError:
+        pass
+    return interrupted
+
+
 def speak(text, emotion="neutral"):
     """Single-shot synthesis — used for short replies and as a fallback."""
     if not text:
@@ -96,48 +122,72 @@ def speak(text, emotion="neutral"):
 _SENTENCE_RE = re.compile(r'(?<=[.!?])\s+')
 
 
-def speak_streamed(text, emotion="neutral"):
+def speak_streamed(text, emotion="neutral", interruptible=False):
     """Pipelined TTS: synthesize next sentence while current one plays.
 
     For responses longer than one sentence this starts speaking sooner and
     eliminates the gap between sentences. Falls back to speak() for short text.
+
+    If interruptible is True, a mic VAD monitor runs during playback and
+    cuts it short the moment the user starts talking (barge-in). Returns
+    True if playback was interrupted, False otherwise.
     """
     if not text:
-        return
+        return False
     print(f"\nAmy ({emotion}): {text}")
     if not os.path.exists(VOICE):
-        return
+        return False
 
-    sentences = [s.strip() for s in _SENTENCE_RE.split(text) if s.strip()]
-    sentences = [s for s in sentences if re.sub(r'[^\w]', '', s)]
+    monitor = None
+    if interruptible:
+        import barge_in
+        monitor = barge_in.MicMonitor()
+        monitor.start()
 
-    if len(sentences) <= 1:
-        # Single sentence — no pipeline benefit, just synthesize and play
-        try:
-            _play_wav(_synthesize_wav(text))
-        except Exception as e:
-            print(f"  [voice] tts failed: {e}")
-        return
+    def _play(wav):
+        if monitor is not None:
+            return _play_wav_interruptible(wav, monitor)
+        _play_wav(wav)
+        return False
 
-    # Pipeline: synthesis thread fills wav_queue; main thread plays from it.
-    wav_queue = queue.Queue(maxsize=2)  # stay at most 2 wavs ahead
+    try:
+        sentences = [s.strip() for s in _SENTENCE_RE.split(text) if s.strip()]
+        sentences = [s for s in sentences if re.sub(r'[^\w]', '', s)]
 
-    def _synth_worker():
-        for sentence in sentences:
-            wav = _synthesize_wav(sentence)
-            wav_queue.put(wav)  # blocks if player is behind (backpressure)
-        wav_queue.put(None)  # sentinel
+        if len(sentences) <= 1:
+            # Single sentence — no pipeline benefit, just synthesize and play
+            try:
+                return _play(_synthesize_wav(text))
+            except Exception as e:
+                print(f"  [voice] tts failed: {e}")
+                return False
 
-    synth_thread = threading.Thread(target=_synth_worker, daemon=True)
-    synth_thread.start()
+        # Pipeline: synthesis thread fills wav_queue; main thread plays from it.
+        wav_queue = queue.Queue(maxsize=2)  # stay at most 2 wavs ahead
 
-    while True:
-        wav = wav_queue.get()
-        if wav is None:
-            break
-        try:
-            _play_wav(wav)
-        except Exception as e:
-            print(f"  [voice] playback failed: {e}")
+        def _synth_worker():
+            for sentence in sentences:
+                wav = _synthesize_wav(sentence)
+                wav_queue.put(wav)  # blocks if player is behind (backpressure)
+            wav_queue.put(None)  # sentinel
 
-    synth_thread.join(timeout=5)
+        synth_thread = threading.Thread(target=_synth_worker, daemon=True)
+        synth_thread.start()
+
+        interrupted = False
+        while True:
+            wav = wav_queue.get()
+            if wav is None:
+                break
+            try:
+                if _play(wav):
+                    interrupted = True
+                    break
+            except Exception as e:
+                print(f"  [voice] playback failed: {e}")
+
+        synth_thread.join(timeout=5)
+        return interrupted
+    finally:
+        if monitor is not None:
+            monitor.stop()
