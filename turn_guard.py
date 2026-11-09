@@ -184,6 +184,10 @@ _COMMITMENT_PHRASE = re.compile(r"(?i)\b(step by step|break (?:it|this|them) (?:
                                 r"try (?:it|them|this)(?: yourself)? on your (?:own )?machine)\b")
 _WEAK_TASK_VERB = re.compile(r"(?i)\b(read|open|research|find|search|learn|study|try|run|figure out|work out|"
                              r"look into|go through|go research|summari[sz]e|analy[sz]e|compare|prepare|review|check)\b")
+# A correction from Brian — he's updating her, not requesting a task.
+_CORRECTION = re.compile(r"(?i)\b(correct yourself|you(?:'re| are) (?:wrong|biased|off)|that(?:'s| is) (?:incorrect|wrong|biased|not right|a lie)|"
+                         r"fix your(?:self)?|that's not (?:right|true|accurate)|you have (?:a )?bias|you need to (?:look|search)|"
+                         r"look it up|this is to correct)\b")
 # Asking for her take, not a job to run: "tell me what you think" etc. This matters anywhere in the message,
 # not just at the end — a trailing URL or afterthought after the "?" must not defeat it.
 _OPINION_ASK = re.compile(r"(?i)\b(what(?:'s| is| do| did) your (?:take|opinion|view|thought)|your thoughts?\b|"
@@ -219,7 +223,12 @@ def needs_clarifying_ask(text: str) -> bool:
         return False
     if _is_plain_question(t):
         return False
-    return bool(_WEAK_TASK_VERB.search(t))
+    if _CORRECTION.search(t):
+        return False
+    # Only check the first 120 characters for weak task verbs — a verb buried in a long
+    # informational paste ("a look at the data", "find the evidence below") is data the
+    # user is sharing, not an instruction to run a background job.
+    return bool(_WEAK_TASK_VERB.search(t[:120]))
 
 
 def clarify_reply(text: str) -> str:
