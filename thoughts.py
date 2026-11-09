@@ -233,6 +233,11 @@ class ThoughtBuffer:
             # Tag income thoughts so companion.py can surface them distinctly
             is_income = "income" in prompt or "GB10" in prompt or "concrete idea" in prompt
             with self._lock:
+                # Dedup: skip if any buffered thought shares the same opening 50 chars
+                # (catches the model outputting the exact same reflection multiple times)
+                _key = text[:50].lower().strip()
+                if any(existing[:50].lower().strip() == _key for _, existing, *_ in self._thoughts):
+                    return
                 self._thoughts.append((ts, text, "income" if is_income else "thought"))
 
             with open(LOG_PATH, "a") as f:
