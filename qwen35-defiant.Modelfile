@@ -1,16 +1,19 @@
 FROM /Users/anthosintelligence/Downloads/Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-plusIQ-TOOLS-NEO-MAX-MTP-Q8_0.gguf
+# Vision projector: mmproj-F16.gguf from the same Hugging Face repo (already in Ollama's store from the Q4 pull).
+FROM /Users/anthosintelligence/.ollama/models/blobs/sha256-f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f
 
-# Amy on Qwen3.5-9B Defiant — plusIQ-TOOLS optimized
+# Amy on Qwen3.5-9B Defiant (plusIQ-TOOLS Q8_0), chat and vision in one model.
 # Build: ollama create amy-qwen35-defiant -f qwen35-defiant.Modelfile
-# Test: AMY_MODEL=amy-qwen35-defiant python3 companion.py
-# Switch default: edit AMY_MODEL default in companion.py line 59
+#   The build needs about 21 GB of free disk for Ollama's validation step. The model built on 2026-11-10 was
+#   made without the projector line; the projector layer was added to its manifest afterwards, and it still
+#   carries "num_predict 300" from that first build.
+# Amy uses it when AMY_MODEL and AMY_VISION_MODEL are set to amy-qwen35-defiant in .env and .env.amy.
 
 RENDERER qwen3.5
 PARSER qwen3.5
 
 PARAMETER num_ctx 16384
 PARAMETER num_batch 1024
-PARAMETER num_predict 300
 PARAMETER temperature 0.7
 PARAMETER top_p 0.8
 PARAMETER top_k 20

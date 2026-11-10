@@ -211,8 +211,8 @@ def _history_for(person_key: str) -> list:
 
 
 def _build_compact_system() -> str:
-    """Minimal system prompt for non-legacy local models.
-    Stays under ~400 chars to fit quantized model context budgets."""
+    """System prompt for non-legacy local models: AMY_CORE.md (about 1,400 tokens), which a small model can
+    hold in full. Falls back to a few lines if that file is missing."""
     s = mem.self
     # One short fact about Brian (no tool syntax, no templates, no long text)
     brian_fact = ""
@@ -224,6 +224,14 @@ def _build_compact_system() -> str:
             brian_fact = t
             break
     extra = f" {brian_fact}." if brian_fact else ""
+    try:  # her core instructions: who she is, who she is for, how she talks, when to use tools
+        with open(os.path.join(_here, "AMY_CORE.md")) as _f:
+            core = _f.read().strip()
+    except OSError:
+        core = ""
+    if core:
+        return (core + (f"\n\nAbout Brian:{extra}" if extra else "")
+                + "\n\n[Interface: Telegram. Brian is texting you like a friend. Short replies are fine.]")
     return (
         "Your name is Amy. You are Amy, not any other name."
         " You are a direct and warm AI companion created by Brian Thomas."
@@ -676,6 +684,10 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
                 result = ("Not done: Brian didn't ask for an image. Tell him what you had in mind "
                           "and ask if he wants it.")
                 _log("  (blocked generate_image: not requested)")
+            elif name in _turn_guard.JOB_TOOLS and _turn_guard.is_just_a_question(user_text):
+                result = _turn_guard.NO_JOB_FOR_QUESTION
+                _wasted += 1
+                _log(f"  (blocked {name}: Brian asked a question, not for a job)")
             elif is_owner and _is_public_action(name, args) and not _PUBLIC_OK.search(user_text):
                 result = ("Not done: Brian didn't ask you to post, comment, follow or upvote. "
                           "Tell him what you found and ask if he wants you to act on it.")

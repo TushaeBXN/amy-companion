@@ -204,6 +204,17 @@ def _is_plain_question(text: str) -> bool:
     return bool(first.rstrip().endswith("?") and not re.search(r"(?i)\b(please|can you|could you|i want you to|go )", first))
 
 
+JOB_TOOLS = {"create_autonomous_goal", "task_push"}
+NO_JOB_FOR_QUESTION = ("Not done: Brian asked a question, so nothing was queued. Answer it yourself now, in your own "
+                       "words, with at most a search or two. If you think it deserves a background job, ask him first.")
+
+
+def is_just_a_question(text: str) -> bool:
+    """Brian's message is a plain question with no instruction in it, so it must not become a background job."""
+    t = (text or "").strip()
+    return bool(t) and _is_plain_question(t) and not _COMMITMENT_PHRASE.search(t)
+
+
 def is_task_request(text: str) -> bool:
     """A real instruction committing to a job, not conversation. Only strong, unambiguous verbs qualify —
     a weak one goes to needs_clarifying_ask instead of a silent guess."""

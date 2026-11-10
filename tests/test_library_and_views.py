@@ -301,7 +301,7 @@ def test_each_big_question_loads_only_its_own_section():
     pb = ap.playbooks_for("why is college tuition so high?")
     assert "THINKING PARTNER" in pb and "EDUCATION AS A SYSTEM" in pb
     assert [h for h in heads if h in pb] == ["EDUCATION AS A SYSTEM"]
-    assert len(pb) < 5000  # about half the old all-in-one playbook
+    assert len(pb) < 8000  # was 5000 before the economic-justice and MAGA-vs-conservatism blocks were added
 
 
 def test_press_freedom_and_education_department():
