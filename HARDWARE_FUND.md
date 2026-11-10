@@ -50,3 +50,7 @@ Systematic approach to building AI agents: start with ReAct loops, tool use patt
 ### Income Idea — 2026-10-14 14:26
 **LangGraph state management pattern (local ~9B agent)** | internal knowledge base | N/A (framework adoption insight) | Confidence: 8/10
 Production-standard AI agent framework prioritizing explicit state management over hype; ReAct loops are practical foundation before full orchestration library adoption. Insight from YouTube study Oct 14 2026. Applies to Brian's local ~9B parameter constraint: implement simple ReAct manually first for debugging and lean compute footprint, then layer LangGraph when scaling beyond single-threaded demo scope. Transcript saved at ~/ai-knowledge/creators/youtube/watch_v_ywymavrbizm/profile.md.
+
+### Income Idea — 2026-10-31 12:04
+**AI Prompt Optimization & Engineering (Fiverr)** | Fiverr | $25–$150/gig | Confidence: 8/10
+Providing high-quality, engineered prompts for diverse use cases (GPT-4o, Claude 3.5, etc.) including few-shot examples and chain-of-thought structures.

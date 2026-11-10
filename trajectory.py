@@ -1,13 +1,17 @@
-"""Trajectory logger — captures good task runs as structured training data.
+"""Trajectory logger — captures task runs as structured training data.
 
-Each completed task run that passes quality filters is appended as one JSON
-line to trajectories/YYYY-MM-DD.jsonl. These are Amy's own experiences,
-formatted for future LoRA fine-tuning on instruction-following and tool use.
+Each task run is appended as one JSON line to trajectories/YYYY-MM-DD.jsonl,
+labelled with its outcome. These are Amy's own experiences, formatted for future
+fine-tuning on instruction-following and tool use. Failed and limit-hit runs are
+kept on purpose: they are the negative examples (stalls, quitting early). Anything
+that trains on the positives must filter on outcome == "success".
 
-Quality filters (all must pass):
-  - Task did not fail
-  - At least 2 tools were used (trivial no-op tasks skipped)
-  - Did not hit max_hops (incomplete runs aren't good training signal)
+Recording rules:
+  - failed and hit_limit runs are always recorded, labelled by outcome
+  - a success is recorded only if at least 2 distinct tools were used
+    (trivial no-op tasks skipped)
+  - assistant messages arrive from Ollama as Message objects, not dicts; they are
+    converted so Amy's own text and tool calls (with arguments) are recorded
 
 Format per line:
   {
@@ -106,19 +110,21 @@ def save(
     tool_errors: int,
     hit_limit: bool,
 ) -> None:
-    """Append one trajectory to today's JSONL file if it passes quality filters."""
+    """Append one trajectory, labelled by outcome, to today's JSONL file."""
 
-    # Quality gates
-    failed = "(task failed" in (final or "")
-    if failed:
-        return
-    if len(set(tools_used)) < 2:
+    if "(task failed" in (final or ""):
+        outcome = "failed"
+    elif hit_limit:
+        outcome = "hit_limit"
+    else:
+        outcome = "success"
+    if outcome == "success" and len(set(tools_used)) < 2:
         return  # too trivial
-    if hit_limit:
-        return  # incomplete run — not good signal
 
     turns = []
     for msg in messages:
+        if hasattr(msg, "model_dump"):      # ollama Message objects are not dicts
+            msg = msg.model_dump(exclude_none=True)
         if not isinstance(msg, dict):
             continue
         t = _sanitize_turn(msg)
@@ -133,7 +139,7 @@ def save(
         "steps": steps,
         "tool_errors": tool_errors,
         "tools_used": tools_used,
-        "outcome": "success",
+        "outcome": outcome,
         "turns": turns,
     }
 

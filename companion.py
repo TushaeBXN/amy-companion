@@ -56,7 +56,7 @@ _BRIEFING_TRIGGER_RE = re.compile(
     re.IGNORECASE
 )
 
-MODEL = os.environ.get("AMY_MODEL", "gemma12-test")       # tool-calling + vision engine (Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M)
+MODEL = os.environ.get("AMY_MODEL", "amy-qwen35-defiant")  # tool-calling engine (Qwen3.5-9B-Defiant plusIQ-TOOLS Q8_0)
 VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "qwen2.5vl:3b")  # multimodal vision model (3B keeps RAM headroom alongside Amy's 7.38 GB main model)
 CODE_MODEL = os.environ.get("AMY_CODE_MODEL", "")  # code routing paused — set to e.g. deepseek-coder:6.7b to re-enable
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
