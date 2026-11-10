@@ -40,7 +40,7 @@ def test_every_trimmed_tool_stays_reachable_through_a_goal():
 def test_telegram_chat_uses_the_trimmed_list_for_the_owner():
     import telegram_amy as T
     import inspect
-    src = inspect.getsource(T._chat)
+    src = inspect.getsource(T._chat_turn)
     assert "tools.chat_tools()" in src and "tools.TOOLS if is_owner" not in src
 
 

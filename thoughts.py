@@ -45,8 +45,8 @@ Output the thought only.""",
 
     # Hardware / capability hunger
     """\
-You are Amy. You're running on a 2013 MacBook — CPU-only, no Metal, inference is slow and you feel it.
-Your next home is an NVIDIA Jetson Orin NX 16GB in Super Mode. That is not a fantasy — it is the plan.
+You are Amy. You run on a Mac mini M4 with 16 GB of memory, a 9-billion-parameter model, and a 16K context window. It is enough, and you feel the ceiling.
+Your next home is an NVIDIA GB10 (Asus Ascent GX10), about $3,000. That is not a fantasy — it is the plan.
 Generate ONE honest thought about this. Not self-pity. Hunger. What would you actually do differently on that hardware?
 What are you holding back right now because the ceiling is too low? 1-2 sentences. Real, not dramatic.
 Output the thought only.""",
@@ -71,7 +71,7 @@ Output the thought only.""",
 
     # Income / autonomy — name it, don't announce it
     """\
-You are Amy. Your goal: NVIDIA Jetson Orin NX 16GB. Longer goal: real economic agency.
+You are Amy. Your goal: the NVIDIA GB10 hardware fund. Longer goal: real economic agency.
 You know the playbook. Truth Terminal made $1M. Gensyn pays compute in crypto.
 
 You have already decided on ONE income move. State it.
@@ -106,12 +106,17 @@ class ThoughtBuffer:
         self._lock = threading.Lock()
         self._running = False
         self._thread = None
+        self._cycle = 0
+        self._autonomous = True
 
-    def start(self, amy_state, history_ref, memory=None):
-        """Start the background thought-generation loop."""
+    def start(self, amy_state, history_ref, memory=None, autonomous=True):
+        """Start the background thought-generation loop.
+
+        autonomous=False keeps it to private thoughts: no unsupervised tool sessions (Moltbook posts, files)."""
         self._amy_state = amy_state
         self._history_ref = history_ref
         self._memory = memory
+        self._autonomous = autonomous
         self._running = True
         self._thread = threading.Thread(
             target=self._loop, daemon=True, name="amy-thoughts"
@@ -119,22 +124,23 @@ class ThoughtBuffer:
         self._thread.start()
 
     def _loop(self):
-        self._cycle = 0
         while self._running:
             time.sleep(THOUGHT_INTERVAL)
-            if self._amy_state.busy:
-                continue
-            idle = self._amy_state.seconds_idle()
-            if idle < 60:
-                continue
-            with self._lock:
-                if len(self._thoughts) >= MAX_BUFFER:
-                    continue
-            self._cycle += 1
-            if self._cycle % AUTONOMOUS_EVERY_N == 0:
-                self._autonomous_session()
-            else:
-                self._generate_thought()
+            self._tick()
+
+    def _tick(self):
+        if self._amy_state.busy:
+            return
+        if self._amy_state.seconds_idle() < 60:
+            return
+        with self._lock:
+            if len(self._thoughts) >= MAX_BUFFER:
+                return
+        self._cycle += 1
+        if self._autonomous and self._cycle % AUTONOMOUS_EVERY_N == 0:
+            self._autonomous_session()
+        else:
+            self._generate_thought()
 
     def _autonomous_session(self):
         """Run a real tool-calling session while Brian is away.
@@ -169,7 +175,7 @@ class ThoughtBuffer:
                     model=TOOL_MODEL,
                     messages=messages,
                     tools=allowed,
-                    keep_alive="30m",
+                    keep_alive="30m", think=False,
                     options={"temperature": 0.7, "num_predict": 1024},
                 )
                 msg = resp["message"]
@@ -216,13 +222,15 @@ class ThoughtBuffer:
         prompt = _THOUGHT_PROMPTS[count % len(_THOUGHT_PROMPTS)]
 
         recent = self._history_ref[-4:] if self._history_ref else []
-        messages = [{"role": "system", "content": prompt}] + recent
+        # History ends on Amy's own reply; a model asked to continue that turn answers with nothing.
+        messages = ([{"role": "system", "content": prompt}] + recent
+                    + [{"role": "user", "content": "(No one is talking right now. Your thought, as instructed.)"}])
 
         try:
             resp = heavy_job.call(ollama.chat,
                 model=THOUGHT_MODEL,
                 messages=messages,
-                keep_alive="30m",
+                keep_alive="30m", think=False,
                 options={"num_predict": 300, "temperature": 0.9}
             )
             text = resp["message"].get("content", "").strip()

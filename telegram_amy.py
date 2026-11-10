@@ -7,7 +7,7 @@ _here = os.path.dirname(__file__)
 load_dotenv(os.path.join(_here, ".env"))
 load_dotenv(os.path.join(_here, ".env.amy"), override=True)
 
-import json, re, tempfile, time, traceback as _traceback, ollama
+import json, re, tempfile, threading, time, traceback as _traceback, ollama
 import event_log as _el
 import heavy_job
 import image_request
@@ -31,6 +31,7 @@ from memory import Memory
 import state as _state
 import tools
 import turn_guard as _turn_guard
+from thoughts import ThoughtBuffer
 import worker
 import guest_docs
 import condition as _cond
@@ -74,6 +75,7 @@ def _log(line: str):
 
 mem        = Memory()
 amy_state  = _state.InternalState.restore()   # shared state — reads amy_state.json
+thought_buffer = ThoughtBuffer()
 _learnings_ctx = _learnings.load_recent_learnings() if _learnings else ""
 
 
@@ -465,8 +467,55 @@ def _describe_image(image_bytes: bytes) -> str:
     return resp["message"].get("content", "").strip()
 
 
+class _OwnerHistory:
+    """Brian's recent chat, read fresh each time, for the thought loop: plain user/assistant text only."""
+    def __getitem__(self, sl):
+        out = []
+        for m in _history_for("owner")[sl]:
+            d = _msg_to_dict(m)
+            if d.get("role") in ("user", "assistant") and (d.get("content") or "").strip():
+                out.append({"role": d["role"], "content": d["content"][:600]})
+        return out
+
+    def __bool__(self):
+        return bool(_history_for("owner"))
+
+
+def _thoughts_block(pending) -> str:
+    """The thoughts she had while Brian was away, as context for this one reply ('' if none)."""
+    if not pending:
+        return ""
+    return ("\n\n[Thoughts you had while Brian was away: private, yours]\n- "
+            + "\n- ".join(t for _, t, *_ in pending)
+            + "\n\nShare one only if it fits what he just said, once and directly. Don't announce that you had "
+              "thoughts, and don't repeat them. Only state things you're sure are true; never name a URL, "
+              "video or source you didn't retrieve.")
+
+
+_busy_turns = 0
+_busy_lock = threading.Lock()
+
+
 def _chat(user_text: str, image_bytes: bytes | None = None,
           person: dict | None = None, progress=None) -> str | None:
+    """One reply. Marks Amy busy while it runs, and Brian active when it is his message, so the
+    thought loop only works in her idle time."""
+    global _busy_turns
+    if (person or {"role": "owner"})["role"] == "owner":
+        amy_state.touch()
+    with _busy_lock:
+        _busy_turns += 1
+        amy_state.busy = True
+    try:
+        return _chat_turn(user_text, image_bytes, person, progress)
+    finally:
+        with _busy_lock:
+            _busy_turns -= 1
+            amy_state.busy = _busy_turns > 0
+
+
+def _chat_turn(user_text: str, image_bytes: bytes | None = None,
+               person: dict | None = None, progress=None) -> str | None:
     person  = person or {"name": "Brian", "role": "owner"}
     is_owner = person["role"] == "owner"
     pkey    = "owner" if is_owner else person["name"].lower()
@@ -533,6 +582,8 @@ def _chat(user_text: str, image_bytes: bytes | None = None,
                    (_msg_to_dict(m) if not isinstance(m, dict) else m for m in reversed(history))
                    if _d.get("role") == "assistant" and _d.get("content")), "")
     ctx = _turn_context(len(history), person, user_text, _prior)
+    if is_owner and not _bare:
+        ctx += _thoughts_block(thought_buffer.drain())
     model_msg = dict(model_msg, content=f"{ctx}\n\n[Message from {who}]\n{model_msg['content']}")
     messages = [{"role": "system", "content": _build_system(len(history), person)}] + recent + [model_msg]
     history.append(user_msg)
@@ -1170,6 +1221,8 @@ def main():
     app.add_handler(MessageHandler(filters.Document.ALL, on_document))
     app.add_error_handler(_error_handler)
     worker.start(os.environ.get("AMY_MODEL", "gemma12-test"), mem, token)
+    if os.environ.get("AMY_THOUGHTS", "1") != "0":   # private idle thoughts only; no unsupervised tool sessions
+        thought_buffer.start(amy_state, _OwnerHistory(), memory=mem, autonomous=False)
     print("Amy is on Telegram. Voice messages, photos, and documents supported.")
     app.run_polling(drop_pending_updates=True)
 
