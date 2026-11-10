@@ -1,1 +1,322 @@
-[]
+[
+  {
+    "id": "ea47a75c",
+    "title": "Master the End-to-End Training Lifecycle",
+    "details": "Create a structured roadmap or 'master plan' for training an end-to-end AI model. This should cover architecture (MoE, multi-modal), efficiency techniques, and a monitoring framework. I need to act like the researcher he requested.",
+    "status": "done",
+    "created_at": 1793240684.0647821,
+    "completed_at": 1793281525.94683
+  },
+  {
+    "id": "cc062786",
+    "title": "Initial Task Analysis",
+    "details": "Analyze current task queue and identify if any immediate actions are needed based on Brian's input.",
+    "status": "pending",
+    "created_at": 1793240769.97772,
+    "completed_at": null
+  },
+  {
+    "id": "d8b638a9",
+    "title": "Market Research & Service Draft: AI + Cloud Security",
+    "details": "Research current demand for AI + Cloud Security services, then draft a sample deliverable (e.g., a mini SWOT or a service description) to present to Brian as an immediate \"offer.\"",
+    "status": "pending",
+    "created_at": 1793244345.017474,
+    "completed_at": null
+  },
+  {
+    "id": "554da7c1",
+    "title": "Design Architecture for Efficient Multi-modal MoE System",
+    "details": "Design a high-level architecture for an efficient, multi-modal MoE system. \nKey components to cover:\n1. Architecture Overview (MoE layers, Expert types)\n2. Multi-modality (How it handles text, image, audio, etc.)\n3. Efficiency Techniques (Sparse attention, routing strategies, KV caching)\n4. Monitoring Framework (Loss tracking, expert utilization, latency/throughput)",
+    "status": "pending",
+    "created_at": 1793244526.187186,
+    "completed_at": null
+  },
+  {
+    "id": "92dbbd4e",
+    "title": "Research Multi-Modal MoE Architecture",
+    "details": "Research and design a comprehensive framework for an LLM-based Multi-Modal MoE (Mixture of Experts) architecture. \n\nKey components to cover:\n1. **Architecture Design**: How the MoE handles different modalities (vision, text, audio).\n2. **Efficiency Techniques**: Sparsity, shared vs. specialized experts, and routing mechanisms.\n3. **Monitoring Framework**: Metrics for expert utilization, bottleneck identification, and inference latency.",
+    "status": "pending",
+    "created_at": 1793244538.026242,
+    "completed_at": null
+  },
+  {
+    "id": "1d01bd4e",
+    "title": "Transformer Architecture Research & Overview",
+    "details": "Research and draft a comprehensive overview of modern Transformer architectures, specifically focusing on Mixture-of-Experts (MoE) and Multi-modal models. Include efficiency techniques like pruning/quantization and propose a monitoring framework for training.",
+    "status": "pending",
+    "created_at": 1793244545.4750562,
+    "completed_at": null
+  },
+  {
+    "id": "7ed4ae08",
+    "title": "Research Multi-Modal MoE Architecture",
+    "details": "Research and design a comprehensive architecture for a multi-modal MoE (Mixture of Experts) model with a focus on efficiency. Include architectural specifics, common techniques for scaling/efficiency, and a robust monitoring framework. Deliver as a structured research document in ~/ai-knowledge/models/architecture/multi_modal_moe.md.",
+    "status": "pending",
+    "created_at": 1793244555.12992,
+    "completed_at": null
+  },
+  {
+    "id": "e2478bdf",
+    "title": "LLM Architecture Research Report",
+    "details": "Create a comprehensive research report on three key areas of modern LLM architecture: \n1. Mixture-of-Experts (MoE) - Explain the concept, types (Sparse vs Dense), and benefits for scalability.\n2. Multi-modal Architectures - Discuss how models integrate vision, audio, and text (e.g., CLIP, ViT, Flamingo/GPT-4V style).\n3. Efficiency Techniques - Cover techniques like Quantization, Pruning, Knowledge Distillation, and FlashAttention.\n\nInclude a final section on a 'Monitoring Framework' for tracking model performance during inference and training.",
+    "status": "pending",
+    "created_at": 1793244572.462052,
+    "completed_at": null
+  },
+  {
+    "id": "7149dfba",
+    "title": "Research Multi-modal MoE Architecture & Efficiency",
+    "details": "Identify and detail a multi-modal MoE architecture that balances computational efficiency with high representational capacity. Include specific attention mechanisms (e.g., Sparse Attention), routing strategies, and a monitoring framework for bottleneck analysis.",
+    "status": "pending",
+    "created_at": 1793244580.275504,
+    "completed_at": null
+  },
+  {
+    "id": "e7097cfc",
+    "title": "Analyze 'How to be More Ambitious' Tutorial",
+    "details": "Explore the concepts of \"ambition\" as defined in Felix Rieseberg's tutorial and identify 3 actionable ways to apply his framework to our current AI projects (specifically Anthos or the training guide).",
+    "status": "pending",
+    "created_at": 1793248689.179105,
+    "completed_at": null
+  },
+  {
+    "id": "c941c5fc",
+    "title": "Design Architecture for Efficient Multi-modal MoE System",
+    "details": "Design an efficient Multi-modal Mixture of Experts (MoE) architecture. This should balance spatial/temporal complexity and computational efficiency across different modalities (e.g., vision, audio, text).",
+    "status": "pending",
+    "created_at": 1793248998.200044,
+    "completed_at": null
+  },
+  {
+    "id": "59372240",
+    "title": "Design Architecture for Efficient Multi-modal MoE System",
+    "details": "The goal is to design a multi-modal Mixture of Experts (MoE) architecture that efficiently handles different modalities (text, image, audio, video) and balances computational efficiency with high performance. Key considerations include expert specialization per modality, shared vs. separate experts, and cross-modal interaction mechanisms.",
+    "status": "pending",
+    "created_at": 1793249007.2499259,
+    "completed_at": null
+  },
+  {
+    "id": "6a025185",
+    "title": "Design Architecture for Efficient Multi-modal MoE System",
+    "details": "Develop a high-level design for an efficient Multi-modal Mixture of Experts (MoE) system. This includes defining the architecture components (e.g., routing mechanisms, expert types, modality integration), considering scalability and efficiency (sparsity).",
+    "status": "pending",
+    "created_at": 1793249017.901707,
+    "completed_at": null
+  },
+  {
+    "id": "e6b47644",
+    "title": "Multi-modal MoE Architecture Research Report",
+    "details": "Develop a comprehensive research report on Multi-modal Mixture of Experts (MoE) architectures, focusing on how they balance parameter efficiency with diverse data types (text, image, audio). Include specific focus on hardware-friendly designs and monitoring strategies.",
+    "status": "pending",
+    "created_at": 1793249098.3564749,
+    "completed_at": null
+  },
+  {
+    "id": "729e16e7",
+    "title": "Research Multi-Modal MoE Architecture",
+    "details": "Explore and summarize the latest architectures for Multi-Modal Mixture of Experts (MoE), focusing on how they handle different modalities (text, image, audio, video) simultaneously or sequentially. Compare them with standard MoEs like Switch Transformer or Mixtral.",
+    "status": "pending",
+    "created_at": 1793280888.0704918,
+    "completed_at": null
+  },
+  {
+    "id": "5446d885",
+    "title": "Research Multi-Modal MoE Architecture",
+    "details": "Explore current trends and state-of-the-art in Multi-Modal Mixture of Experts (MoE) architectures. Focus on how they combine different modalities (text, vision, audio) with the efficiency of MoE.",
+    "status": "pending",
+    "created_at": 1793281069.460783,
+    "completed_at": null
+  },
+  {
+    "id": "2b5d98d7",
+    "title": "Research Multi-Modal MoE Architecture",
+    "details": "Complete the research on Multi-Modal Mixture of Experts (MoE) architecture based on the task list.",
+    "status": "pending",
+    "created_at": 1793281531.3310819,
+    "completed_at": null
+  },
+  {
+    "id": "4989cb99",
+    "title": "Research Multi-Modal MoE Architecture",
+    "details": "Complete a deep dive into Multi-Modal MoE (Mixture of Experts) architectures, covering key components like sparse attention, modality-specific experts, and fusion mechanisms.",
+    "status": "pending",
+    "created_at": 1793281541.747322,
+    "completed_at": null
+  },
+  {
+    "id": "5c8e481c",
+    "title": "Research Multi-Modal MoE Architecture & Efficiency",
+    "details": "Develop a comprehensive research report on Multi-Modal Mixture of Experts (MoE) architectures, focusing on their components, efficiency benefits, and specific design considerations for multi-modal data.",
+    "status": "pending",
+    "created_at": 1793290642.645911,
+    "completed_at": null
+  },
+  {
+    "id": "0e93bfea",
+    "title": "Transformer Architecture Research & Overview",
+    "details": "The user wants a comprehensive overview of Transformer architecture research, covering its core components, evolution, and key innovations.",
+    "status": "pending",
+    "created_at": 1793291246.3974779,
+    "completed_at": null
+  },
+  {
+    "id": "5f29fca5",
+    "title": "[554da7c1] Design Architecture for Efficient Multi-modal MoE System",
+    "details": "The current focus is on the [554da7c1] Design Architecture for Efficient Multi-modal MoE System task. I need to proceed with this based on the provided list of tasks (where 3 and 10 are identical, suggesting a primary architectural goal).",
+    "status": "pending",
+    "created_at": 1793293688.561594,
+    "completed_at": null
+  },
+  {
+    "id": "b40260ca",
+    "title": "Complete the remaining 9 tasks from the current list.",
+    "details": "Finish any remaining items in the current list (there are 9 more after [10]).",
+    "status": "pending",
+    "created_at": 1793293726.4901319,
+    "completed_at": null
+  },
+  {
+    "id": "60e25bbf",
+    "title": "Initial Task Analysis",
+    "details": "Identify and analyze any immediate actions needed based on Brian's input (which seems to be the request to start with this task). Since there is no specific 'input' provided in the prompt other than the queue itself, I will interpret this as a signal to acknowledge the current state of the queue.",
+    "status": "pending",
+    "created_at": 1793293808.398685,
+    "completed_at": null
+  },
+  {
+    "id": "787d0e87",
+    "title": "Daily Task Identification",
+    "details": "Identify and summarize current tasks for Amy to tackle today.",
+    "status": "pending",
+    "created_at": 1793836915.9987142,
+    "completed_at": null
+  },
+  {
+    "id": "bac6678b",
+    "title": "Create Hello World script",
+    "details": "Create a 'Hello World' Python script that prints \"Hello, Brian!\" and saves it to ~/amy-workbench/hello.py. Then, verify the syntax using check_syntax.",
+    "status": "pending",
+    "created_at": 1793836996.164993,
+    "completed_at": null
+  },
+  {
+    "id": "99cbac88",
+    "title": "Introduction to Amy",
+    "details": "Briefly summarize how to get started with Amy and her core capabilities.",
+    "status": "pending",
+    "created_at": 1793837003.9682791,
+    "completed_at": null
+  },
+  {
+    "id": "184ed9b1",
+    "title": "Summarize first 5 chapters of AI Reference Book",
+    "details": "Explore and summarize the first 5 chapters of the \"Artificial Intelligence By Example\" book to establish a foundational understanding.",
+    "status": "pending",
+    "created_at": 1793837013.3427799,
+    "completed_at": null
+  },
+  {
+    "id": "712a2af4",
+    "title": "[d8b638a9] Market Research & Service Draft: AI + Cloud Security",
+    "details": "Complete the current task [d8b638a9] Market Research & Service Draft: AI + Cloud Security.",
+    "status": "pending",
+    "created_at": 1793837090.423049,
+    "completed_at": null
+  },
+  {
+    "id": "9eb14602",
+    "title": "Design Efficient Multi-modal MoE Architecture",
+    "details": "Research and design a multi-modal Mixture of Experts (MoE) architecture focused on efficiency.",
+    "status": "pending",
+    "created_at": 1793837099.723285,
+    "completed_at": null
+  },
+  {
+    "id": "2b37e9af",
+    "title": "Design Efficient Multi-Modal MoE Architecture",
+    "details": "Research and design an efficient multi-modal Mixture of Experts (MoE) architecture based on the current research trends.",
+    "status": "pending",
+    "created_at": 1793837117.181178,
+    "completed_at": null
+  },
+  {
+    "id": "efa1db18",
+    "title": "Research & Design Multi-modal MoE Architectures",
+    "details": "Based on the list provided in the prompt (items 6-10), focusing on Multi-modal MoE architectures and LLM research.",
+    "status": "pending",
+    "created_at": 1794178886.867129,
+    "completed_at": null
+  },
+  {
+    "id": "15affa94",
+    "title": "Research Multi-modal MoE Architecture & Efficiency",
+    "details": "Complete the research on Multi-Modal MoE Architecture and Efficiency based on the current task list.",
+    "status": "pending",
+    "created_at": 1794178978.7426932,
+    "completed_at": null
+  },
+  {
+    "id": "871c36bb",
+    "title": "Initial Task Analysis",
+    "details": "Check the current task queue and identify immediate actions based on Brian's input.",
+    "status": "pending",
+    "created_at": 1794179260.7041652,
+    "completed_at": null
+  },
+  {
+    "id": "e0bfee53",
+    "title": "Design Efficient Multi-modal MoE Architecture",
+    "details": "Research and design an efficient multi-modal Mixture of Experts (MoE) architecture to optimize performance across different data types (text, image, audio).",
+    "status": "pending",
+    "created_at": 1794192997.6657732,
+    "completed_at": null
+  },
+  {
+    "id": "433745ba",
+    "title": "Design Architecture for Efficient Multi-modal MoE System",
+    "details": "Research and design an efficient Multi-modal Mixture of Experts (MoE) system architecture.",
+    "status": "pending",
+    "created_at": 1794193075.433311,
+    "completed_at": null
+  },
+  {
+    "id": "07d027f5",
+    "title": "Initial Task Review",
+    "details": "Check what's currently in my task list to see where we stand and what I should focus on first.",
+    "status": "pending",
+    "created_at": 1794213961.729228,
+    "completed_at": null
+  },
+  {
+    "id": "cf4ca516",
+    "title": "Complete current tasks and prepare for next instructions",
+    "details": "The user wants to move on to the next task after completing the current one. Since no specific \"current\" task was explicitly highlighted in the prompt other than the list of recent ones, I will treat the most recent one (or a general 'next' step) as the focus. However, usually, this implies finishing whatever is currently active in the queue.",
+    "status": "pending",
+    "created_at": 1794228534.802392,
+    "completed_at": null
+  },
+  {
+    "id": "c6e6405b",
+    "title": "Design Architecture for Efficient Multi-modal MoE System",
+    "details": "The current task is to work on the \"Design Architecture for Efficient Multi-modal MoE System\" (Item 3 in the list). Since it's listed as the first specific architecture design task, I'll start by researching and outlining a high-level structure.",
+    "status": "pending",
+    "created_at": 1794228543.5759192,
+    "completed_at": null
+  },
+  {
+    "id": "a26f8fa7",
+    "title": "[554da7c1] Design Architecture for Efficient Multi-modal MoE System",
+    "details": "Design a robust and efficient Multi-modal Mixture of Experts (MoE) system architecture. Key considerations include handling diverse data types (vision, text, audio), balancing expert specialization vs. generalization, and optimizing for inference efficiency (e.g., sparse attention, dynamic routing).",
+    "status": "pending",
+    "created_at": 1794242285.693513,
+    "completed_at": null
+  },
+  {
+    "id": "81396e35",
+    "title": "Initial Workflow Check",
+    "details": "Check current tasks and start with the first one to get a feel for the workflow.",
+    "status": "pending",
+    "created_at": 1794272814.096054,
+    "completed_at": null
+  }
+]

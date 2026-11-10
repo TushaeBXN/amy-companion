@@ -1,0 +1,15 @@
+FROM /Users/anthosintelligence/Downloads/gemma4-v2-Q4_K_M.gguf
+
+TEMPLATE {{ .Prompt }}
+RENDERER gemma4
+PARSER gemma4
+
+# Same sampling as gemma12-test so the comparison is like for like
+PARAMETER num_ctx 16384
+PARAMETER num_batch 4096
+PARAMETER num_predict 300
+PARAMETER temperature 0.8
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.1
+PARAMETER stop "<end_of_turn>"
+PARAMETER stop "<start_of_turn>"

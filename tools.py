@@ -1519,7 +1519,7 @@ _BASE_TOOLS = [
         "type": "function",
         "function": {
             "name": "create_autonomous_goal",
-            "description": "Create a persistent autonomous goal that Amy will work toward independently between conversations. Use when you or Brian identify something worth pursuing over multiple steps or sessions.",
+            "description": "Create a persistent autonomous goal that Amy will work toward independently between conversations. Use ONLY for multi-step work that takes many tool calls or multiple sessions — things like building a feature, researching a complex topic over time, or running a long analysis. NEVER use for a simple question, a single web search, a location lookup, a weather check, a price check, or anything answerable in one or two tool calls. 'Is there a FedEx nearby?' is a web search, not a goal. Answer directly.",
             "parameters": {
                 "type": "object",
                 "properties": {

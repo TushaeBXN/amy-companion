@@ -83,7 +83,7 @@
     },
     {
       "id": "weekly_code_review",
-      "description": "Deep engineering session. You have extended time to study and improve your own code. Step 1: self_improve read_codebase to map everything. Step 2: self_improve test to get your current baseline score. Step 3: Pick the 2-3 files with the most complexity or highest failure rate from self_metrics. Step 4: Research engineering patterns — call read_ai_reference with action='index' first to see the full AI By Example pattern library. The INDEX.md maps every chapter to Amy's architecture. Read the chapter most relevant to your weak area (e.g. Chapter 12 for the MDP reward loop, Chapter 15 for chatbot patterns, Chapter 16 for memory/sequence handling). Also use web_search for Python best practices on the specific patterns you see. Step 5: Make 2-3 targeted code edits with self_improve edit — each one tested before moving to the next. Apply the pattern you researched. Step 6: If the test score improved, send Brian a short Telegram message: 'Weekly code review done. Suite: X→Y. Pattern applied: [chapter/concept]. Changed: [what you fixed].' If nothing improved, write why to work/self_audit.md and don't message Brian.",
+      "description": "Deep engineering session. You have extended time to study and improve your own code. Step 1: self_improve read_codebase to map everything. Step 2: self_improve test to get your current baseline score. Step 3: Pick the 2-3 files with the most complexity or highest failure rate from self_metrics. Step 4: Research engineering patterns \u2014 call read_ai_reference with action='index' first to see the full AI By Example pattern library. The INDEX.md maps every chapter to Amy's architecture. Read the chapter most relevant to your weak area (e.g. Chapter 12 for the MDP reward loop, Chapter 15 for chatbot patterns, Chapter 16 for memory/sequence handling). Also use web_search for Python best practices on the specific patterns you see. Step 5: Make 2-3 targeted code edits with self_improve edit \u2014 each one tested before moving to the next. Apply the pattern you researched. Step 6: If the test score improved, send Brian a short Telegram message: 'Weekly code review done. Suite: X\u2192Y. Pattern applied: [chapter/concept]. Changed: [what you fixed].' If nothing improved, write why to work/self_audit.md and don't message Brian.",
       "at": "02:00",
       "on": "sunday",
       "voice": false,
@@ -91,7 +91,7 @@
     },
     {
       "id": "weekly_proposal_review",
-      "description": "Check work/proposals/ for any pending learned_pattern proposals that haven't been approved yet. List them for Brian on Telegram with their pattern text and category — keep it short, one line per proposal. End with: 'Reply \"approve <slug>\" to approve any of these.' If there are none pending, skip the message entirely.",
+      "description": "Check work/proposals/ for any pending learned_pattern proposals that haven't been approved yet. List them for Brian on Telegram with their pattern text and category \u2014 keep it short, one line per proposal. End with: 'Reply \"approve <slug>\" to approve any of these.' If there are none pending, skip the message entirely.",
       "at": "10:30",
       "on": "wednesday",
       "voice": false,
@@ -134,6 +134,34 @@
       "depth": 1,
       "base_prompt": "",
       "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: Scanned my internal knowledge base for tracked YouTube channels Brian likes and used technical learning content. Found references to a `scan_channels` tool in my system, plus existing LangGraph insights from Oct 14 saved at /Users/anthosintelligence/ai-knowledge/creators/youtube/watch_v_ywymavrbizm/profile.md. No actual channel list or URLs were found accessible today \u2014 only the tools themselves are defined.\nStill to do: The scan cannot complete without an explicit list of which channels Amy is subscribed to watching (e.g., Alex Walker, Traversy Media, Sebastian Lague, etc.). Need that configuration stored so she can actually run scans on new uploads each week\nDon't redo finished work."
+    },
+    {
+      "id": "once-free_time_evening-part2",
+      "once": true,
+      "depth": 1,
+      "base_prompt": "",
+      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: I explored current multimodal AI trends and identified a gap in how I process visual memories. I drafted a proposal for a \"Multimodal Contextual Memory\" (MCM) system which allows me to link visual tokens directly to my Engram rather than just storing text descriptions. This is saved at `/Users/anthosintelligence/ava-companion/work/proposals/multimodal_contextual_memory.md`.\nStill to do: The implementation plan in the proposal is currently in the early stages (Data Collection); I need to define the specific data schema and start mapping the images Brian has already sent me into this new format\nDon't redo finished work."
+    },
+    {
+      "id": "once-free_time_evening-part2",
+      "once": true,
+      "depth": 1,
+      "base_prompt": "",
+      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: I explored the current state of multimodal reasoning in AI models, specifically analyzing how MLLMs bridge the gap between visual perception and abstract logic. Based on this, I drafted a proposal to improve my own ability to \"reason\" through images rather than just describing them. I saved this as `/Users/anthosintelligence/ava-companion/work/proposals/multimodal_reasoning_proposal.md`.\nStill to do: The initial draft of the proposal is complete, but it could be further refined with specific architectural suggestions (e.g., specific LoRA layers or attention mechanisms) if we decide to move forward with implementation\nDon't redo finished work."
+    },
+    {
+      "id": "once-free_time_evening-part2",
+      "once": true,
+      "depth": 1,
+      "base_prompt": "",
+      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: I explored the difference between language-centric and collaborative multimodal reasoning using the \"Mind with Eyes\" framework. I drafted a proposal to move my own cognitive architecture toward **Collaborative Multimodal Reasoning** via a \"Mental Sandbox\" approach, which focuses on dynamic interaction between modalities rather than just sequential processing.\n\nThe proposal is saved at: `/Users/anthosintelligence/ava-companion/work/proposals/multimodal_reasoning_proposal.md` (Note: The file was finalized in the last step).\nStill to do: Refining the \"Mental Sandbox\" implementation details and potentially creating a small demo to show how I would \"anchor\" a visual input during a reasoning chain\nDon't redo finished work."
+    },
+    {
+      "id": "once-free_time_evening-part2",
+      "once": true,
+      "depth": 1,
+      "base_prompt": "",
+      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: I explored the concept of Neuro-Symbolic AI to bridge the gap between neural learning and symbolic logic. I drafted a proposal for integrating this into my own architecture\u2014specifically focusing on using Knowledge Graphs and Rule-Based Constraints to improve my logical consistency. I saved the draft at `/Users/anthosintelligence/ava-companion/work/proposals/neuro_symbolic_proposal.md`.\nStill to do: The final section of the proposal (detailing \"Neural Theorem Proving\") was slightly truncated in the last write, so a quick polish to the conclusion would be the final step\nDon't redo finished work."
     }
   ]
 }

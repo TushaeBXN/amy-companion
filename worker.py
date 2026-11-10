@@ -1044,6 +1044,12 @@ def _run_goal(goal: dict):
         step_idx = 0
         if not plan:
             reason = goal.get("next_action") or "Planning call returned no steps."
+            if "skipped: chat message pending" in reason:
+                # Planning yielded to a chat message. Not a failure: plan again next heartbeat.
+                _goals._update(goal_id, next_action="")
+                print(f"  [worker] goal '{goal_id}' planning yielded to chat; will retry", flush=True)
+                _running.release()
+                return
             _goals.record_step_result(goal_id, 0, reason,
                                       next_action="Retry: check Ollama is running and model is loaded.",
                                       advance=False, observed=reason,

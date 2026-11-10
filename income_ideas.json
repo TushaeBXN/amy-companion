@@ -38,5 +38,15 @@
     "source": "thought",
     "ts": "2026-10-14T14:26:34.865451",
     "status": "open"
+  },
+  {
+    "title": "AI Prompt Optimization & Engineering (Fiverr)",
+    "platform": "Fiverr",
+    "rate_estimate": "$25\u2013$150/gig",
+    "description": "Providing high-quality, engineered prompts for diverse use cases (GPT-4o, Claude 3.5, etc.) including few-shot examples and chain-of-thought structures.",
+    "confidence": 8,
+    "source": "thought",
+    "ts": "2026-10-31T12:04:22.379364",
+    "status": "open"
   }
 ]

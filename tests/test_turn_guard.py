@@ -233,3 +233,29 @@ def test_the_chat_loop_pushes_her_from_announcing_to_doing(monkeypatch):
     reply = T._chat("chat: " + TASK, None)    # 'chat:' keeps it out of task mode, so the free-form loop runs
     assert ran == ["books"] and "Step one is done" in reply
     assert any("didn't do it" in m.get("content", "") for m in seen[1]["messages"] if m["role"] == "user")
+
+
+def test_a_plain_question_is_never_a_background_job():
+    assert G.is_just_a_question("If you were to change your own file amy_persona.py and wanted to be more "
+                                "autonomous and more human like, what would you do?")
+    assert G.is_just_a_question("is there a FedEx Kinkos to print in Greensboro?")
+    assert not G.is_just_a_question("Can you research the top 5 competitors and write a report?")
+    assert not G.is_just_a_question("build me a landing page for the audit service")
+    assert not G.is_just_a_question("What's the weather? Also please queue a task to research GPUs step by step.")
+    assert {"create_autonomous_goal", "task_push"} <= G.JOB_TOOLS
+
+
+def test_planning_that_yields_to_chat_does_not_block_the_goal(monkeypatch):
+    import worker as W
+    goal = {"goal_id": "g1", "objective": "Study the report", "plan": [], "current_step": 0, "status": "active"}
+    blocked, updates = [], {}
+    monkeypatch.setattr(W._goals, "get_goal", lambda gid: {**goal, **updates})
+    monkeypatch.setattr(W._goals, "_update", lambda gid, **f: updates.update(f))
+    monkeypatch.setattr(W._goals, "block_goal", lambda gid, reason="": blocked.append(reason))
+    monkeypatch.setattr(W._goals, "record_step_result", lambda *a, **k: blocked.append("recorded"))
+    monkeypatch.setattr(W, "_execute_goal_planning", lambda gid, g: updates.update(
+        next_action="planning exception: RuntimeError: skipped: chat message pending"))
+    W._run_goal(goal)
+    assert blocked == [] and updates.get("next_action") == ""
+    assert W._running.acquire(blocking=False)
+    W._running.release()
