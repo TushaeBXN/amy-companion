@@ -162,6 +162,13 @@
       "depth": 1,
       "base_prompt": "",
       "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: I explored the concept of Neuro-Symbolic AI to bridge the gap between neural learning and symbolic logic. I drafted a proposal for integrating this into my own architecture\u2014specifically focusing on using Knowledge Graphs and Rule-Based Constraints to improve my logical consistency. I saved the draft at `/Users/anthosintelligence/ava-companion/work/proposals/neuro_symbolic_proposal.md`.\nStill to do: The final section of the proposal (detailing \"Neural Theorem Proving\") was slightly truncated in the last write, so a quick polish to the conclusion would be the final step\nDon't redo finished work."
+    },
+    {
+      "id": "once-daily_self_audit-part2",
+      "once": true,
+      "depth": 1,
+      "base_prompt": "",
+      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: - Executed self_metrics(action='get_soft_spots') \u2014 retrieved real failure/latency data instead of assumptions.\n- Executed self_improve(action='read_codebase') \u2014 got structured map of all .py files in the runtime path.\n- Read core code with read_file: amy_server.py, companion.py, state.py, and memory.py (multiple passes). Mapped how goals are stored in SQLite via Memory.goals_summary() but lack lifecycle/timeout logic or session-aware status transitions.\nStill to do: - For each soft spot flagged by self_metrics, open the exact source file with read_file and pinpoint missing behavior/edge cases.\n- Use read_ai_reference(action='index') to pull the AI By Example chapter matching that weak area; cross-check with search_books/web_search for proven Python patterns (e.g., idempotent state transitions, circuit-breaker goals).\n- Select one concrete improvement, validate blast radius via self_improve(action='impact'), baseline test via action='test', apply it via action='edit'.\n- Codify a behavioral rule with self_improve(action='learn') and write findings to work/self_audit.md\nDon't redo finished work."
     }
   ]
 }

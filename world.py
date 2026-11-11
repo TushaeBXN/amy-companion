@@ -25,7 +25,8 @@ REFLECT_DIR  = os.path.join(WORLD_DIR, "reflections")
 MANIFEST     = os.path.join(WORLD_DIR, ".world_manifest.json")
 MAX_AGE      = 3600   # seconds — don't re-fetch an area more often than 1 hour
 REFLECT_AGE  = 7200   # seconds — don't reflect more often than 2 hours
-MAX_ITEMS    = 5      # items per area stored in the summary file
+MAX_ITEMS    = 5      # items fetched per area
+MAX_KEEP     = 10     # newest items kept per area file; a story is never written twice
 SNIPPET_N    = 3      # bullet items shown per area in context_snippet()
 
 
@@ -195,6 +196,21 @@ def _save_manifest(m: dict) -> None:
 
 # ── file writer ────────────────────────────────────────────────────────────────
 
+def _read_items(name: str) -> list[dict]:
+    """The items currently in an area file, newest first."""
+    items: list[dict] = []
+    try:
+        lines = open(os.path.join(WORLD_DIR, f"{name}.md")).read().splitlines()
+    except OSError:
+        return items
+    for line in lines:
+        line = line.strip()
+        m = re.match(r"^- \[(.+)\]\((.*)\)$", line) or re.match(r"^- (.+)$", line)
+        if m:
+            items.append({"title": m.group(1), "url": m.group(2) if m.lastindex == 2 else ""})
+    return items
+
+
 def _write_area(name: str, label: str, items: list[dict]) -> None:
     """Overwrite ~/ai-knowledge/world/{name}.md — knowledge_watcher picks it up."""
     os.makedirs(WORLD_DIR, exist_ok=True)
@@ -222,28 +238,15 @@ def _latest_reflection() -> str | None:
     return os.path.join(REFLECT_DIR, candidates[0]) if candidates else None
 
 
-def _reflect(manifest: dict) -> None:
-    """Call Ollama to have Amy think about what she just read.
+def _reflect(manifest: dict, headlines: list[str]) -> None:
+    """Call Ollama to have Amy think about the headlines that are new since last time.
 
-    Runs at most every REFLECT_AGE seconds. Appends a timestamped block to
-    ~/ai-knowledge/world/reflections/YYYY-MM-DD.md so thoughts accumulate.
+    Runs at most every REFLECT_AGE seconds, and only on stories she hasn't read before.
+    Appends a timestamped block to ~/ai-knowledge/world/reflections/YYYY-MM-DD.md.
     """
     last_reflect = manifest.get("_last_reflect", 0)
     if time.time() - last_reflect < REFLECT_AGE:
         return
-
-    # Gather headlines from all area files
-    headlines: list[str] = []
-    for area in AREAS:
-        path = os.path.join(WORLD_DIR, f"{area['name']}.md")
-        try:
-            for line in open(path).read().splitlines():
-                if line.strip().startswith("- "):
-                    title = re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', line.strip()[2:]).strip()
-                    if title:
-                        headlines.append(f"[{area['label']}] {title}")
-        except Exception:
-            continue
 
     if len(headlines) < 3:
         return
@@ -267,6 +270,7 @@ def _reflect(manifest: dict) -> None:
         resp = heavy_job.call(_ollama.chat,
             model=model,
             messages=[{"role": "user", "content": prompt}],
+            think=False,
             options={"num_predict": 220},
         )
         reflection = (resp.get("message") or {}).get("content", "").strip()
@@ -298,6 +302,9 @@ class WorldObserver:
         now = time.time()
         manifest = _load_manifest()
         fetched = skipped = 0
+        fresh: list[str] = []   # headlines that are new this round, for her reflection
+        # a story already logged in any area counts as read, so it is not logged again under another
+        known = {h for v in manifest.values() if isinstance(v, dict) for h in v.get("seen", [])}
 
         for area in AREAS:
             name = area["name"]
@@ -316,20 +323,29 @@ class WorldObserver:
                 print(f"  [world] {name}: no items returned", flush=True)
                 continue
 
-            seen = set(manifest.get(name, {}).get("seen", []))
-            new_count = sum(1 for i in items if _item_hash(i) not in seen)
+            seen = list(manifest.get(name, {}).get("seen", []))
+            new_items: list[dict] = []
+            for i in items:
+                h = _item_hash(i)
+                if h not in known:
+                    known.add(h)
+                    seen.append(h)
+                    new_items.append(i)
 
-            _write_area(name, area["label"], items)
+            manifest[name] = {"last_fetch": now, "seen": seen}
+            if not new_items:
+                print(f"  [world] {name}: nothing new, not logged", flush=True)
+                continue
 
-            manifest[name] = {
-                "last_fetch": now,
-                "seen": list(seen | {_item_hash(i) for i in items}),
-            }
+            fresh_hashes = {_item_hash(n) for n in new_items}
+            kept = new_items + [o for o in _read_items(name) if _item_hash(o) not in fresh_hashes]
+            _write_area(name, area["label"], kept[:MAX_KEEP])
+            fresh.extend(f"[{area['label']}] {i['title']}" for i in new_items)
             fetched += 1
-            print(f"  [world] {name}: wrote {len(items)} items ({new_count} new)", flush=True)
+            print(f"  [world] {name}: logged {len(new_items)} new of {len(items)}", flush=True)
 
-        if fetched:
-            _reflect(manifest)
+        if fresh:
+            _reflect(manifest, fresh)
         _save_manifest(manifest)
         return fetched, skipped
 
