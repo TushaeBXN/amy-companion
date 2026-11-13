@@ -31,6 +31,7 @@ from memory import Memory
 import state as _state
 import tools
 import turn_guard as _turn_guard
+import tool_select as _tool_select
 from thoughts import ThoughtBuffer
 import worker
 import guest_docs
@@ -524,8 +525,12 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
     who     = person["name"]
     # Condition A: bare baseline — no tools, no memory writes.
     _bare = is_owner and _cond.CONDITION == "A"
-    tool_list = [] if _bare else (tools.chat_tools() if is_owner else [
+    tool_list = [] if _bare else (_tool_select.select(
+        tools.chat_tools(), user_text,
+        [m.get("content", "") for m in history[-8:] if isinstance(m, dict) and m.get("role") == "user"]
+        if is_owner else []) if is_owner else [
         t for t in tools.TOOLS if t["function"]["name"] in GUEST_TOOLS])
+    _offered0 = {t["function"]["name"] for t in tool_list}   # what she was shown at the start of this turn
     # If a photo was sent, describe it first then fold the description into the message
     if image_bytes:
         print("  [vision] describing Telegram photo...")
@@ -726,6 +731,11 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
                 # she turns a menu option into a tool name; run it as the memory tool call it means
                 name, args = "engram_memory", {"action": name, **args}
             key  = (name, tuple(sorted((k, str(v)) for k, v in args.items()) if isinstance(args, dict) else ()))
+            if is_owner and not _bare and name in _declared and name not in _offered0 \
+                    and not any(t["function"]["name"] == name for t in tool_list):
+                # A real tool the selector left out: it still runs, and she keeps it for the next hop.
+                tool_list += [t for t in tools.chat_tools() if t["function"]["name"] == name]
+                _offered0.add(name)
             if name not in _declared:
                 result = _turn_guard.not_a_tool(name, _declared)
                 _wasted += 1
