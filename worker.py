@@ -465,12 +465,44 @@ def ollama_chat(_priority: str = "worker", **kw):
         return _ollama_chat(_priority, **kw)
 
 
+class _YieldToBrian(RuntimeError):
+    pass
+
+
+def _chat_yielding_to_brian(kw):
+    """A background call that stops as soon as Brian's message arrives.
+
+    Ollama serves one request at a time and can't unload a model mid-request, so a background step that had
+    already started made his reply wait for the whole step (171 s for an 8-token answer). Streaming lets us
+    drop the connection, which stops the generation; the task retries on a later heartbeat."""
+    started = time.time()
+    stream = ollama.chat(**{**kw, "stream": True})
+    content, thinking, calls, last = [], [], [], None
+    try:
+        for chunk in stream:
+            m = chunk["message"]
+            content.append(m.get("content") or "")
+            thinking.append(m.get("thinking") or "")
+            calls.extend(m.get("tool_calls") or [])
+            last = chunk
+            if _chat_pending.is_set() or _last_user > started:
+                raise _YieldToBrian("skipped: chat message pending")
+    finally:
+        close = getattr(stream, "close", None)
+        if close:
+            close()
+    if last is None:
+        raise RuntimeError("ollama returned no response")
+    msg = last["message"].model_copy(update={
+        "content": "".join(content), "thinking": "".join(thinking) or None, "tool_calls": calls or None})
+    return last.model_copy(update={"message": msg})
+
+
 def _ollama_chat(_priority: str = "worker", **kw):
     """Run ollama.chat in a dedicated thread so Ctrl+C always works.
 
     _priority="chat"   — uses the chat executor; sets _chat_pending so worker
-                         tasks know to skip their next Ollama call. Evicts only
-                         if a worker task is actively running (_running locked).
+                         tasks skip their next Ollama call and stop the one in flight.
     _priority="worker" — uses the worker executor; skips immediately if a chat
                          message is pending (Brian wins every time).
     """
@@ -478,12 +510,6 @@ def _ollama_chat(_priority: str = "worker", **kw):
         _chat_pending.set()
         executor = _chat_executor
         timeout  = _CHAT_TIMEOUT
-        # Only evict if a background task is actually running — avoids cold-reloading
-        # the model on every chat message when nothing is happening in the background.
-        if not _running.acquire(blocking=False):
-            threading.Thread(target=_evict_worker_model, daemon=True).start()
-        else:
-            _running.release()
     else:
         if _chat_pending.is_set():
             raise RuntimeError("skipped: chat message pending")
@@ -496,6 +522,8 @@ def _ollama_chat(_priority: str = "worker", **kw):
             opts.setdefault("flash_attn", True)
             kw["options"] = opts
         try:
+            if _priority == "worker" and not kw.get("stream"):
+                return _chat_yielding_to_brian(kw)
             return ollama.chat(**kw)
         except (TypeError, ollama.ResponseError) as e:
             # a model or SDK that doesn't know the 'think' option: ask again without it

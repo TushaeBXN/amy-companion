@@ -5,6 +5,12 @@ import pytest
 import worker as W
 
 
+def _as_ollama_does(kw, resp):
+    """Background calls stream; a stream is chunks of the same shape ending in the full message."""
+    return iter([ollama.ChatResponse(model="m", done=True, message=ollama.Message(
+        role="assistant", content=resp["message"]["content"]))]) if kw.get("stream") else resp
+
+
 class Spy:
     def __init__(self, fail_think=False):
         self.calls, self.fail_think = [], fail_think
@@ -13,7 +19,7 @@ class Spy:
         self.calls.append(dict(kw))
         if self.fail_think and "think" in kw:
             raise ollama.ResponseError("model does not support thinking")
-        return {"message": {"content": "ok"}}
+        return _as_ollama_does(kw, {"message": {"content": "ok"}})
 
 
 def test_thinking_is_off_unless_asked(monkeypatch):
@@ -44,8 +50,8 @@ def test_planning_works_when_the_model_only_answers_with_thinking_off(monkeypatc
     """A fake model that, like Gemma, returns nothing when thinking is on and its 600 tokens are used up."""
     def fake(**kw):
         if kw.get("think") is not False:
-            return {"message": {"content": ""}}
-        return {"message": {"content": "1. Open the report\n2. Read the first section\n3. Try step one\n4. Write what worked"}}
+            return _as_ollama_does(kw, {"message": {"content": ""}})
+        return _as_ollama_does(kw, {"message": {"content": "1. Open the report\n2. Read the first section\n3. Try step one\n4. Write what worked"}})
     monkeypatch.setattr(W.ollama, "chat", fake)
     monkeypatch.setattr(W, "_memory", None)
     updates = {}

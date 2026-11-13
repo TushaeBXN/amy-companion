@@ -259,3 +259,11 @@ def test_planning_that_yields_to_chat_does_not_block_the_goal(monkeypatch):
     assert blocked == [] and updates.get("next_action") == ""
     assert W._running.acquire(blocking=False)
     W._running.release()
+
+
+def test_chatty_next_questions_do_not_count_as_asking_to_continue_a_job():
+    from turn_guard import asks_to_continue
+    for chat in ("What's the next test?", "What's next?", "Fair enough. What's the next thing you want to check?"):
+        assert not asks_to_continue(chat)
+    for work in ("Want me to keep going?", "Should I continue with the plan?", "Ready to move on to the next step?"):
+        assert asks_to_continue(work)

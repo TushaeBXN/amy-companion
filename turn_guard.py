@@ -83,7 +83,9 @@ _CONTINUE_WORD = re.compile(r"^\s*(?:yes|yeah|yep|ok(?:ay)?|sure|go(?: on| ahead
                             r"proceed|and don'?t stop|yes and don'?t stop|please do)\W*$", re.I)
 _ASKS_TO_CONTINUE = re.compile(r"(?:want me to|should i|shall i|would you like me to|do you want me to)\s+"
                                r"(?:keep going|continue|move on|proceed|go on|carry on|start|begin|dive)|"
-                               r"\bkeep going\?|\bnext\b[^.?!]{0,60}\?\s*$", re.I)
+                               r"\bkeep going\?|"
+                               # "What's the next test?" is chat; only work phrasing like "on to the next step?" counts
+                               r"(?:on to|move (?:on )?to|continue (?:to|with)|do|take|start)\s+the next\b[^.?!]{0,60}\?\s*$", re.I)
 SUBSTANTIAL = 60          # characters: a real request, not "yes"
 
 
