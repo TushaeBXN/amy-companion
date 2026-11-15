@@ -111,3 +111,11 @@ def test_a_guest_message_marks_her_busy_but_does_not_reset_brians_idle_clock(mon
     monkeypatch.setattr(T, "_chat_turn", lambda *a, **k: "ok")
     T._chat("hi", person={"name": "Sam", "role": "guest"})
     assert T.amy_state.seconds_idle() > 800
+
+
+def test_only_the_reflective_prompts_get_the_hold_it_open_stance():
+    for i, p in enumerate(TH._THOUGHT_PROMPTS):
+        assert (TH._STANCE in p) == (i in TH._REFLECTIVE)
+    # the concrete-knowledge and decision prompts must stay plain: hedging there is what went wrong in testing
+    assert "Freqtrade" in TH._THOUGHT_PROMPTS[2] and TH._STANCE not in TH._THOUGHT_PROMPTS[2]
+    assert "Output the thought only." in TH._THOUGHT_PROMPTS[0]

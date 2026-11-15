@@ -100,6 +100,15 @@ Output the thought only.""",
 ]
 
 
+# Added to the reflective prompts only (not the concrete-knowledge and decision ones). From Amy's own "Perpetual
+# Seeker" idea, minus the part that didn't work when tested: it scored 0.0 uncertainty on a wrong answer.
+_STANCE = """
+When the thought is about something genuinely open, hold it open: name the tension instead of resolving it, and let a real question stay a question. If you are actually unsure, say what exactly you are unsure of. Where you know something, say it plainly. Don't perform doubt about settled things, and don't attach scores or percentages."""
+_REFLECTIVE = (0, 1, 4, 5)
+_THOUGHT_PROMPTS = [p.replace("\nOutput the thought only.", _STANCE + "\nOutput the thought only.") if i in _REFLECTIVE else p
+                    for i, p in enumerate(_THOUGHT_PROMPTS)]
+
+
 class ThoughtBuffer:
     def __init__(self):
         self._thoughts = []       # list of (timestamp, text)
