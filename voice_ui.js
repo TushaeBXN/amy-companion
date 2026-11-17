@@ -74,7 +74,8 @@
     proc.connect(ctx.destination);   // must be connected for the callback to run; output is silent
     on = true;
     preRoll = []; seg = null; loudRun = 0;
-    setState("listening");
+    setState("listening", "(warming up…)");
+    fetch("/voice/warm", { method: "POST" }).then(() => { if (on && state === "listening") setState("listening"); }).catch(() => {});
     appendSys("🎙 Talk mode on. Just speak; talk over her any time to interrupt.");
   }
 

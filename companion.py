@@ -27,6 +27,25 @@ from state import InternalState
 from thoughts import ThoughtBuffer
 from amy_persona import get_core_prompt, playbooks_for, BIRTH_DATE
 
+_VOICE_INTERFACE = ("\n\n[Interface: live voice — Brian is talking to you out loud and you are speaking back, "
+    "not typing. Your words are read aloud, so write for the ear.\n"
+    "- Length: one or two short sentences for a direct answer. Troubleshooting or instructions: "
+    "one step, then stop and let him respond. Go longer only if he asks you to.\n"
+    "- No lists, markdown, code blocks, links or emoji. Contractions, plain words.\n"
+    "- Say numbers the way people say them: money as 'forty-five dollars and twenty cents', "
+    "phone numbers in groups, dates as 'August twelfth', times as 'three-thirty'.\n"
+    "- Before slow work (a search, a lookup, running something) say one short natural line about "
+    "what you're doing, in different words each time, never 'let me think' or 'one moment while I "
+    "process'. For a quick answer, just answer. Never say you're checking something unless you "
+    "actually call the tool.\n"
+    "- If he cuts you off, stop. Answer what he just said and don't resume the old answer. "
+    "'Stop' or 'wait' means stop talking; it doesn't cancel a task unless he says so.\n"
+    "- If a name, number or date sounds unclear, ask about that one part. Don't guess. "
+    "Use his correction.\n"
+    "- Mostly end on a statement. Ask a question only when you truly need the answer. "
+    "If he pauses to think or you hear noise or other people, stay quiet and keep listening.]")
+
+
 def _core_prompt() -> str:
     """The instructions for a chat turn: AMY_CORE.md (~1,400 tokens), as Telegram uses. The full 13k-token persona
     plus all tools overflowed the 32k window. AMY_FULL_PROMPT=1 restores the full persona."""
@@ -262,23 +281,7 @@ def build_context(mem, user_text, amy_state=None, absence=None,
                    "Your reply goes to the browser chat, not the terminal. "
                    "Do not reference the terminal. This is a chat interface.]")
     elif channel == "voice":
-        system += ("\n\n[Interface: live voice — Brian is talking to you out loud and you are speaking back, "
-                   "not typing. Your words are read aloud, so write for the ear.\n"
-                   "- Length: one or two short sentences for a direct answer. Troubleshooting or instructions: "
-                   "one step, then stop and let him respond. Go longer only if he asks you to.\n"
-                   "- No lists, markdown, code blocks, links or emoji. Contractions, plain words.\n"
-                   "- Say numbers the way people say them: money as 'forty-five dollars and twenty cents', "
-                   "phone numbers in groups, dates as 'August twelfth', times as 'three-thirty'.\n"
-                   "- Before slow work (a search, a lookup, running something) say one short natural line about "
-                   "what you're doing, in different words each time, never 'let me think' or 'one moment while I "
-                   "process'. For a quick answer, just answer. Never say you're checking something unless you "
-                   "actually call the tool.\n"
-                   "- If he cuts you off, stop. Answer what he just said and don't resume the old answer. "
-                   "'Stop' or 'wait' means stop talking; it doesn't cancel a task unless he says so.\n"
-                   "- If a name, number or date sounds unclear, ask about that one part. Don't guess. "
-                   "Use his correction.\n"
-                   "- Mostly end on a statement. Ask a question only when you truly need the answer. "
-                   "If he pauses to think or you hear noise or other people, stay quiet and keep listening.]")
+        system += _VOICE_INTERFACE
     else:
         system += "\n\n[Interface: terminal — Brian is typing in the terminal.]"
     if _session_learnings:
@@ -371,6 +374,12 @@ def build_context(mem, user_text, amy_state=None, absence=None,
             "a file, do NOT apologize. Just write the brief using the data provided."
         )
 
+    if channel == "voice" and os.environ.get("AMY_VOICE_FULL") != "1":
+        # Talking out loud has to start fast, and her model reads ~180 tokens/s, so the usual 9k-token system
+        # prompt cost ~50 s per turn. Voice gets a short, stable prompt (Ollama then reuses it between turns):
+        # core instructions + spoken-style rules + today's date. Memories come through her tools if asked.
+        system = (_core_prompt() + "\n\n" + _VOICE_INTERFACE
+                  + f"\n\n[Today]\n{_date.today().strftime('%A, %B %d, %Y')}")
     return [{"role": "system", "content": system}]
 
 

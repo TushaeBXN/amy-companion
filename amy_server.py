@@ -347,6 +347,22 @@ async def heard(req: HeardRequest):
     return JSONResponse({"ok": True})
 
 
+@app.post("/voice/warm")
+async def voice_warm():
+    """Pre-read the voice prompt so Brian's first spoken turn doesn't pay for it (~20 s cold, ~3 s warm)."""
+    def _run():
+        import ollama
+        msgs = companion.build_context(_mem, "hello", _amy_state, channel="voice") + [{"role": "user", "content": "hello"}]
+        ollama.chat(model=companion.MODEL, messages=msgs, tools=companion._chat_tools(msgs),
+                    keep_alive=companion.KEEP_ALIVE, think=False,
+                    options={"num_ctx": companion.CTX_WINDOW, "num_predict": 1})
+    try:
+        await asyncio.get_event_loop().run_in_executor(None, _run)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)})
+    return JSONResponse({"ok": True})
+
+
 @app.post("/interrupt")
 async def interrupt():
     """Signal the current stream to stop early."""
