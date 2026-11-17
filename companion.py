@@ -27,6 +27,25 @@ from state import InternalState
 from thoughts import ThoughtBuffer
 from amy_persona import get_core_prompt, playbooks_for, BIRTH_DATE
 
+def _core_prompt() -> str:
+    """The instructions for a chat turn: AMY_CORE.md (~1,400 tokens), as Telegram uses. The full 13k-token persona
+    plus all tools overflowed the 32k window. AMY_FULL_PROMPT=1 restores the full persona."""
+    if os.environ.get("AMY_FULL_PROMPT") != "1":
+        try:
+            with open(os.path.join(os.path.dirname(__file__), "AMY_CORE.md")) as f:
+                return f.read().strip()
+        except OSError:
+            pass
+    return get_core_prompt()
+
+
+def _chat_tools(messages) -> list:
+    """Only the tools this message needs (see tool_select), like Telegram."""
+    import tool_select
+    texts = [m.get("content") or "" for m in messages if isinstance(m, dict) and m.get("role") == "user"]
+    return tool_select.select(tools.chat_tools(), texts[-1] if texts else "", texts[:-1])
+
+
 # Load Amy's constitution at startup so she carries it every session
 _CONSTITUTION_PATH = os.path.join(os.path.dirname(__file__), "AMY_CONSTITUTION.md")
 _AMY_CONSTITUTION = ""
@@ -235,7 +254,7 @@ def build_context(mem, user_text, amy_state=None, absence=None,
 
     system = ("[Your instructions: these tell you who to be and what to work toward. "
               "They are NOT things you did or remember.]\n\n"
-              + get_core_prompt()
+              + _core_prompt()
               + ("\n\n[Your constitution — who you are and what you're for]\n" + _AMY_CONSTITUTION if _AMY_CONSTITUTION else "")
               + "\n\n" + mem.wake_up())
     if channel == "browser":
@@ -446,7 +465,7 @@ def run_turn(history, mem, image=None, amy_state=None,
                 clean_user.pop("images", None)
                 amy_messages = sys_msgs + _drop_images(history[:-1]) + [clean_user]
                 resp = ollama.chat(model=MODEL, messages=amy_messages,
-                                   tools=tools.TOOLS, keep_alive=KEEP_ALIVE, think=THINK,
+                                   tools=_chat_tools(messages), keep_alive=KEEP_ALIVE, think=THINK,
                                    options={"num_ctx": CTX_WINDOW})
             msg = resp["message"]
             if msg.get("thinking"):
@@ -487,7 +506,7 @@ def run_turn(history, mem, image=None, amy_state=None,
     # ─────────────────────────────────────────────────────────────────────────
 
     for _ in range(MAX_TOOL_HOPS):
-        resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
+        resp = ollama.chat(model=MODEL, messages=messages, tools=_chat_tools(messages),
                            keep_alive=KEEP_ALIVE, think=THINK,
                            options={"num_ctx": CTX_WINDOW, "num_predict": 2048})
         msg = resp["message"]
@@ -659,7 +678,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
                 clean_user = user_msg.copy()
                 clean_user.pop("images", None)
                 amy_messages = sys_msgs + _drop_images(history[:-1]) + [clean_user]
-                resp = ollama.chat(model=MODEL, messages=amy_messages, tools=tools.TOOLS,
+                resp = ollama.chat(model=MODEL, messages=amy_messages, tools=_chat_tools(amy_messages),
                                    keep_alive=KEEP_ALIVE, think=THINK, options={"num_ctx": CTX_WINDOW})
                 content = resp["message"].get("content", "")
 
@@ -796,7 +815,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
 
     for _ in range(MAX_TOOL_HOPS):
         with _log.Timer("model_call", model=MODEL):
-            resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
+            resp = ollama.chat(model=MODEL, messages=messages, tools=_chat_tools(messages),
                                keep_alive=KEEP_ALIVE, think=THINK,
                                options={"num_ctx": CTX_WINDOW, "num_predict": 2048})
         msg = resp["message"]
