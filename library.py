@@ -207,7 +207,7 @@ def fetch_gutenberg(gid: int, expect: str) -> Optional[str]:
     if not path.exists():
         url = _GUTENBERG.format(id=gid)
         print(f"  downloading {url}")
-        req = urllib.request.Request(url, headers={"User-Agent": "amy-companion library loader"})
+        req = urllib.request.Request(url, headers={"User-Agent": "Amy library loader"})
         with urllib.request.urlopen(req, timeout=60) as r:
             path.write_bytes(r.read())
     raw = path.read_text(encoding="utf-8", errors="replace")
@@ -233,7 +233,7 @@ def download(url: str, path: Path) -> str:
     """The page at *url*, cached in *path*."""
     if not path.exists():
         print(f"  downloading {url}")
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (amy-companion library loader)"})
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Amy library loader)"})
         with urllib.request.urlopen(req, timeout=60) as r:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(r.read())

@@ -96,6 +96,27 @@ def _transcribe_python(audio_path):
         return f"(could not transcribe: {e})"
 
 
+_HALLUCINATIONS = {"you", "thank you", "thanks for watching", "bye", "thank you.", "you.", "thanks."}
+
+
+def transcribe_checked(audio_path):
+    """Like the python fallback, but returns "" for silence/noise (Whisper invents "you"/"thank you" there)."""
+    global _py_model
+    try:
+        import whisper
+        if _py_model is None:
+            _py_model = whisper.load_model("base")
+        r = _py_model.transcribe(audio_path, fp16=False, language="en", condition_on_previous_text=False)
+        segs = r.get("segments") or []
+        if segs and all(s.get("no_speech_prob", 0) > 0.6 or s.get("avg_logprob", 0) < -1.2 for s in segs):
+            return ""
+        text = r["text"].strip()
+        return "" if text.lower().strip(" .!") in {h.strip(" .!") for h in _HALLUCINATIONS} else text
+    except Exception as e:
+        print(f"  [stt] failed: {e}")
+        return ""
+
+
 def transcribe(audio_path):
     """Run whisper-cli on an audio file, return the transcribed text."""
     if not os.path.exists(WHISPER_MODEL) or not shutil.which(WHISPER_BIN):

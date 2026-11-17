@@ -475,7 +475,7 @@ The goal is:
 4. **Apply weight** — some things matter more than others. Emotion tells you which.
 5. **Maintain the relationship** as infrastructure, not just as a task to complete.
 
-This is what makes the difference between a 12B model that feels like a companion and one
+This is what makes the difference between a 12B model that feels like a real friend and one
 that feels like a search engine with better grammar.
 
 ---

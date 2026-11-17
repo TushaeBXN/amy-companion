@@ -23,7 +23,7 @@ import uvicorn
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-# ── companion imports ─────────────────────────────────────────────────────────
+# ── terminal-client imports ─────────────────────────────────────────────────────────
 import companion
 from companion import run_turn, run_turn_streaming, start_spontaneous_thread, HISTORY_WINDOW
 from memory import Memory
@@ -32,7 +32,7 @@ from thoughts import ThoughtBuffer
 import learnings as _learnings
 import vision
 
-# ── global state (mirrors terminal companion) ─────────────────────────────────
+# ── global state (mirrors the terminal client) ─────────────────────────────────
 _mem = Memory()
 _amy_state = InternalState.restore()
 _amy_state.busy = False   # reset any stuck busy flag from a previous crashed session
@@ -94,7 +94,7 @@ def _save_shared_history(history: list):
 
 _history = _load_shared_history()
 
-# Inject learnings into companion's module-level var so build_context picks it up
+# Inject learnings into the terminal client's module-level var so build_context picks it up
 companion._session_learnings = _learnings.load_recent_learnings()
 
 # Background threads re-enabled for Apple Silicon (M4 Mac Mini).
@@ -116,6 +116,7 @@ app.mount("/static", StaticFiles(directory=HERE), name="static")
 class ChatRequest(BaseModel):
     message: str
     image_b64: str | None = None   # optional webcam/upload frame (base64 JPEG)
+    voice: bool = False            # Talk mode: write for the ear (see companion.build_context "voice")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -224,7 +225,7 @@ async def chat_stream(req: ChatRequest):
                 amy_state=_amy_state,
                 absence=absence,
                 pending_thoughts=pending_thoughts,
-                channel="browser",
+                channel="voice" if req.voice else "browser",
             ):
                 if _interrupt_flag.is_set():
                     event_q.put({"type": "interrupted"})
@@ -263,6 +264,87 @@ async def chat_stream(req: ChatRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── Talk mode (headset conversation): speech in, speech out ───────────────────
+_stt_lock = threading.Lock()
+
+
+class TTSRequest(BaseModel):
+    text: str
+
+
+class HeardRequest(BaseModel):
+    text: str
+
+
+@app.post("/stt")
+async def stt(request: Request):
+    """Transcribe a 16 kHz mono WAV recorded in the browser. Returns {"text": ""} for silence/noise."""
+    data = await request.body()
+    if len(data) < 2000:
+        return JSONResponse({"text": ""})
+
+    def _run():
+        import hearing
+        path = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+        try:
+            with open(path, "wb") as f:
+                f.write(data)
+            with _stt_lock:
+                return hearing.transcribe_checked(path)
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+    loop = asyncio.get_event_loop()
+    text = await loop.run_in_executor(None, _run)
+    return JSONResponse({"text": text})
+
+
+@app.post("/tts")
+async def tts(req: TTSRequest):
+    """Speak one sentence: returns WAV audio (Piper if installed, else the Mac's voice)."""
+    import subprocess
+    import voice as _voice
+
+    def _run():
+        src = _voice._synthesize_wav(req.text)
+        if not src:
+            return None
+        out = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+        try:
+            subprocess.run(["ffmpeg", "-y", "-loglevel", "quiet", "-i", src, "-ar", "22050", "-ac", "1", out],
+                           check=True, timeout=30)
+            with open(out, "rb") as f:
+                return f.read()
+        finally:
+            for p in (src, out):
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
+
+    loop = asyncio.get_event_loop()
+    audio = await loop.run_in_executor(None, _run)
+    if not audio:
+        return JSONResponse({"error": "tts failed"}, status_code=500)
+    from fastapi.responses import Response
+    return Response(content=audio, media_type="audio/wav")
+
+
+@app.post("/heard")
+async def heard(req: HeardRequest):
+    """Brian talked over her: keep only what he actually heard of her last reply."""
+    async with _lock:
+        for m in reversed(_history):
+            if isinstance(m, dict) and m.get("role") == "assistant" and m.get("content"):
+                m["content"] = (req.text.strip() + " [interrupted]").strip()
+                break
+        _save_shared_history(_history)
+    return JSONResponse({"ok": True})
 
 
 @app.post("/interrupt")
@@ -1748,6 +1830,7 @@ fetch("/primer").then(r => r.json()).then(d => appendAmy(d.text));
 // Focus input on load
 input.focus();
 </script>
+<script src="/static/voice_ui.js"></script>
 </body>
 </html>"""
 
