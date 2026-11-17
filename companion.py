@@ -523,7 +523,10 @@ def run_turn(history, mem, image=None, amy_state=None,
     if msg.get("content"):
         clean = _strip_trailers(msg["content"])
         msg["content"] = clean
-        voice.speak_streamed(clean, interruptible=(channel == "voice"))
+        _cut = voice.speak_streamed(clean, interruptible=(channel == "voice"))
+        if _cut:   # Brian talked over her: keep only what he actually heard
+            clean = (voice.last_spoken.strip() + " [interrupted]").strip()
+            msg["content"] = clean
         mem.add("assistant", clean)
         _reply_text = clean
     if amy_state:

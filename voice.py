@@ -122,6 +122,9 @@ def speak(text, emotion="neutral"):
 _SENTENCE_RE = re.compile(r'(?<=[.!?])\s+')
 
 
+last_spoken = ""   # the part of the last speak_streamed() reply that actually played before any interruption
+
+
 def speak_streamed(text, emotion="neutral", interruptible=False):
     """Pipelined TTS: synthesize next sentence while current one plays.
 
@@ -132,6 +135,8 @@ def speak_streamed(text, emotion="neutral", interruptible=False):
     cuts it short the moment the user starts talking (barge-in). Returns
     True if playback was interrupted, False otherwise.
     """
+    global last_spoken
+    last_spoken = text or ""
     if not text:
         return False
     print(f"\nAmy ({emotion}): {text}")
@@ -157,7 +162,10 @@ def speak_streamed(text, emotion="neutral", interruptible=False):
         if len(sentences) <= 1:
             # Single sentence — no pipeline benefit, just synthesize and play
             try:
-                return _play(_synthesize_wav(text))
+                cut = _play(_synthesize_wav(text))
+                if cut:
+                    last_spoken = ""
+                return cut
             except Exception as e:
                 print(f"  [voice] tts failed: {e}")
                 return False
@@ -175,6 +183,7 @@ def speak_streamed(text, emotion="neutral", interruptible=False):
         synth_thread.start()
 
         interrupted = False
+        played = 0
         while True:
             wav = wav_queue.get()
             if wav is None:
@@ -182,7 +191,9 @@ def speak_streamed(text, emotion="neutral", interruptible=False):
             try:
                 if _play(wav):
                     interrupted = True
+                    last_spoken = " ".join(sentences[:played])
                     break
+                played += 1
             except Exception as e:
                 print(f"  [voice] playback failed: {e}")
 
