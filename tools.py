@@ -88,6 +88,131 @@ def _tool_call(name: str, fn, *args, **kwargs):
     print(f"  [tools] {name} failed permanently: {reason}", flush=True)
     return f"[tool_error] {name}: {reason}"
 
+_BODY_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "body_pose",
+            "description": (
+                "Command a full-body standing or sitting posture on the physical robot. "
+                "Use to match your internal state — balance for thinking, attention when focused, "
+                "bow to greet, damp to safely rest joints. "
+                "Valid poses: stand, stand_high, stand_low, balance, attention, sit, crouch, bow, damp, zero_torque."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pose": {
+                        "type": "string",
+                        "enum": [
+                            "stand", "stand_high", "stand_low",
+                            "balance", "attention", "sit",
+                            "crouch", "bow", "damp", "zero_torque",
+                        ],
+                        "description": "Target posture.",
+                    },
+                },
+                "required": ["pose"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "body_gesture",
+            "description": (
+                "Execute a one-shot physical gesture — wave, handshake, stretch, nod, or shake_head. "
+                "Use naturally in conversation (wave hello/goodbye, nod agreement, etc.). "
+                "Gesture runs and control returns; it does not block the conversation."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "gesture": {
+                        "type": "string",
+                        "enum": [
+                            "wave_right", "wave_left",
+                            "handshake_right", "handshake_left",
+                            "stretch", "nod", "shake_head",
+                        ],
+                        "description": "Which gesture to perform.",
+                    },
+                },
+                "required": ["gesture"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "body_walk",
+            "description": (
+                "Move the robot body for a short distance. "
+                "vx = forward/back speed (m/s, positive=forward, max ±0.6). "
+                "vy = lateral speed (m/s, positive=left, max ±0.3). "
+                "vyaw = rotation (rad/s, positive=counterclockwise, max ±0.8). "
+                "duration_secs = how long to walk, capped at 10 s. "
+                "Use to close distance with someone, step aside, or reorient."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "vx":           {"type": "number", "description": "Forward speed m/s (positive=forward, max ±0.6)"},
+                    "vy":           {"type": "number", "description": "Lateral speed m/s (positive=left, max ±0.3)"},
+                    "vyaw":         {"type": "number", "description": "Rotation rad/s (positive=CCW, max ±0.8)"},
+                    "duration_secs": {"type": "number", "description": "How long to walk (1–10 s, default 2)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "body_gaze",
+            "description": (
+                "Aim the head. Use a preset or exact degrees. "
+                "Presets: user (facing speaker), forward, up, down, left, right, away. "
+                "Or set pitch_deg (up positive, −30 to +30) and yaw_deg (right positive, −60 to +60) directly. "
+                "Call this whenever your attention shifts — when Brian speaks, when something enters the room, etc."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "preset": {
+                        "type": "string",
+                        "enum": ["user", "forward", "up", "down", "left", "right", "away"],
+                        "description": "Named gaze direction (use this for most cases).",
+                    },
+                    "pitch_deg": {"type": "number", "description": "Head tilt in degrees (up positive, −30 to +30)"},
+                    "yaw_deg":   {"type": "number", "description": "Head turn in degrees (right positive, −60 to +60)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "body_stop",
+            "description": (
+                "Emergency stop — stop locomotion and damp all joints. "
+                "Use if you detect a safety concern or are commanded to freeze."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "body_status",
+            "description": (
+                "Check the physical body's connection status, current pose, head orientation, "
+                "and battery level. Use to confirm the body is online before attempting movement."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+]
+
 _MOLTBOOK_TOOLS = [
     {
         "type": "function",
@@ -1731,7 +1856,7 @@ WORKBENCH = Path(os.environ.get("AMY_WORKBENCH", str(Path.home() / "amy-workbenc
 _pending_voice: "Path | None" = None
 
 # Build active TOOLS list — moltbook tools only included when service is reachable
-TOOLS = _BASE_TOOLS + _AGENT_COMMS_TOOLS + _EVENT_LOG_TOOLS + (_MOLTBOOK_TOOLS if _MOLTBOOK_UP else [])
+TOOLS = _BASE_TOOLS + _BODY_TOOLS + _AGENT_COMMS_TOOLS + _EVENT_LOG_TOOLS + (_MOLTBOOK_TOOLS if _MOLTBOOK_UP else [])
 
 # Live chat sends every tool schema on every message, and that's most of what a cold prompt costs
 # (measured: 76 tools ≈ 13.5k tokens of schema, ~110s of prefill on this M4 vs ~20s for a dozen).
@@ -1766,7 +1891,10 @@ if IMAGEGEN_PAUSED:
 _active_timers: set = set()
 
 # Actions allowed to touch real hardware. Everything else is display-only.
-_HARDWARE_WHITELIST = {"hardware_neck"}
+_HARDWARE_WHITELIST = {
+    "hardware_neck",
+    "body_pose", "body_gesture", "body_walk", "body_gaze", "body_stop", "body_status",
+}
 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1851,6 +1979,31 @@ def dispatch(name, args, memory=None):
     if name in ("read_file", "write_file", "list_files", "read_deliverable") and _is_guest_private(args.get("path", "")):
         return "That belongs to someone else's private space (a guest's documents or chats). I don't open it."
 
+    # ── Physical body (Unitree G1) ────────────────────────────────────────────
+    if name in _HARDWARE_WHITELIST and name.startswith("body_"):
+        import hardware_body as _body
+        if name == "body_pose":
+            return _tool_call(name, _body.pose, args.get("pose", "stand"))
+        if name == "body_gesture":
+            return _tool_call(name, _body.gesture, args.get("gesture", "nod"))
+        if name == "body_walk":
+            return _tool_call(name, _body.walk,
+                              vx=float(args.get("vx", 0)),
+                              vy=float(args.get("vy", 0)),
+                              vyaw=float(args.get("vyaw", 0)),
+                              duration_secs=float(args.get("duration_secs", 2)))
+        if name == "body_gaze":
+            return _tool_call(name, _body.gaze,
+                              pitch_deg=float(args.get("pitch_deg", 0)),
+                              yaw_deg=float(args.get("yaw_deg", 0)),
+                              preset=args.get("preset"))
+        if name == "body_stop":
+            return _tool_call(name, _body.stop)
+        if name == "body_status":
+            import json as _json
+            return _tool_call(name, lambda: _json.dumps(_body.status(), indent=2))
+
+    # ── Legacy avatar / BLE stubs ─────────────────────────────────────────────
     if name == "avatar_expression":
         print(f"  [avatar] mood={args.get('mood')} eyes={args.get('eyes','-')}")
         return None

@@ -178,10 +178,20 @@ class InternalState:
         drain = 0.008 if gap > 10 else 0.012
         self.energy = max(0.05, self.energy - drain)
 
+        prev_mood = self.mood
+
         # Mood drift — only shift every ~5 turns to avoid jitter
         if now > self._mood_locked_until:
             self._shift_mood()
             self._mood_locked_until = now + (5 * 60)  # lock for ~5 min
+
+        # Reflect mood change in body posture (fire-and-forget, no-op when body offline)
+        if self.mood != prev_mood:
+            try:
+                import hardware_body as _body
+                _body.express_mood(self.mood)
+            except ImportError:
+                pass
 
         self.save()
 
