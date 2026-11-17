@@ -20,6 +20,7 @@ import voice
 import vision
 import compressor
 import hearing
+import turn_guard as _turn_guard
 import event_log as _el
 from memory import Memory
 from state import InternalState
@@ -242,12 +243,23 @@ def build_context(mem, user_text, amy_state=None, absence=None,
                    "Your reply goes to the browser chat, not the terminal. "
                    "Do not reference the terminal. This is a chat interface.]")
     elif channel == "voice":
-        system += ("\n\n[Interface: live voice — Brian is talking to you out loud and you are "
-                   "speaking back, not typing. Keep replies SHORT: 1-3 sentences, like a real "
-                   "conversation. No lists, no markdown, no code blocks unless he explicitly "
-                   "asks for code. Use contractions and talk naturally. Ask a follow-up question "
-                   "only when it feels natural, not every turn. If he cuts you off mid-reply, "
-                   "that's normal — just listen to what he says next.]")
+        system += ("\n\n[Interface: live voice — Brian is talking to you out loud and you are speaking back, "
+                   "not typing. Your words are read aloud, so write for the ear.\n"
+                   "- Length: one or two short sentences for a direct answer. Troubleshooting or instructions: "
+                   "one step, then stop and let him respond. Go longer only if he asks you to.\n"
+                   "- No lists, markdown, code blocks, links or emoji. Contractions, plain words.\n"
+                   "- Say numbers the way people say them: money as 'forty-five dollars and twenty cents', "
+                   "phone numbers in groups, dates as 'August twelfth', times as 'three-thirty'.\n"
+                   "- Before slow work (a search, a lookup, running something) say one short natural line about "
+                   "what you're doing, in different words each time, never 'let me think' or 'one moment while I "
+                   "process'. For a quick answer, just answer. Never say you're checking something unless you "
+                   "actually call the tool.\n"
+                   "- If he cuts you off, stop. Answer what he just said and don't resume the old answer. "
+                   "'Stop' or 'wait' means stop talking; it doesn't cancel a task unless he says so.\n"
+                   "- If a name, number or date sounds unclear, ask about that one part. Don't guess. "
+                   "Use his correction.\n"
+                   "- Mostly end on a statement. Ask a question only when you truly need the answer. "
+                   "If he pauses to think or you hear noise or other people, stay quiet and keep listening.]")
     else:
         system += "\n\n[Interface: terminal — Brian is typing in the terminal.]"
     if _session_learnings:
@@ -523,6 +535,9 @@ def run_turn(history, mem, image=None, amy_state=None,
     if msg.get("content"):
         clean = _strip_trailers(msg["content"])
         msg["content"] = clean
+        if channel == "voice":
+            clean = _turn_guard.trim_trailing_question(clean, user_task, [])
+            msg["content"] = clean
         _cut = voice.speak_streamed(clean, interruptible=(channel == "voice"))
         if _cut:   # Brian talked over her: keep only what he actually heard
             clean = (voice.last_spoken.strip() + " [interrupted]").strip()
@@ -991,7 +1006,9 @@ def main():
                 try:
                     while True:
                         wav_path = hearing.listen_until_silence_vad(silence_timeout=silence_timeout)
+                        _t0 = time.time()                      # he stopped talking
                         heard = hearing.transcribe(wav_path)
+                        _t1 = time.time()
                         try:
                             os.unlink(wav_path)
                         except OSError:
@@ -1008,6 +1025,10 @@ def main():
                                                channel="voice")
                         finally:
                             amy_state.busy = False
+                        _fw = voice.first_audio_at
+                        if _fw and _fw >= _t1:
+                            print(f"  [timing] transcribe {_t1 - _t0:.1f}s + think {_fw - _t1:.1f}s "
+                                  f"= first word {_fw - _t0:.1f}s after you stopped", flush=True)
                         if len(history) > HISTORY_WINDOW:
                             history = history[-HISTORY_WINDOW:]
                 except KeyboardInterrupt:

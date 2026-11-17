@@ -347,16 +347,23 @@ def step_message(step_idx: int, plan: list, result: str, calls: list, decision: 
             f"What she reported: {found}\n\n{checklist(plan, step_idx + 1)}\n\n{nxt}")
 
 
+_CLOSING_OFFER = re.compile(r"(?i)^(?:just |and )?(?:let me know|feel free|i'?m (?:here|happy|ready)|happy to|"
+                            r"hope that helps|if you(?:'d| would) like|want me to)\b")
+
+
 def trim_trailing_question(reply: str, user_text: str, calls: list) -> str:
-    """Chat-only: drop a closing question tacked onto a statement (the model's habit of ending every reply with one).
-    Left alone when Brian asked something himself, gave a task, work was done, she's offering to continue, or the reply
-    is nothing but the question."""
+    """Chat-only: drop a closing question or "let me know..." offer tacked onto a statement (the model's habit of
+    ending every reply with one). Left alone when Brian asked something himself, gave a task, work was done, she's
+    offering to continue, or nothing but the closer would be left."""
     r = (reply or "").rstrip()
-    if (not r.endswith("?") or "```" in r or real_work(calls) or asks_to_continue(r)
-            or (user_text or "").rstrip().endswith("?") or is_task_request(user_text or "")):
+    if not r or "```" in r or real_work(calls) or asks_to_continue(r) or is_task_request(user_text or ""):
         return reply
     parts = re.split(r"(?<=[.!?])\s+", r)
     if len(parts) < 2:
+        return reply
+    last = parts[-1]
+    is_q = r.endswith("?") and not (user_text or "").rstrip().endswith("?")
+    if not (is_q or _CLOSING_OFFER.match(last)):
         return reply
     kept = " ".join(parts[:-1]).rstrip()
     return kept if len(kept) >= 40 and not kept.endswith(":") else reply

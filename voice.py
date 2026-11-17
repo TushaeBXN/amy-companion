@@ -122,6 +122,7 @@ def speak(text, emotion="neutral"):
 _SENTENCE_RE = re.compile(r'(?<=[.!?])\s+')
 
 
+first_audio_at = 0.0   # when the most recent reply first started playing (for timing)
 last_spoken = ""   # the part of the last speak_streamed() reply that actually played before any interruption
 
 
@@ -135,8 +136,9 @@ def speak_streamed(text, emotion="neutral", interruptible=False):
     cuts it short the moment the user starts talking (barge-in). Returns
     True if playback was interrupted, False otherwise.
     """
-    global last_spoken
+    global last_spoken, first_audio_at
     last_spoken = text or ""
+    first_audio_at = 0.0
     if not text:
         return False
     print(f"\nAmy ({emotion}): {text}")
@@ -150,6 +152,9 @@ def speak_streamed(text, emotion="neutral", interruptible=False):
         monitor.start()
 
     def _play(wav):
+        global first_audio_at
+        if not first_audio_at:
+            first_audio_at = time.time()
         if monitor is not None:
             return _play_wav_interruptible(wav, monitor)
         _play_wav(wav)

@@ -291,3 +291,10 @@ def test_trim_trailing_question():
     assert t(long, "please build me a small website for the shop with a contact page and a price list today", []) == long                      # task
     assert t("Which file do you mean?", "fix it", []) == "Which file do you mean?"   # nothing but the question
     assert t("Short. Sure?", "ok", []) == "Short. Sure?"                  # too little left
+
+
+def test_trim_closing_offer():
+    import turn_guard
+    t = turn_guard.trim_trailing_question
+    r = "That comes out to two hundred sixty-four dollars and sixty cents. Let me know if you want another number."
+    assert t(r, "what's 245 plus 8 percent tax", []) == "That comes out to two hundred sixty-four dollars and sixty cents."
