@@ -46,12 +46,26 @@ def _player():
     return None
 
 
+def _say_aiff(text):
+    """Fallback voice: macOS `say` → temp AIFF path (afplay plays it), or None."""
+    if not shutil.which("say"):
+        return None
+    try:
+        out = tempfile.NamedTemporaryFile(suffix=".aiff", delete=False).name
+        subprocess.run(["say", "-v", "Samantha", "-o", out, _phonetic(text)], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+        return out
+    except Exception as e:
+        print(f"  [voice] say fallback failed: {e}")
+        return None
+
+
 def _synthesize_wav(text):
     """Synthesize one piece of text → temp WAV path, or None on failure."""
     if not text or not re.sub(r'[^\w]', '', text):
         return None
     if not os.path.exists(VOICE):
-        return None
+        return _say_aiff(text)      # no Piper voice file: use the Mac's built-in voice instead of silence
     try:
         wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
         subprocess.run(
@@ -142,7 +156,7 @@ def speak_streamed(text, emotion="neutral", interruptible=False):
     if not text:
         return False
     print(f"\nAmy ({emotion}): {text}")
-    if not os.path.exists(VOICE):
+    if not os.path.exists(VOICE) and not shutil.which("say"):
         return False
 
     monitor = None
