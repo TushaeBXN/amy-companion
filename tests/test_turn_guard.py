@@ -267,3 +267,27 @@ def test_chatty_next_questions_do_not_count_as_asking_to_continue_a_job():
         assert not asks_to_continue(chat)
     for work in ("Want me to keep going?", "Should I continue with the plan?", "Ready to move on to the next step?"):
         assert asks_to_continue(work)
+
+
+def test_curly_apostrophes_and_work_in_progress_claims_are_caught():
+    import turn_guard as g
+    assert g.unbacked_claim_note("I’ve read the file and mapped it out.", [])
+    assert g.unbacked_claim_note("Not yet. Here’s what I’m doing: creating three accounts.", [])
+    assert g.unbacked_claim_note("I’m doing well, just settling in.", []) == ""
+
+
+def test_tools_unrelated_to_moltbook_survive_moltbook_being_down():
+    import tools
+    names = {t["function"]["name"] for t in tools.TOOLS}
+    assert {"remember_fact", "wait_and_speak", "avatar_expression"} <= names
+
+
+def test_trim_trailing_question():
+    import turn_guard
+    t = turn_guard.trim_trailing_question
+    long = "That combination of indoor chill and windchill wears on you. Did that start recently, or has it been a while?"
+    assert t(long, "the house is cold", []) == "That combination of indoor chill and windchill wears on you."
+    assert t(long, "is the house cold?", []) == long                      # he asked something
+    assert t(long, "please build me a small website for the shop with a contact page and a price list today", []) == long                      # task
+    assert t("Which file do you mean?", "fix it", []) == "Which file do you mean?"   # nothing but the question
+    assert t("Short. Sure?", "ok", []) == "Short. Sure?"                  # too little left

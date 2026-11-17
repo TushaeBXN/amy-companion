@@ -858,6 +858,13 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
                 if msg:
                     msg = dict(_msg_to_dict(msg), content=_reply_text)
                     history[-1] = msg
+            _trimmed = _turn_guard.trim_trailing_question(_reply_text, user_text, _logged_tool_calls)
+            if _trimmed != _reply_text:
+                _log("  [style] dropped a closing question")
+                _reply_text = _trimmed
+                if msg:
+                    msg = dict(_msg_to_dict(msg), content=_reply_text)
+                    history[-1] = msg
             _unfinished = (msg is not None and bool(_turn_guard.real_work(_logged_tool_calls)) is False
                            and (_turn_guard.asks_to_continue(_reply_text) or _turn_guard.is_continue_word(user_text)))
             if _unfinished:

@@ -345,3 +345,18 @@ def step_message(step_idx: int, plan: list, result: str, calls: list, decision: 
     return (f"Step {step_idx + 1} of {len(plan)} done and verified: {plan[step_idx][:140]}\n"
             f"Tools that worked: {tools}\nChecked by: {_CHECKED_BY.get(decision, decision)}\n"
             f"What she reported: {found}\n\n{checklist(plan, step_idx + 1)}\n\n{nxt}")
+
+
+def trim_trailing_question(reply: str, user_text: str, calls: list) -> str:
+    """Chat-only: drop a closing question tacked onto a statement (the model's habit of ending every reply with one).
+    Left alone when Brian asked something himself, gave a task, work was done, she's offering to continue, or the reply
+    is nothing but the question."""
+    r = (reply or "").rstrip()
+    if (not r.endswith("?") or "```" in r or real_work(calls) or asks_to_continue(r)
+            or (user_text or "").rstrip().endswith("?") or is_task_request(user_text or "")):
+        return reply
+    parts = re.split(r"(?<=[.!?])\s+", r)
+    if len(parts) < 2:
+        return reply
+    kept = " ".join(parts[:-1]).rstrip()
+    return kept if len(kept) >= 40 and not kept.endswith(":") else reply
