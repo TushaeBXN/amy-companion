@@ -58,7 +58,7 @@ PEOPLE_FILE  = os.path.join(_here, "people.json")
 # Guests can talk, search and look things up — no files, email, tasks or self-edits
 # Public actions on Moltbook need an explicit ask in the message ("reply", "post", …).
 _PUBLIC_OK = re.compile(r"(?i)\b(repl(y|ies)|respond|comment|post|engage|be active|upvote|"
-                        r"follow|publish|share|verify|go ahead|do it|yes)\b")
+                        r"follow|publish|share|verify|go ahead|do it|yes|molt\s?book)\b")
 
 
 def _is_public_action(name, args):
