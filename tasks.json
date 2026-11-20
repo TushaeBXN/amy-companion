@@ -77,7 +77,8 @@
     {
       "id": "email_check",
       "description": "Check Amy's email inbox for anything that needs a response. If there are messages, summarize them for Brian on Telegram \u2014 sender, subject, one line on what they need. Don't reply without Brian's say-so.",
-      "every_hours": 4,
+      "at": "08:00",
+      "on": "daily",
       "voice": false,
       "enabled": true
     },
