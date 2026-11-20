@@ -798,6 +798,11 @@ def _run_task(task):
                 final = _clean(msg.get("content", ""))
                 # Small models often announce the work ("Let me…", "[web_search] …")
                 # instead of calling the tool. Push back instead of calling it done.
+                import turn_guard as _tg
+                if nudges < 2 and _tg.waits_for_brian(final, user_text):
+                    nudges += 1
+                    messages.append({"role": "user", "content": _tg.wait_nudge_text(user_text)})
+                    continue
                 if nudges < 2 and _INTENT_RE.search(final):
                     nudges += 1
                     messages.append({"role": "user", "content":

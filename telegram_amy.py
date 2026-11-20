@@ -715,6 +715,12 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
         if not calls:
             # She said what she'd do and stopped ("My first instinct is to open that book..."): push her to do it.
             if (is_owner and not _bare and _nudges < 2 and step < MAX_HOPS
+                    and _turn_guard.waits_for_brian(msg.get("content") or "", user_text)):
+                _nudges += 1
+                _log(f"  … {who}: stopped to wait for Brian — nudging to act ({_nudges})")
+                messages.append({"role": "user", "content": _turn_guard.wait_nudge_text(user_text)})
+                continue
+            if (is_owner and not _bare and _nudges < 2 and step < MAX_HOPS
                     and _turn_guard.announced_not_done(msg.get("content") or "", user_text)):
                 _nudges += 1
                 _log(f"  … {who}: announced instead of acting — nudging ({_nudges})")

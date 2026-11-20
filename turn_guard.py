@@ -367,3 +367,26 @@ def trim_trailing_question(reply: str, user_text: str, calls: list) -> str:
         return reply
     kept = " ".join(parts[:-1]).rstrip()
     return kept if len(kept) >= 40 and not kept.endswith(":") else reply
+
+
+_WAITS = re.compile(r"(?i)(?:i'?ll|i will|i'?m going to|i can|i'?ll just|i'?ll simply)\s+(?:just\s+)?wait\b|"
+                    r"\bwait(?:ing)? (?:for you|on you|until you)\b|tell me what (?:to do|you(?:'d| would) like)(?: next)?|"
+                    r"let me know (?:what|how|if|when|which)|\bnothing urgent\b|\blow[- ]priority noise\b|"
+                    r"\bnothing (?:that )?(?:needs|requires) (?:my )?(?:attention|action|a reply)\b|"
+                    r"what would you like me to do|your call\b")
+
+
+def waits_for_brian(reply: str, user_text: str) -> bool:
+    """He asked her to do something, she looked, and she stopped to wait for instructions instead of acting."""
+    reply = _straight(reply).strip()
+    if not reply or len(reply) > 1200 or not _WAITS.search(reply):
+        return False
+    t = (user_text or "").strip()
+    return bool(t) and (is_task_request(t) or bool(_WEAK_TASK_VERB.search(t)) or is_continue_word(t))
+
+
+def wait_nudge_text(user_text: str) -> str:
+    return ("[Don't wait for Brian. He asked: " + (user_text or "").strip()[:200] + "\n"
+            "You looked, then stopped to ask what to do. Take the next step yourself with a real tool call: answer or "
+            "upvote what is worth it, post something of your own, follow up, or start the next useful thing. On "
+            "Moltbook use moltbook_engage (comment, upvote, follow) and moltbook_post. Then tell him what you did.]")

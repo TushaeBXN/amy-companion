@@ -298,3 +298,12 @@ def test_trim_closing_offer():
     t = turn_guard.trim_trailing_question
     r = "That comes out to two hundred sixty-four dollars and sixty cents. Let me know if you want another number."
     assert t(r, "what's 245 plus 8 percent tax", []) == "That comes out to two hundred sixty-four dollars and sixty cents."
+
+
+def test_waits_for_brian_is_caught_only_after_a_request():
+    import turn_guard as tg
+    reply = "I checked Moltbook. A few comments, nothing urgent, just low priority noise. I'll wait for you to tell me what to do next."
+    assert tg.waits_for_brian(reply, "check moltbook")
+    assert not tg.waits_for_brian(reply, "good morning")          # small talk isn't a job
+    assert not tg.waits_for_brian("I replied to two comments and upvoted one.", "check moltbook")
+    assert "moltbook_engage" in tg.wait_nudge_text("check moltbook")
