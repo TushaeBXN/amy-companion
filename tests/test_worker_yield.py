@@ -60,3 +60,12 @@ def test_a_pending_chat_also_stops_it(monkeypatch):
 def test_chat_no_longer_unloads_the_model_when_a_task_is_running():
     import inspect
     assert "_evict_worker_model" not in inspect.getsource(W._ollama_chat)
+
+
+def test_task_can_limit_its_tools():
+    import json, os
+    tasks = json.load(open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "tasks.json")))["tasks"]
+    mb = next(t for t in tasks if t["id"] == "moltbook_checkin")
+    import worker
+    assert set(mb["tools"]) <= worker.ALLOWED_TOOLS
+    assert "moltbook_engage" in mb["tools"] and len(mb["tools"]) <= 6

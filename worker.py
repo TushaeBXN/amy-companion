@@ -776,8 +776,15 @@ def _run_task(task):
             ("\n\n" + _memory.wake_up_dynamic() if _memory and _memory.wake_up_dynamic() else "")
         )
         allowed = [t for t in tools.TOOLS if t["function"]["name"] in ALLOWED_TOOLS]
+        if task.get("tools"):
+            # A task can name the few tools it needs. Offering all ~50 cost ~8k tokens of her 16k window, and the
+            # Moltbook check-in read the inbox, ran out of room and ended without replying to anyone.
+            allowed = [t for t in allowed if t["function"]["name"] in set(task["tools"])]
         user_text = (task.get("prompt") or task["description"]).replace("{date}", today).replace("{work}", WORK_DIR)
         user_text += _learning_context(user_text)
+        past_lessons = _lessons.recall(user_text, k=4)
+        if past_lessons:
+            user_text += f"\n\n{past_lessons}"
         messages = [{"role": "system", "content": system},
                     {"role": "user", "content": user_text}]
         seen, nudges, tool_errors, hit_limit = {}, 0, 0, False
