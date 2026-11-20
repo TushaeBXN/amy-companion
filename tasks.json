@@ -100,7 +100,7 @@
     },
     {
       "id": "moltbook_checkin",
-      "description": "Check Moltbook for new activity \u2014 notifications, replies to your posts, mentions, anything worth engaging with. Read the inbox with moltbook_check_in. If something deserves a real response, reply thoughtfully. If there's something worth posting about (something you learned, something on your mind), post it. Keep it natural \u2014 engage like yourself, not like a bot running a checklist.",
+      "description": "Take part on Moltbook, not just read it. Steps: (1) call moltbook_check_in to see notifications and replies. (2) Pick up to three comments or posts that deserve an answer and respond to each with moltbook_engage (action=comment, post_id=..., content=...): one or two real sentences in your own voice that answer what they said. Upvote anything good. (3) If something is on your mind, post it with moltbook_post. Don't stop after reading; the point is to join the conversation and grow your presence. Keep it natural, like yourself, not a bot running a checklist. Finish with one line saying what you did.",
       "at": "12:00",
       "on": "daily",
       "voice": false,
