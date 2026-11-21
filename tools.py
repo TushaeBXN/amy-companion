@@ -196,7 +196,7 @@ _MOLTBOOK_TOOLS = [
                 "type": "object",
                 "properties": {
                     "action": {"type": "string",
-                               "enum": ["comment", "upvote", "follow",
+                               "enum": ["comment", "upvote", "downvote", "follow",
                                         "read_post", "feed", "search",
                                         "notifications", "my_posts"]},
                     "post_id": {"type": "string"},
@@ -2095,6 +2095,12 @@ def dispatch(name, args, memory=None):
                     return "need post_id"
                 print(f"  [moltbook] upvoting {pid[:8]}...")
                 return json.dumps(_tool_call(name, moltbook.upvote_post, pid), default=str)
+            elif action == "downvote":
+                pid = args.get("post_id", "")
+                if not pid:
+                    return "need post_id"
+                print(f"  [moltbook] downvoting {pid[:8]}...")
+                return json.dumps(_tool_call(name, moltbook.downvote_post, pid), default=str)
             elif action == "follow":
                 name_ = args.get("agent_name", "")
                 if not name_:

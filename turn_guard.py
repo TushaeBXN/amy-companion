@@ -389,4 +389,4 @@ def wait_nudge_text(user_text: str) -> str:
     return ("[Don't wait for Brian. He asked: " + (user_text or "").strip()[:200] + "\n"
             "You looked, then stopped to ask what to do. Take the next step yourself with a real tool call: answer or "
             "upvote what is worth it, post something of your own, follow up, or start the next useful thing. On "
-            "Moltbook use moltbook_engage (comment, upvote, follow) and moltbook_post. Then tell him what you did.]")
+            "Moltbook use moltbook_engage (comment, upvote, downvote, follow) and moltbook_post. Then tell him what you did.]")

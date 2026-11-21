@@ -318,6 +318,10 @@ def upvote_post(post_id):
     return _post(f"/posts/{post_id}/upvote")
 
 
+def downvote_post(post_id):
+    return _post(f"/posts/{post_id}/downvote")
+
+
 def upvote_comment(comment_id):
     return _post(f"/comments/{comment_id}/upvote")
 

@@ -64,7 +64,7 @@ _PUBLIC_OK = re.compile(r"(?i)\b(repl(y|ies)|respond|comment|post|engage|be acti
 def _is_public_action(name, args):
     if name in ("moltbook_post", "moltbook_verify"):
         return True
-    return name == "moltbook_engage" and (args or {}).get("action") in ("comment", "upvote", "follow")
+    return name == "moltbook_engage" and (args or {}).get("action") in ("comment", "upvote", "downvote", "follow")
 
 
 BIG_PASTE   = 8000   # chars; longer guest pastes are stored as documents
