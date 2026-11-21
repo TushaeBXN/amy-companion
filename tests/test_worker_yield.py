@@ -69,3 +69,10 @@ def test_task_can_limit_its_tools():
     import worker
     assert set(mb["tools"]) <= worker.ALLOWED_TOOLS
     assert "moltbook_engage" in mb["tools"] and len(mb["tools"]) <= 6
+
+
+def test_must_run_step_is_enforced_in_source():
+    # a task with must_run can't finish until run_code has been asked to run each required text
+    import inspect, worker
+    src = inspect.getsource(worker._run_task)
+    assert "must_run" in src and "_code_ran" in src

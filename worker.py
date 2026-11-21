@@ -816,6 +816,7 @@ def _run_task(task):
                 if isinstance(args, str):
                     try:
                         args = json.loads(args)
+        _code_ran, must_nudges = "", 0   # what run_code was asked to run (for a task's must_run steps)
                     except json.JSONDecodeError:
                         # Model truncated JSON — nudge it to retry with shorter content
                         messages.append({"role": "tool", "content":
@@ -831,6 +832,13 @@ def _run_task(task):
                 if key not in seen:
                     seen[key] = _guarded_dispatch(name, args)
                 used.append(name)
+                _miss = [m for m in (task.get("must_run") or []) if m.lower() not in _code_ran.lower()]
+                if _miss and must_nudges < 2:
+                    must_nudges += 1
+                    messages.append({"role": "user", "content":
+                        "You haven't done a required step yet. Call run_code now with code that runs: "
+                        + task.get("must_run_hint", ", ".join(_miss)) + " Then finish."})
+                    continue
                 result_text = _cap(str(seen[key] or "done"))
                 if str(seen[key] or "").startswith("[tool_error]"):
                     tool_errors += 1
@@ -855,6 +863,8 @@ def _run_task(task):
                 data = _tasks()
                 data["tasks"] = [t for t in data["tasks"] if t["id"] != task["id"]]
                 _save(TASKS_FILE, data)
+                if name == "run_code":
+                    _code_ran += "\n" + str(args.get("code", ""))
         _running.release()
 
     mins = (time.time() - started) / 60
