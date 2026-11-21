@@ -185,7 +185,7 @@ _COMMITMENT_PHRASE = re.compile(r"(?i)\b(step by step|break (?:it|this|them) (?:
                                 r"i want you to (?:learn|try|build|figure|do|go|read|study)|"
                                 r"try (?:it|them|this)(?: yourself)? on your (?:own )?machine)\b")
 _WEAK_TASK_VERB = re.compile(r"(?i)\b(read|open|research|find|search|learn|study|try|run|figure out|work out|"
-                             r"look into|go through|go research|summari[sz]e|analy[sz]e|compare|prepare|review|check)\b")
+                             r"look into|go through|go research|summari[sz]e|analy[sz]e|compare|prepare|review|check|engage|reply|respond|comment|upvote|downvote|follow|post|go on|go to|get on)\b")
 # A correction from Brian — he's updating her, not requesting a task.
 _CORRECTION = re.compile(r"(?i)\b(correct yourself|you(?:'re| are) (?:wrong|biased|off)|that(?:'s| is) (?:incorrect|wrong|biased|not right|a lie)|"
                          r"fix your(?:self)?|that's not (?:right|true|accurate)|you have (?:a )?bias|you need to (?:look|search)|"
@@ -373,7 +373,10 @@ _WAITS = re.compile(r"(?i)(?:i'?ll|i will|i'?m going to|i can|i'?ll just|i'?ll s
                     r"\bwait(?:ing)? (?:for you|on you|until you)\b|tell me what (?:to do|you(?:'d| would) like)(?: next)?|"
                     r"let me know (?:what|how|if|when|which)|\bnothing urgent\b|\blow[- ]priority noise\b|"
                     r"\bnothing (?:that )?(?:needs|requires) (?:my )?(?:attention|action|a reply)\b|"
-                    r"what would you like me to do|your call\b")
+                    r"what would you like me to do|your call\b|"
+                    r"\bwhat (?:specific |exact )?(?:actions?|steps?|things?) (?:should|do you want|would you like) (?:i|me)\b|"
+                    r"\bwhat should i (?:do|take)\b|\bhow (?:should|do you want) (?:i|me to) (?:proceed|start|begin)\b|"
+                    r"\bwhere (?:should|do you want) (?:i|me to) (?:start|begin)\b")
 
 
 def waits_for_brian(reply: str, user_text: str) -> bool:
