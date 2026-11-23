@@ -49,6 +49,8 @@ MODEL        = os.environ.get("AMY_MODEL", "gemma12-test")
 # and she stops sooner when she's done. Override with AMY_MAX_REPLY_TOKENS.
 MAX_REPLY_TOKENS = int(os.environ.get("AMY_MAX_REPLY_TOKENS", "4096"))   # a ceiling, not a target
 VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "gemma12-test")
+# AMY_VISION_MODEL=off: no vision model installed; photos are acknowledged, not described.
+VISION_OFF = VISION_MODEL.strip().lower() in ("", "off", "none")
 MAX_HOPS     = 16
 CTX_WINDOW   = 16384
 HISTORY_FILE = os.path.join(_here, "telegram_history.json")
@@ -532,7 +534,12 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
         t for t in tools.TOOLS if t["function"]["name"] in GUEST_TOOLS])
     _offered0 = {t["function"]["name"] for t in tool_list}   # what she was shown at the start of this turn
     # If a photo was sent, describe it first then fold the description into the message
-    if image_bytes:
+    if image_bytes and VISION_OFF:
+        print("  [vision] off — photo not described")
+        caption = f"{user_text}\n\n" if user_text else ""
+        user_text = (caption + f"[{who} sent a photo, but your photo vision is switched off right now, "
+                     "so you can't see it. Say so plainly and don't guess what's in it.]")
+    elif image_bytes:
         print("  [vision] describing Telegram photo...")
         description = _describe_image(image_bytes)
         print(f"  [vision] {description[:100]}...")
