@@ -551,6 +551,73 @@ def read_codebase(focus: str = "") -> str:
     return "\n".join(lines)
 
 
+def _symbol_source(src: str, fname: str, name: str) -> str | None:
+    """The exact source (with its real line numbers) of one top-level function/class, or a
+    Class.method, in `src` -- or None if `name` isn't defined there. Avoids loading a whole file
+    just to see one piece of it."""
+    try:
+        tree = ast.parse(src, filename=fname)
+    except SyntaxError:
+        return None
+    lines = src.splitlines()
+
+    def _slice(node):
+        start = node.lineno
+        if getattr(node, "decorator_list", None):
+            start = node.decorator_list[0].lineno
+        end = getattr(node, "end_lineno", None) or node.lineno
+        body = "\n".join(lines[start - 1:end])
+        return f"{fname}:{start}-{end}\n{body}"
+
+    outer, _, inner = name.partition(".")
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == outer and not inner:
+            return _slice(node)
+        if isinstance(node, ast.ClassDef) and node.name == outer:
+            if not inner:
+                return _slice(node)
+            for item in node.body:
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == inner:
+                    return _slice(item)
+    return None
+
+
+def read_symbol(name: str, file: str = "") -> str:
+    """The exact source of one function or class (or Class.method) -- not the whole file it's in.
+    For a 1,000-line file, this is one def, a dozen lines, instead of the whole thing.
+
+    `file`, if given, narrows to that one filename (e.g. 'worker.py'); a bare name without `.py`
+    is matched too. Without `file`, every .py file in the project is searched, the way she'd look
+    for a symbol in a codebase she doesn't have memorized yet."""
+    name = (name or "").strip()
+    if not name:
+        return "give a function or class name (or Class.method) to look up"
+    want_file = (file or "").strip()
+    if want_file and not want_file.endswith(".py"):
+        want_file += ".py"
+    hits = []
+    for fname in sorted(os.listdir(HERE)):
+        if not fname.endswith(".py"):
+            continue
+        if want_file and fname != want_file:
+            continue
+        fpath = os.path.join(HERE, fname)
+        try:
+            src = open(fpath).read()
+        except OSError:
+            continue
+        found = _symbol_source(src, fname, name)
+        if found:
+            hits.append(found)
+    if not hits:
+        where = f" in {want_file}" if want_file else ""
+        return f"'{name}' isn't defined{where}. Check the spelling, or use read_codebase to see what's there."
+    if len(hits) > 1 and not want_file:
+        locs = [h.splitlines()[0] for h in hits]
+        return (f"'{name}' is defined in more than one file -- say which one:\n" + "\n".join(f"  {l}" for l in locs))
+    return "\n\n---\n\n".join(hits)
+
+
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
