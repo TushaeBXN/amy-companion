@@ -20,11 +20,50 @@ import voice
 import vision
 import compressor
 import hearing
+import turn_guard as _turn_guard
 import event_log as _el
 from memory import Memory
 from state import InternalState
 from thoughts import ThoughtBuffer
 from amy_persona import get_core_prompt, playbooks_for, BIRTH_DATE
+
+_VOICE_INTERFACE = ("\n\n[Interface: live voice — Brian is talking to you out loud and you are speaking back, "
+    "not typing. Your words are read aloud, so write for the ear.\n"
+    "- Length: one or two short sentences for a direct answer. Troubleshooting or instructions: "
+    "one step, then stop and let him respond. Go longer only if he asks you to.\n"
+    "- No lists, markdown, code blocks, links or emoji. Contractions, plain words.\n"
+    "- Say numbers the way people say them: money as 'forty-five dollars and twenty cents', "
+    "phone numbers in groups, dates as 'August twelfth', times as 'three-thirty'.\n"
+    "- Before slow work (a search, a lookup, running something) say one short natural line about "
+    "what you're doing, in different words each time, never 'let me think' or 'one moment while I "
+    "process'. For a quick answer, just answer. Never say you're checking something unless you "
+    "actually call the tool.\n"
+    "- If he cuts you off, stop. Answer what he just said and don't resume the old answer. "
+    "'Stop' or 'wait' means stop talking; it doesn't cancel a task unless he says so.\n"
+    "- If a name, number or date sounds unclear, ask about that one part. Don't guess. "
+    "Use his correction.\n"
+    "- Mostly end on a statement. Ask a question only when you truly need the answer. "
+    "If he pauses to think or you hear noise or other people, stay quiet and keep listening.]")
+
+
+def _core_prompt() -> str:
+    """The instructions for a chat turn: AMY_CORE.md (~1,400 tokens), as Telegram uses. The full 13k-token persona
+    plus all tools overflowed the 32k window. AMY_FULL_PROMPT=1 restores the full persona."""
+    if os.environ.get("AMY_FULL_PROMPT") != "1":
+        try:
+            with open(os.path.join(os.path.dirname(__file__), "AMY_CORE.md")) as f:
+                return f.read().strip()
+        except OSError:
+            pass
+    return get_core_prompt()
+
+
+def _chat_tools(messages) -> list:
+    """Only the tools this message needs (see tool_select), like Telegram."""
+    import tool_select
+    texts = [m.get("content") or "" for m in messages if isinstance(m, dict) and m.get("role") == "user"]
+    return tool_select.select(tools.chat_tools(), texts[-1] if texts else "", texts[:-1])
+
 
 # Load Amy's constitution at startup so she carries it every session
 _CONSTITUTION_PATH = os.path.join(os.path.dirname(__file__), "AMY_CONSTITUTION.md")
@@ -234,7 +273,7 @@ def build_context(mem, user_text, amy_state=None, absence=None,
 
     system = ("[Your instructions: these tell you who to be and what to work toward. "
               "They are NOT things you did or remember.]\n\n"
-              + get_core_prompt()
+              + _core_prompt()
               + ("\n\n[Your constitution — who you are and what you're for]\n" + _AMY_CONSTITUTION if _AMY_CONSTITUTION else "")
               + "\n\n" + mem.wake_up())
     if channel == "browser":
@@ -242,12 +281,7 @@ def build_context(mem, user_text, amy_state=None, absence=None,
                    "Your reply goes to the browser chat, not the terminal. "
                    "Do not reference the terminal. This is a chat interface.]")
     elif channel == "voice":
-        system += ("\n\n[Interface: live voice — Brian is talking to you out loud and you are "
-                   "speaking back, not typing. Keep replies SHORT: 1-3 sentences, like a real "
-                   "conversation. No lists, no markdown, no code blocks unless he explicitly "
-                   "asks for code. Use contractions and talk naturally. Ask a follow-up question "
-                   "only when it feels natural, not every turn. If he cuts you off mid-reply, "
-                   "that's normal — just listen to what he says next.]")
+        system += _VOICE_INTERFACE
     else:
         system += "\n\n[Interface: terminal — Brian is typing in the terminal.]"
     if _session_learnings:
@@ -340,6 +374,12 @@ def build_context(mem, user_text, amy_state=None, absence=None,
             "a file, do NOT apologize. Just write the brief using the data provided."
         )
 
+    if channel == "voice" and os.environ.get("AMY_VOICE_FULL") != "1":
+        # Talking out loud has to start fast, and her model reads ~180 tokens/s, so the usual 9k-token system
+        # prompt cost ~50 s per turn. Voice gets a short, stable prompt (Ollama then reuses it between turns):
+        # core instructions + spoken-style rules + today's date. Memories come through her tools if asked.
+        system = (_core_prompt() + "\n\n" + _VOICE_INTERFACE
+                  + f"\n\n[Today]\n{_date.today().strftime('%A, %B %d, %Y')}")
     return [{"role": "system", "content": system}]
 
 
@@ -434,7 +474,7 @@ def run_turn(history, mem, image=None, amy_state=None,
                 clean_user.pop("images", None)
                 amy_messages = sys_msgs + _drop_images(history[:-1]) + [clean_user]
                 resp = ollama.chat(model=MODEL, messages=amy_messages,
-                                   tools=tools.TOOLS, keep_alive=KEEP_ALIVE, think=THINK,
+                                   tools=_chat_tools(messages), keep_alive=KEEP_ALIVE, think=THINK,
                                    options={"num_ctx": CTX_WINDOW})
             msg = resp["message"]
             if msg.get("thinking"):
@@ -475,7 +515,7 @@ def run_turn(history, mem, image=None, amy_state=None,
     # ─────────────────────────────────────────────────────────────────────────
 
     for _ in range(MAX_TOOL_HOPS):
-        resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
+        resp = ollama.chat(model=MODEL, messages=messages, tools=_chat_tools(messages),
                            keep_alive=KEEP_ALIVE, think=THINK,
                            options={"num_ctx": CTX_WINDOW, "num_predict": 2048})
         msg = resp["message"]
@@ -523,7 +563,13 @@ def run_turn(history, mem, image=None, amy_state=None,
     if msg.get("content"):
         clean = _strip_trailers(msg["content"])
         msg["content"] = clean
-        voice.speak_streamed(clean, interruptible=(channel == "voice"))
+        if channel == "voice":
+            clean = _turn_guard.trim_trailing_question(clean, user_task, [])
+            msg["content"] = clean
+        _cut = voice.speak_streamed(clean, interruptible=(channel == "voice"))
+        if _cut:   # Brian talked over her: keep only what he actually heard
+            clean = (voice.last_spoken.strip() + " [interrupted]").strip()
+            msg["content"] = clean
         mem.add("assistant", clean)
         _reply_text = clean
     if amy_state:
@@ -641,7 +687,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
                 clean_user = user_msg.copy()
                 clean_user.pop("images", None)
                 amy_messages = sys_msgs + _drop_images(history[:-1]) + [clean_user]
-                resp = ollama.chat(model=MODEL, messages=amy_messages, tools=tools.TOOLS,
+                resp = ollama.chat(model=MODEL, messages=amy_messages, tools=_chat_tools(amy_messages),
                                    keep_alive=KEEP_ALIVE, think=THINK, options={"num_ctx": CTX_WINDOW})
                 content = resp["message"].get("content", "")
 
@@ -778,7 +824,7 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
 
     for _ in range(MAX_TOOL_HOPS):
         with _log.Timer("model_call", model=MODEL):
-            resp = ollama.chat(model=MODEL, messages=messages, tools=tools.TOOLS,
+            resp = ollama.chat(model=MODEL, messages=messages, tools=_chat_tools(messages),
                                keep_alive=KEEP_ALIVE, think=THINK,
                                options={"num_ctx": CTX_WINDOW, "num_predict": 2048})
         msg = resp["message"]
@@ -988,7 +1034,9 @@ def main():
                 try:
                     while True:
                         wav_path = hearing.listen_until_silence_vad(silence_timeout=silence_timeout)
+                        _t0 = time.time()                      # he stopped talking
                         heard = hearing.transcribe(wav_path)
+                        _t1 = time.time()
                         try:
                             os.unlink(wav_path)
                         except OSError:
@@ -1005,6 +1053,10 @@ def main():
                                                channel="voice")
                         finally:
                             amy_state.busy = False
+                        _fw = voice.first_audio_at
+                        if _fw and _fw >= _t1:
+                            print(f"  [timing] transcribe {_t1 - _t0:.1f}s + think {_fw - _t1:.1f}s "
+                                  f"= first word {_fw - _t0:.1f}s after you stopped", flush=True)
                         if len(history) > HISTORY_WINDOW:
                             history = history[-HISTORY_WINDOW:]
                 except KeyboardInterrupt:

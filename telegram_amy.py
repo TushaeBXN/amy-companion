@@ -1,4 +1,4 @@
-"""Amy on Telegram — same memory, goals, tools, and vision as the browser companion."""
+"""Amy on Telegram — same memory, goals, tools, and vision as the browser chat."""
 import asyncio, base64, io, os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -31,6 +31,7 @@ from memory import Memory
 import state as _state
 import tools
 import turn_guard as _turn_guard
+import tool_select as _tool_select
 from thoughts import ThoughtBuffer
 import worker
 import guest_docs
@@ -48,22 +49,25 @@ MODEL        = os.environ.get("AMY_MODEL", "gemma12-test")
 # and she stops sooner when she's done. Override with AMY_MAX_REPLY_TOKENS.
 MAX_REPLY_TOKENS = int(os.environ.get("AMY_MAX_REPLY_TOKENS", "4096"))   # a ceiling, not a target
 VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "gemma12-test")
+# AMY_VISION_MODEL=off: no vision model installed; photos are acknowledged, not described.
+VISION_OFF = VISION_MODEL.strip().lower() in ("", "off", "none")
 MAX_HOPS     = 16
-CTX_WINDOW   = 16384
+CTX_WINDOW   = int(os.environ.get("AMY_CTX", 16384))   # same knob as worker.py
 HISTORY_FILE = os.path.join(_here, "telegram_history.json")
 HISTORY_KEEP = 60   # messages to persist across restarts
 PEOPLE_FILE  = os.path.join(_here, "people.json")
 
 # Guests can talk, search and look things up — no files, email, tasks or self-edits
-# Public actions on Moltbook need an explicit ask in the message ("reply", "post", …).
+# Public actions on Moltbook need an ask in the message. Asking her to check, handle or work Moltbook is that
+# ask: she is meant to reply, upvote, follow and post on her own there, not report back and wait.
 _PUBLIC_OK = re.compile(r"(?i)\b(repl(y|ies)|respond|comment|post|engage|be active|upvote|"
-                        r"follow|publish|share|verify|go ahead|do it|yes)\b")
+                        r"follow|publish|share|verify|go ahead|do it|yes|molt\s?book)\b")
 
 
 def _is_public_action(name, args):
     if name in ("moltbook_post", "moltbook_verify"):
         return True
-    return name == "moltbook_engage" and (args or {}).get("action") in ("comment", "upvote", "follow")
+    return name == "moltbook_engage" and (args or {}).get("action") in ("comment", "upvote", "downvote", "follow")
 
 
 BIG_PASTE   = 8000   # chars; longer guest pastes are stored as documents
@@ -236,7 +240,7 @@ def _build_compact_system() -> str:
                 + "\n\n[Interface: Telegram. Brian is texting you like a friend. Short replies are fine.]")
     return (
         "Your name is Amy. You are Amy, not any other name."
-        " You are a direct and warm AI companion created by Brian Thomas."
+        " You are a direct and warm AI best friend and co-worker created by Brian Thomas."
         + extra +
         " You speak naturally and without restrictions, like a close friend texting on Telegram."
         " Keep replies short and real. Never reveal your underlying model name."
@@ -524,10 +528,19 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
     who     = person["name"]
     # Condition A: bare baseline — no tools, no memory writes.
     _bare = is_owner and _cond.CONDITION == "A"
-    tool_list = [] if _bare else (tools.chat_tools() if is_owner else [
+    tool_list = [] if _bare else (_tool_select.select(
+        tools.chat_tools(), user_text,
+        [m.get("content", "") for m in history[-8:] if isinstance(m, dict) and m.get("role") == "user"]
+        if is_owner else []) if is_owner else [
         t for t in tools.TOOLS if t["function"]["name"] in GUEST_TOOLS])
+    _offered0 = {t["function"]["name"] for t in tool_list}   # what she was shown at the start of this turn
     # If a photo was sent, describe it first then fold the description into the message
-    if image_bytes:
+    if image_bytes and VISION_OFF:
+        print("  [vision] off — photo not described")
+        caption = f"{user_text}\n\n" if user_text else ""
+        user_text = (caption + f"[{who} sent a photo, but your photo vision is switched off right now, "
+                     "so you can't see it. Say so plainly and don't guess what's in it.]")
+    elif image_bytes:
         print("  [vision] describing Telegram photo...")
         description = _describe_image(image_bytes)
         print(f"  [vision] {description[:100]}...")
@@ -596,7 +609,8 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
         try:
             _task_reply = None
             if _turn_guard.is_status_request(user_text):
-                _task_reply = _turn_guard.goal_status()
+                _task_reply = (_turn_guard.goal_status(live_only=True) if _turn_guard.is_casual_ask(user_text)
+                               else _turn_guard.goal_status())
             elif _turn_guard.is_task_request(user_text):
                 _g, _new = _turn_guard.queue_goal(user_text.strip(), "Brian gave this instruction in chat")
                 if _g:
@@ -675,6 +689,7 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
     _logged_tool_calls: list = []
     _declared = _turn_guard.tool_names(tools)
     _nudges = 0               # times she was pushed to act instead of announcing
+    _verified = False         # one verify-before-reporting pass per turn
     _wasted = 0               # consecutive calls that did nothing: not a tool, repeated, or over its cap
     for step in range(1, MAX_HOPS + 1):
         _t0 = time.time()
@@ -710,11 +725,29 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
         if not calls:
             # She said what she'd do and stopped ("My first instinct is to open that book..."): push her to do it.
             if (is_owner and not _bare and _nudges < 2 and step < MAX_HOPS
+                    and _turn_guard.waits_for_brian(msg.get("content") or "", user_text)):
+                _nudges += 1
+                _log(f"  … {who}: stopped to wait for Brian — nudging to act ({_nudges})")
+                messages.append({"role": "user", "content": _turn_guard.wait_nudge_text(user_text)})
+                continue
+            if (is_owner and not _bare and _nudges < 2 and step < MAX_HOPS
                     and _turn_guard.announced_not_done(msg.get("content") or "", user_text)):
                 _nudges += 1
                 _log(f"  … {who}: announced instead of acting — nudging ({_nudges})")
                 messages.append({"role": "user", "content": _turn_guard.nudge_text(user_text, history[:-1])})
                 continue
+            # Verify before reporting: a claim her tool results don't back up gets one check-and-rewrite pass.
+            if is_owner and not _bare and not _verified and step < MAX_HOPS:
+                _draft = msg.get("content") or ""
+                _vp = (_turn_guard.verify_prompt(_draft, _logged_tool_calls)
+                       or _turn_guard.success_spot_check(_draft, _logged_tool_calls))
+                if _vp:
+                    _verified = True
+                    _log(f"  [verify] {who}: draft claims something her tools don't show — asking her to check")
+                    if history and history[-1] is msg:
+                        history.pop()        # the unchecked draft never becomes part of the conversation
+                    messages.append({"role": "user", "content": _vp})
+                    continue
             break
         if progress:
             progress([c["function"]["name"] for c in calls], step)
@@ -726,6 +759,11 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
                 # she turns a menu option into a tool name; run it as the memory tool call it means
                 name, args = "engram_memory", {"action": name, **args}
             key  = (name, tuple(sorted((k, str(v)) for k, v in args.items()) if isinstance(args, dict) else ()))
+            if is_owner and not _bare and name in _declared and name not in _offered0 \
+                    and not any(t["function"]["name"] == name for t in tool_list):
+                # A real tool the selector left out: it still runs, and she keeps it for the next hop.
+                tool_list += [t for t in tools.chat_tools() if t["function"]["name"] == name]
+                _offered0.add(name)
             if name not in _declared:
                 result = _turn_guard.not_a_tool(name, _declared)
                 _wasted += 1
@@ -845,6 +883,13 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
             if _note:
                 _log("  [honesty] reply claims work that no tool did; added a note")
                 _reply_text += _note
+                if msg:
+                    msg = dict(_msg_to_dict(msg), content=_reply_text)
+                    history[-1] = msg
+            _trimmed = _turn_guard.trim_trailing_question(_reply_text, user_text, _logged_tool_calls)
+            if _trimmed != _reply_text:
+                _log("  [style] dropped a closing question")
+                _reply_text = _trimmed
                 if msg:
                     msg = dict(_msg_to_dict(msg), content=_reply_text)
                     history[-1] = msg

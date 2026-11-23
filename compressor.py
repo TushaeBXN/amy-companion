@@ -112,8 +112,8 @@ def _prune_tool_outputs(messages: list) -> list:
 # ── LLM summarizer ────────────────────────────────────────────────────────────
 
 _SUMMARIZE_PROMPT = """\
-You are summarizing earlier turns of a conversation involving Amy (an AI \
-companion running locally on an M4 Mac Mini) and a task she was working on. \
+You are summarizing earlier turns of a conversation involving Amy (an AI best friend and \
+co-worker running locally on an M4 Mac Mini) and a task she was working on. \
 These turns are being compacted to save context space.
 
 Write a compact summary covering:

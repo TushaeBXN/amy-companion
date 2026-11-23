@@ -5,6 +5,7 @@ speech-to-text. Supports mic input and BlackHole virtual audio
 for capturing system audio (other AIs talking through speakers).
 """
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -80,10 +81,46 @@ def record(duration=5, device=":0", output_path=None):
     return output_path
 
 
+_py_model = None
+
+
+def _transcribe_python(audio_path):
+    """Fallback speech-to-text with the openai-whisper package (same one the Telegram voice path uses)."""
+    global _py_model
+    try:
+        import whisper
+        if _py_model is None:
+            _py_model = whisper.load_model("base")
+        return _py_model.transcribe(audio_path, fp16=False, language="en")["text"].strip()
+    except Exception as e:
+        return f"(could not transcribe: {e})"
+
+
+_HALLUCINATIONS = {"you", "thank you", "thanks for watching", "bye", "thank you.", "you.", "thanks."}
+
+
+def transcribe_checked(audio_path):
+    """Like the python fallback, but returns "" for silence/noise (Whisper invents "you"/"thank you" there)."""
+    global _py_model
+    try:
+        import whisper
+        if _py_model is None:
+            _py_model = whisper.load_model("base")
+        r = _py_model.transcribe(audio_path, fp16=False, language="en", condition_on_previous_text=False)
+        segs = r.get("segments") or []
+        if segs and all(s.get("no_speech_prob", 0) > 0.6 or s.get("avg_logprob", 0) < -1.2 for s in segs):
+            return ""
+        text = r["text"].strip()
+        return "" if text.lower().strip(" .!") in {h.strip(" .!") for h in _HALLUCINATIONS} else text
+    except Exception as e:
+        print(f"  [stt] failed: {e}")
+        return ""
+
+
 def transcribe(audio_path):
     """Run whisper-cli on an audio file, return the transcribed text."""
-    if not os.path.exists(WHISPER_MODEL):
-        return "(whisper model not found — run setup.sh)"
+    if not os.path.exists(WHISPER_MODEL) or not shutil.which(WHISPER_BIN):
+        return _transcribe_python(audio_path)   # no whisper.cpp: use the openai-whisper package
 
     cmd = [
         WHISPER_BIN,

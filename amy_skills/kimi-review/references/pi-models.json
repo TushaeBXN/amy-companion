@@ -1,0 +1,69 @@
+{
+  "vercel-ai-gateway": [
+    {
+      "id": "moonshotai/kimi-k3.1-pro",
+      "name": "Kimi K3.1 Pro",
+      "api": "openai-completions",
+      "baseUrl": "https://ai-gateway.vercel.sh/v1",
+      "reasoning": true,
+      "thinkingLevelMap": {
+        "off": null,
+        "minimal": null,
+        "low": "low",
+        "medium": null,
+        "high": "high",
+        "xhigh": null,
+        "max": "max"
+      },
+      "input": [
+        "text",
+        "image"
+      ],
+      "cost": {
+        "input": 2,
+        "output": 10,
+        "cacheRead": 0.2,
+        "cacheWrite": 0
+      },
+      "contextWindow": 1048576,
+      "maxTokens": 128000,
+      "compat": {
+        "thinkingFormat": "openai",
+        "maxTokensField": "max_tokens",
+        "supportsDeveloperRole": false
+      }
+    }
+  ],
+  "openrouter": [
+    {
+      "id": "moonshotai/kimi-k3.1-pro",
+      "name": "MoonshotAI: Kimi K3.1 Pro",
+      "reasoning": true,
+      "thinkingLevelMap": {
+        "off": null,
+        "minimal": null,
+        "low": "low",
+        "medium": null,
+        "high": "high",
+        "xhigh": null,
+        "max": "max"
+      },
+      "input": [
+        "text",
+        "image"
+      ],
+      "cost": {
+        "input": 2,
+        "output": 10,
+        "cacheRead": 0.2,
+        "cacheWrite": 0
+      },
+      "contextWindow": 1048576,
+      "maxTokens": 128000,
+      "compat": {
+        "supportsDeveloperRole": false,
+        "thinkingFormat": "openrouter"
+      }
+    }
+  ]
+}

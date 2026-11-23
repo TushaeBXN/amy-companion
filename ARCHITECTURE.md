@@ -1,6 +1,6 @@
 # Amy · System Architecture
 
-Amy is a locally-hosted AI companion with multiple input paths, a single-model inference core, a layered memory system, and a background autonomy layer. No data leaves the machine.
+Amy is a locally-hosted AI best friend and co-worker with multiple input paths, a single-model inference core, a layered memory system, and a background autonomy layer. No data leaves the machine.
 
 ---
 

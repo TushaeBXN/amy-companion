@@ -291,3 +291,12 @@ def test_a_finished_normal_reply_is_never_hijacked_into_a_goal(monkeypatch):
     monkeypatch.setattr(T._turn_log, "log_turn", lambda **k: None)
     reply = T._chat("This is the site https://sentientartificialintelligence.com/ tell me what you think?", None)
     assert queued == [] and "background worker" not in reply and "goal" not in reply.lower()
+
+
+def test_a_casual_what_are_you_doing_does_not_dump_an_old_blocked_goal():
+    blocked = {"goal_id": "g9", "objective": "old job", "status": "blocked", "current_step": 0, "plan": [],
+               "updated_at": "2026-10-24T14:00", "evidence": [], "next_action": "Step 1 failed 3 times"}
+    assert G.is_casual_ask("What are you doing?") and not G.is_casual_ask("what's the status of the job?")
+    assert G.goal_status(Goals([blocked]), live_only=True) == ""
+    assert "Stuck" in G.goal_status(Goals([blocked]))
+    assert "Job: old job" in G.goal_status(Goals([dict(blocked, status="active")]), live_only=True)

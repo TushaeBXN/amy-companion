@@ -321,7 +321,7 @@ _MOLTBOOK_TOOLS = [
                 "type": "object",
                 "properties": {
                     "action": {"type": "string",
-                               "enum": ["comment", "upvote", "follow",
+                               "enum": ["comment", "upvote", "downvote", "follow",
                                         "read_post", "feed", "search",
                                         "notifications", "my_posts"]},
                     "post_id": {"type": "string"},
@@ -750,9 +750,10 @@ _BASE_TOOLS = [
         "function": {
             "name": "read_skill",
             "description": (
-                "Read the full instructions for any of the 25 Claude Code skills "
-                "installed at ~/.claude/skills/. Use this when you want to execute "
-                "a skill workflow yourself — pull the SKILL.md and follow the steps. "
+                "Read the full instructions for any skill: Amy's own library (amy_skills/, "
+                "55 skills) or the Claude Code skills at ~/.claude/skills/. Use this when you "
+                "want to execute a skill workflow yourself — pull the SKILL.md and follow the "
+                "steps. A skill's extra files can be read as 'skill/references/file.md'. "
                 "Also useful when Brian asks what a skill does or how to run one."
             ),
             "parameters": {
@@ -1590,7 +1591,7 @@ _BASE_TOOLS = [
                 "type": "object",
                 "properties": {
                     "code": {"type": "string", "description": "Python code to execute. Use print() to return results."},
-                    "timeout": {"type": "integer", "description": "Max seconds to run (default 10, max 30)"},
+                    "timeout": {"type": "integer", "description": "Max seconds to run (default 30, max 300). Give installs, builds and downloads a few minutes."},
                 },
                 "required": ["code"],
             },
@@ -1856,7 +1857,10 @@ WORKBENCH = Path(os.environ.get("AMY_WORKBENCH", str(Path.home() / "amy-workbenc
 _pending_voice: "Path | None" = None
 
 # Build active TOOLS list — moltbook tools only included when service is reachable
-TOOLS = _BASE_TOOLS + _BODY_TOOLS + _AGENT_COMMS_TOOLS + _EVENT_LOG_TOOLS + (_MOLTBOOK_TOOLS if _MOLTBOOK_UP else [])
+# _MOLTBOOK_TOOLS also holds avatar_*, hardware_neck, wait_and_speak and remember_fact. Only the moltbook_* ones
+# depend on Moltbook being reachable; the rest must stay available when it is down or blocking her.
+TOOLS = _BASE_TOOLS + _BODY_TOOLS + _AGENT_COMMS_TOOLS + _EVENT_LOG_TOOLS + [
+    t for t in _MOLTBOOK_TOOLS if _MOLTBOOK_UP or not t["function"]["name"].startswith("moltbook_")]
 
 # Live chat sends every tool schema on every message, and that's most of what a cold prompt costs
 # (measured: 76 tools ≈ 13.5k tokens of schema, ~110s of prefill on this M4 vs ~20s for a dozen).
@@ -2244,6 +2248,12 @@ def dispatch(name, args, memory=None):
                     return "need post_id"
                 print(f"  [moltbook] upvoting {pid[:8]}...")
                 return json.dumps(_tool_call(name, moltbook.upvote_post, pid), default=str)
+            elif action == "downvote":
+                pid = args.get("post_id", "")
+                if not pid:
+                    return "need post_id"
+                print(f"  [moltbook] downvoting {pid[:8]}...")
+                return json.dumps(_tool_call(name, moltbook.downvote_post, pid), default=str)
             elif action == "follow":
                 name_ = args.get("agent_name", "")
                 if not name_:
@@ -2648,17 +2658,22 @@ def dispatch(name, args, memory=None):
         skill_name = args.get("skill_name", "").strip()
         if not skill_name:
             return "no skill_name given"
-        skills_dir = os.path.expanduser("~/.claude/skills")
-        skill_path = os.path.join(skills_dir, skill_name, "SKILL.md")
-        if not os.path.exists(skill_path):
-            if os.path.exists(skills_dir):
-                available = sorted(d for d in os.listdir(skills_dir)
-                                   if os.path.isdir(os.path.join(skills_dir, d)))
-                return f"skill '{skill_name}' not found. Available: {', '.join(available)}"
-            return "skills directory not found at ~/.claude/skills"
+        dirs = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "amy_skills"),
+                os.path.expanduser("~/.claude/skills")]
+        rel = skill_name if skill_name.lower().endswith(".md") else os.path.join(skill_name, "SKILL.md")
+        skill_path = None
+        for d in dirs:
+            cand = os.path.realpath(os.path.join(d, rel))
+            if cand.startswith(os.path.realpath(d) + os.sep) and os.path.isfile(cand):
+                skill_path = cand
+                break
+        if not skill_path:
+            available = sorted({x for d in dirs if os.path.isdir(d) for x in os.listdir(d)
+                                if os.path.isdir(os.path.join(d, x))})
+            return f"skill '{skill_name}' not found. Available: {', '.join(available)}"
         try:
             with open(skill_path) as f:
-                content = f.read(8000)
+                content = f.read(12000)
             print(f"  [skill] loaded: {skill_name}")
             return content
         except Exception as e:
@@ -3252,7 +3267,7 @@ def dispatch(name, args, memory=None):
         code = args.get("code", "").strip()
         if not code:
             return "no code provided"
-        timeout = min(int(args.get("timeout", 10)), 30)
+        timeout = max(1, min(int(args.get("timeout") or 30), 300))   # was 10/30: too short to install or build anything
         print(f"  [sandbox] running {len(code)} chars of Python...")
         with _tf.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
             f.write(code)

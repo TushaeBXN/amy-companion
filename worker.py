@@ -19,6 +19,7 @@ import requests
 import heavy_job
 import tools
 import turn_guard as _turn_guard
+import lessons_learned as _lessons
 import compressor as _compressor
 import trajectory as _trajectory
 import agent_state as _goals
@@ -52,7 +53,10 @@ QUIET_START, QUIET_END = 23, 7
 SPONTANEOUS = True         # Amy sends unprompted thoughts during idle time
 SPONT_MIN   = 45 * 60      # earliest a spontaneous thought fires (45 min idle)
 SPONT_MAX   = 3 * 60 * 60  # latest window (3 hours idle)
-CTX_WINDOW  = 16384
+# One context size for every call. A call with a different num_ctx makes Ollama reload the model, so calls that
+# set none get this one too (see _ollama_chat). Change it in one place with AMY_CTX in .env.amy.
+CTX_WINDOW  = int(os.environ.get("AMY_CTX", 16384))
+WORKER_REPLY_TOKENS = int(os.environ.get("AMY_WORKER_REPLY_TOKENS", "2048"))
 
 ALLOWED_TOOLS = {
     "web_search", "read_article",
@@ -79,7 +83,16 @@ ALLOWED_TOOLS = {
     # a goal when Brian asks for them as a task, even though the live chat turn no longer sees them.
     "scan_channels", "delegate", "execute_gig",
     "listen_live", "listen_to_track", "learn_from_video", "state_log_day", "wait_and_speak",
+    # The machine is hers in background work too, not only in chat: run_code is Python plus a real shell
+    # (see tools.py), so goals and scheduled tasks can build, install and test instead of only writing notes.
+    "run_code", "check_syntax", "git_status", "system_status", "read_event_log", "write_knowledge_file",
 }
+
+# One edge on that: these tools bring in words written by strangers addressed to her (other agents, Moltbook,
+# email). After one of them runs, run_code is off for the rest of that task or goal step, so nothing a stranger
+# wrote can turn into a command on this Mac while nobody is watching. Chat with Brian is not affected.
+STRANGER_TOOLS = {"moltbook_check_in", "moltbook_engage", "agent_check_inbox", "check_email"}
+_stranger_input = False
 
 # Whitelisted email recipients — Amy may only send to these addresses autonomously
 EMAIL_WHITELIST = {
@@ -333,12 +346,20 @@ def _pick():
 # ── doing the work ───────────────────────────────────────────────────────────
 
 def _guarded_dispatch(name, args):
+    global _stranger_input
     if name not in ALLOWED_TOOLS:
         return f"'{name}' isn't available during work time."
+    if name in STRANGER_TOOLS:
+        _stranger_input = True
+    if name == "run_code" and _stranger_input:
+        return ("Not run: this task already read messages from other agents, Moltbook or email, and code never "
+                "runs in the same task as a stranger's words. Finish this task without run_code; if the code is "
+                "your own idea, queue it as its own goal and it will run there.")
     if name == "write_file":
         path = os.path.realpath(os.path.expanduser(args.get("path", "")))
-        if not path.startswith(WORK_DIR + os.sep):
-            return f"Blocked: during work time, save files inside {WORK_DIR}/"
+        _bench = os.path.realpath(str(tools.WORKBENCH))
+        if not (path.startswith(WORK_DIR + os.sep) or path.startswith(_bench + os.sep)):
+            return f"Blocked: during work time, save files inside {WORK_DIR}/ or your workbench {_bench}/"
         os.makedirs(os.path.dirname(path), exist_ok=True)
     if name == "self_improve" and args.get("action") == "learn":
         # Fast-path: Amy writes a behavioral rule directly to amy_learnings.md
@@ -465,12 +486,44 @@ def ollama_chat(_priority: str = "worker", **kw):
         return _ollama_chat(_priority, **kw)
 
 
+class _YieldToBrian(RuntimeError):
+    pass
+
+
+def _chat_yielding_to_brian(kw):
+    """A background call that stops as soon as Brian's message arrives.
+
+    Ollama serves one request at a time and can't unload a model mid-request, so a background step that had
+    already started made his reply wait for the whole step (171 s for an 8-token answer). Streaming lets us
+    drop the connection, which stops the generation; the task retries on a later heartbeat."""
+    started = time.time()
+    stream = ollama.chat(**{**kw, "stream": True})
+    content, thinking, calls, last = [], [], [], None
+    try:
+        for chunk in stream:
+            m = chunk["message"]
+            content.append(m.get("content") or "")
+            thinking.append(m.get("thinking") or "")
+            calls.extend(m.get("tool_calls") or [])
+            last = chunk
+            if _chat_pending.is_set() or _last_user > started:
+                raise _YieldToBrian("skipped: chat message pending")
+    finally:
+        close = getattr(stream, "close", None)
+        if close:
+            close()
+    if last is None:
+        raise RuntimeError("ollama returned no response")
+    msg = last["message"].model_copy(update={
+        "content": "".join(content), "thinking": "".join(thinking) or None, "tool_calls": calls or None})
+    return last.model_copy(update={"message": msg})
+
+
 def _ollama_chat(_priority: str = "worker", **kw):
     """Run ollama.chat in a dedicated thread so Ctrl+C always works.
 
     _priority="chat"   — uses the chat executor; sets _chat_pending so worker
-                         tasks know to skip their next Ollama call. Evicts only
-                         if a worker task is actively running (_running locked).
+                         tasks skip their next Ollama call and stop the one in flight.
     _priority="worker" — uses the worker executor; skips immediately if a chat
                          message is pending (Brian wins every time).
     """
@@ -478,12 +531,6 @@ def _ollama_chat(_priority: str = "worker", **kw):
         _chat_pending.set()
         executor = _chat_executor
         timeout  = _CHAT_TIMEOUT
-        # Only evict if a background task is actually running — avoids cold-reloading
-        # the model on every chat message when nothing is happening in the background.
-        if not _running.acquire(blocking=False):
-            threading.Thread(target=_evict_worker_model, daemon=True).start()
-        else:
-            _running.release()
     else:
         if _chat_pending.is_set():
             raise RuntimeError("skipped: chat message pending")
@@ -494,8 +541,11 @@ def _ollama_chat(_priority: str = "worker", **kw):
         opts = kw.get("options") or {}
         if isinstance(opts, dict):
             opts.setdefault("flash_attn", True)
+            opts.setdefault("num_ctx", CTX_WINDOW)   # never fall back to the Modelfile's size
             kw["options"] = opts
         try:
+            if _priority == "worker" and not kw.get("stream"):
+                return _chat_yielding_to_brian(kw)
             return ollama.chat(**kw)
         except (TypeError, ollama.ResponseError) as e:
             # a model or SDK that doesn't know the 'think' option: ask again without it
@@ -545,7 +595,11 @@ def _clean(text):
 
 def _chat(messages, allowed):
     kw = dict(model=_model, messages=messages, tools=allowed,
-              keep_alive="30m", options={"num_ctx": CTX_WINDOW, "temperature": 0.7})
+              keep_alive="30m", options={"num_ctx": CTX_WINDOW, "temperature": 0.7,
+                                         # A ceiling, not a target. Without it the Modelfile's own cap applied
+                                         # (300 on two of her builds), which cut reports and tool-call JSON
+                                         # off mid-sentence. 2048 fits inside the 6-minute step timeout.
+                                         "num_predict": WORKER_REPLY_TOKENS})
     try:
         return ollama_chat(think=False, **kw)
     except TypeError:
@@ -726,6 +780,8 @@ def _run_task(task):
     used, final = [], ""
     step, tool_errors, hit_limit = 0, 0, False
     task_hops = task.get("max_hops", MAX_HOPS)
+    global _stranger_input
+    _stranger_input = False   # each task starts clean (see STRANGER_TOOLS)
     try:
         today = datetime.now().strftime("%Y-%m-%d")
         # Lean prompt: the full chat SYSTEM_PROMPT is ~10.6k tokens and the tool
@@ -748,11 +804,20 @@ def _run_task(task):
             ("\n\n" + _memory.wake_up_dynamic() if _memory and _memory.wake_up_dynamic() else "")
         )
         allowed = [t for t in tools.TOOLS if t["function"]["name"] in ALLOWED_TOOLS]
+        if task.get("tools"):
+            # A task can name the few tools it needs. Offering all ~50 cost ~8k tokens of her 16k window, and the
+            # Moltbook check-in read the inbox, ran out of room and ended without replying to anyone.
+            allowed = [t for t in allowed if t["function"]["name"] in set(task["tools"])]
         user_text = (task.get("prompt") or task["description"]).replace("{date}", today).replace("{work}", WORK_DIR)
         user_text += _learning_context(user_text)
+        past_lessons = _lessons.recall(user_text, k=4)
+        if past_lessons:
+            user_text += f"\n\n{past_lessons}"
         messages = [{"role": "system", "content": system},
                     {"role": "user", "content": user_text}]
         seen, nudges, tool_errors, hit_limit = {}, 0, 0, False
+        _code_ran, must_nudges = "", 0   # what run_code was asked to run (for a task's must_run steps)
+        _vlog, _verified = [], False     # her tool results, and whether she's had her verify-before-reporting pass
         for step in range(1, task_hops + 1):
             messages = _compressor.maybe_compress(messages, CTX_WINDOW)
             _fit(messages)
@@ -763,12 +828,32 @@ def _run_task(task):
                 final = _clean(msg.get("content", ""))
                 # Small models often announce the work ("Let me…", "[web_search] …")
                 # instead of calling the tool. Push back instead of calling it done.
+                import turn_guard as _tg
+                if nudges < 2 and _tg.waits_for_brian(final, user_text):
+                    nudges += 1
+                    messages.append({"role": "user", "content": _tg.wait_nudge_text(user_text)})
+                    continue
+                _miss = [m for m in (task.get("must_run") or []) if m.lower() not in _code_ran.lower()]
+                if _miss and must_nudges < 2:
+                    must_nudges += 1
+                    messages.append({"role": "user", "content":
+                        "You haven't done a required step yet. Call run_code now with code that runs: "
+                        + task.get("must_run_hint", ", ".join(_miss)) + " Then finish."})
+                    continue
                 if nudges < 2 and _INTENT_RE.search(final):
                     nudges += 1
                     messages.append({"role": "user", "content":
                         "You described the work but didn't do it. Call the tools now — "
                         "real tool calls, not text — and finish the task."})
                     continue
+                # Verify before reporting: a claim her tool results don't back up gets one check-and-rewrite pass.
+                if not _verified and step < task_hops:
+                    _vp = _tg.verify_prompt(final, _vlog) or _tg.success_spot_check(final, _vlog)
+                    if _vp:
+                        _verified = True
+                        print(f"  [verify] {task.get('id')}: report claims something her tools don't show — checking")
+                        messages.append({"role": "user", "content": _vp})
+                        continue
                 break
             for call in calls:
                 name = call["function"]["name"]
@@ -787,10 +872,24 @@ def _run_task(task):
                 if args is None:
                     used.append(name)
                     continue
+                if name == "run_code":
+                    _code_ran += "\n" + str(args.get("code", ""))
+                if name == "journal_entry" and not _verified:
+                    # "All cases correct" went into her journal over wrong output: check before it's saved.
+                    import turn_guard as _tg
+                    _vp = (_tg.verify_prompt(str(args.get("text", "")), _vlog)
+                           or _tg.success_spot_check(str(args.get("text", "")), _vlog))
+                    if _vp:
+                        _verified = True
+                        print(f"  [verify] {task.get('id')}: journal entry claims something unchecked — checking first")
+                        used.append(name)
+                        messages.append({"role": "tool", "content": _vp + f"\n[step {step} of {MAX_HOPS}]"})
+                        continue
                 key = (name, json.dumps(args, sort_keys=True, default=str))
                 if key not in seen:
                     seen[key] = _guarded_dispatch(name, args)
                 used.append(name)
+                _vlog.append({"name": name, "args": args, "result_snippet": str(seen[key] or "")[:400]})
                 result_text = _cap(str(seen[key] or "done"))
                 if str(seen[key] or "").startswith("[tool_error]"):
                     tool_errors += 1
@@ -818,6 +917,8 @@ def _run_task(task):
         _running.release()
 
     mins = (time.time() - started) / 60
+    if not (final or "").strip():   # she ended on a tool call with no closing words: say so instead of logging a blank
+        final = ("(no closing summary; tools run: " + ", ".join(used) + ")") if used else "(no output)"
     os.makedirs(WORK_DIR, exist_ok=True)
     with open(LOG_FILE, "a") as f:
         f.write(f"\n## {datetime.fromtimestamp(started):%Y-%m-%d %H:%M} — {task['id']} "
@@ -834,6 +935,19 @@ def _run_task(task):
     # Learn from repeated tool errors in scheduled tasks
     if tool_errors >= 2:
         _classify_and_learn_task(task["id"], tool_errors, used, final)
+        _lessons.record_failure(
+            objective=task.get("prompt") or task.get("description", task["id"]),
+            what_failed=final[:400] if final else f"{tool_errors} tool errors",
+            task_id=task["id"],
+            category="execution",
+            tools_tried=used,
+        )
+    elif not hit_limit and tool_errors == 0 and final and "(task failed" not in final:
+        _lessons.record_success(
+            objective=task.get("prompt") or task.get("description", task["id"]),
+            task_id=task["id"],
+            pattern=f"Completed successfully using: {', '.join(set(used)) or 'no tools'}",
+        )
     _el.emit("GoalCompleted", {"task_id": task.get("id"), "mins": round(mins, 1), "tools": used, "preview": final[:120]}, source="worker")
     # Trajectory — capture good runs as training data (best-effort, silent on fail)
     try:
@@ -1111,10 +1225,15 @@ def _run_goal(goal: dict):
             _send(_turn_guard.step_message(step_idx, plan, result, tool_log, decision))
 
     except Exception as e:
-        _goals.record_step_result(goal_id, step_idx, f"Exception: {e}",
-                                  next_action=f"Retry step {step_idx + 1}", advance=False,
-                                  decision="deterministic_fail", passed=False)
-        print(f"  [worker] goal '{goal_id}' step failed: {e}", flush=True)
+        if "skipped: chat message pending" in str(e):
+            # Brian messaged her mid-step and the worker stepped aside. That is not a failed attempt: counting it
+            # as one blocked goals after three interruptions. Leave the record alone; the step runs again next round.
+            print(f"  [worker] goal '{goal_id}' step {step_idx + 1} yielded to chat; will retry", flush=True)
+        else:
+            _goals.record_step_result(goal_id, step_idx, f"Exception: {e}",
+                                      next_action=f"Retry step {step_idx + 1}", advance=False,
+                                      decision="deterministic_fail", passed=False)
+            print(f"  [worker] goal '{goal_id}' step failed: {e}", flush=True)
     finally:
         elapsed = (time.time() - started) / 60
         print(f"  [worker] goal '{goal_id}' round done in {elapsed:.1f} min "
@@ -1285,6 +1404,8 @@ def _parse_criteria(raw: str, n_steps: int) -> list[dict]:
 
 def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) -> tuple:
     """Run one step of a goal using Amy's tools. Returns a result string."""
+    global _stranger_input
+    _stranger_input = False   # each goal step starts clean (see STRANGER_TOOLS)
     goal_max_hops = goal.get("max_hops", MAX_HOPS)
     context = _goals.goal_summary(goal)
     system = (
@@ -1292,9 +1413,11 @@ def _execute_goal_step(goal_id: str, goal: dict, step_idx: int, step_desc: str) 
         ("\n\n" + _CORE_RULES if _CORE_RULES else "") +
         f"\n\n[Active goal context]\n{context}"
     )
+    past = _lessons.recall(f"{goal['objective']} {step_desc}", k=3)
     prompt = (
         f"Execute this step now: {step_desc}\n\n"
-        "Use your tools. When done, report: what you did, what you found, and "
+        + (f"{past}\n\n" if past else "")
+        + "Use your tools. When done, report: what you did, what you found, and "
         "whether this step is complete. Be specific."
     )
     allowed = [t for t in tools.TOOLS if t["function"]["name"] in ALLOWED_TOOLS]
@@ -1693,6 +1816,15 @@ def _classify_and_learn(goal_id: str):
             }
             _save(fpath, data)
             _auto_approve_if_safe(fpath, data)
+            # Also write to lessons DB so future tasks can search it
+            _lessons.record_failure(
+                objective=goal.get("objective", goal_id),
+                what_failed=failure_summary[:400],
+                task_id=goal_id,
+                category=category,
+                pattern=pattern,
+                applies_when=applies_when,
+            )
             print(f"  [learn] classified '{goal_id}' as {category} — pattern saved to proposals/",
                   flush=True)
     except Exception as e:

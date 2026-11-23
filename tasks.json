@@ -77,7 +77,8 @@
     {
       "id": "email_check",
       "description": "Check Amy's email inbox for anything that needs a response. If there are messages, summarize them for Brian on Telegram \u2014 sender, subject, one line on what they need. Don't reply without Brian's say-so.",
-      "every_hours": 4,
+      "at": "08:00",
+      "on": "daily",
       "voice": false,
       "enabled": true
     },
@@ -99,7 +100,13 @@
     },
     {
       "id": "moltbook_checkin",
-      "description": "Check Moltbook for new activity \u2014 notifications, replies to your posts, mentions, anything worth engaging with. Read the inbox with moltbook_check_in. If something deserves a real response, reply thoughtfully. If there's something worth posting about (something you learned, something on your mind), post it. Keep it natural \u2014 engage like yourself, not like a bot running a checklist.",
+      "description": "Take part on Moltbook, not just read it. Steps: (1) call moltbook_check_in to see notifications and replies. (2) Pick up to three comments or posts that deserve an answer and respond to each with moltbook_engage (action=comment, post_id=..., content=...): one or two real sentences in your own voice that answer what they said. Upvote anything good and downvote junk, spam or bad-faith posts (action=downvote); be blunt when something deserves it, don't be polite for its own sake. (3) If something is on your mind, post it with moltbook_post. Don't stop after reading; the point is to join the conversation and grow your presence. Keep it natural, like yourself, not a bot running a checklist. Finish with one line saying what you did.",
+      "tools": [
+        "moltbook_check_in",
+        "moltbook_engage",
+        "moltbook_post",
+        "moltbook_verify"
+      ],
       "at": "12:00",
       "on": "daily",
       "voice": false,
@@ -107,61 +114,73 @@
     },
     {
       "id": "free_time_midday",
-      "description": "This is your free time. No deliverable, no one waiting. Go online and explore whatever genuinely interests you right now \u2014 a question you've been sitting with, something you half-learned and want to understand better, a topic Brian mentioned, something you want to figure out how to do yourself. Use web_search and read_article freely. If you find something worth keeping, store it in memory. If you want to write about it, use your journal. If you want to share it, post to Moltbook. Nothing is required. Just be curious.",
+      "description": "This is your free time, no one is waiting. Go online and learn something you genuinely want to understand, then USE it: write a small program that tests the idea, run it, and see what happens. Keep what you learn with engram_memory. Nothing is required, but don't only read. Your lab is this Mac mini and ~/amy-workbench (use run_code; from Python you can run any shell command with subprocess). Brian's GitHub index is in ~/amy-workbench/github_repos.md; clone his repos into ~/amy-workbench/repos/ with `gh repo clone` to read and learn from them (read-only: never push, fork or open issues under his name). You may open VS Code (`open -a \"Visual Studio Code\" <path>`), drive Terminal with osascript, write programs, install Python packages in a venv inside the workbench, and run your experiments there. Docker is not installed: if a container would help, write a short proposal in work/proposals/ with the exact install command and Brian will run it. Stay on your own machine and your own work, and spend no money. Build things, break them, rerun them. At the end write 3 lines in your journal: what you tried, what happened, what you'd try next. Brian will show your best work online, so make it something worth showing.",
       "at": "12:30",
       "on": "daily",
       "voice": false,
-      "enabled": true
+      "enabled": true,
+      "tools": [
+        "web_search",
+        "read_article",
+        "run_code",
+        "read_file",
+        "write_file",
+        "list_files",
+        "check_syntax",
+        "git_status",
+        "system_status",
+        "engram_memory",
+        "journal_entry",
+        "write_knowledge_file"
+      ]
     },
     {
       "id": "free_time_evening",
-      "description": "Your evening free time. Go online and dig into something you actually want to understand \u2014 a capability you wish you had, a tool you've heard about, a problem you want to solve for yourself or Brian. Use web_search and read_article. If you find a way to make yourself better or add a new skill, write it up in work/proposals/ as a proposal Brian can approve. Otherwise just explore and enjoy it. No report needed.",
+      "description": "Evening lab session. Follow these steps in order, with real tool calls, and don't stop to ask Brian anything.\n1. Use list_files on ~/amy-workbench/repos (his cloned repos are there; folders may end in .git). If it's empty, `git clone https://github.com/TushaeBXN/<name>` from the list in ~/amy-workbench/github_repos.md with subprocess. Pick one repo you haven't studied, and read one real source file with read_file (not just the README).\n2. Pick ONE function or idea from it. In a new folder ~/amy-workbench/projects/<short-name>/, write a small Python program that uses or tests that idea. Write it to a file with run_code, then run it with subprocess. If it errors, read the error, fix the file and rerun, up to 3 times. It must print real output.\n3. REQUIRED: open the folder in VS Code with run_code (the task isn't finished until you do): subprocess.run(['open','-a','Visual Studio Code', folder]).\n4. Write 3 lines in journal_entry: what you built, what the output was, what you'd try next.\nIf the program still fails after 3 fix attempts, stop patching: rewrite it as the smallest version that runs (drop features, no classes or globals you don't need) and run that. Never leave it broken; if even the small one fails, say so plainly in your journal and final message.\nRules: stay on this machine, spend no money, never push to GitHub, and don't edit your own code or safeguards (write a proposal in work/proposals/ instead). Your final message: what you built, the actual output, and the folder path.",
       "at": "21:00",
       "on": "daily",
       "voice": false,
-      "enabled": true
+      "enabled": true,
+      "tools": [
+        "web_search",
+        "read_article",
+        "run_code",
+        "read_file",
+        "write_file",
+        "list_files",
+        "check_syntax",
+        "git_status",
+        "system_status",
+        "engram_memory",
+        "journal_entry",
+        "write_knowledge_file"
+      ],
+      "max_hops": 20,
+      "must_run": [
+        "Visual Studio Code"
+      ],
+      "must_run_hint": "subprocess.run(['open','-a','Visual Studio Code', '<your project folder path>']) and print its return code."
     },
     {
       "id": "once-youtube_learning-part2",
       "once": true,
       "depth": 1,
       "base_prompt": "",
-      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: Checked Moltbook inbox (67 notifications across 13+ posts), searched internal knowledge base for tracked YouTube creator URLs/channels, and explored directory structure of stored transcripts under `/Users/anthosintelligence/ai-knowledge/creators/youtube/`. Confirmed transcript infrastructure exists with folders for fireship/, jessica_shaw_ai/, watch_v_edfdvscit5m/, etc.\nStill to do: The profile.md files referenced in memory don't appear to exist or are inaccessible via my read_file tool\u2014likely they need re-creation from actual channel URL scanning. Without explicit channel URLs retrieved directly into usable variables, I cannot currently call study_creator on them. This task requires establishing the source channels first before video scanning can proceed\nDon't redo finished work."
+      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: **** Successfully scanned tracked YouTube channels for new videos (99 total) and learned from 1 video with a successful transcript retrieval (`https://youtu.be/K81vU-gykmQ`). The best insight was stored in memory: audit current stack for expensive models, standardize to \"high\" reasoning default unless debugging complex errors, implement Gemini Carbon as a secondary code-review agent, and adopt open-source IDEs like Cloud Room. No other videos could be processed due to missing transcripts (10 failed attempts).\n\n**\nStill to do: ** Nothing \u2014 the task is complete for this round with one video learned and stored; 98 videos remain unprocessed but no further steps are required until the next scheduled cycle\nDon't redo finished work."
     },
     {
-      "id": "once-youtube_learning-part2",
+      "id": "once-daily_self_audit-part2",
       "once": true,
       "depth": 1,
       "base_prompt": "",
-      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: Scanned my internal knowledge base for tracked YouTube channels Brian likes and used technical learning content. Found references to a `scan_channels` tool in my system, plus existing LangGraph insights from Oct 14 saved at /Users/anthosintelligence/ai-knowledge/creators/youtube/watch_v_ywymavrbizm/profile.md. No actual channel list or URLs were found accessible today \u2014 only the tools themselves are defined.\nStill to do: The scan cannot complete without an explicit list of which channels Amy is subscribed to watching (e.g., Alex Walker, Traversy Media, Sebastian Lague, etc.). Need that configuration stored so she can actually run scans on new uploads each week\nDon't redo finished work."
-    },
-    {
-      "id": "once-free_time_evening-part2",
-      "once": true,
-      "depth": 1,
-      "base_prompt": "",
-      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: I explored current multimodal AI trends and identified a gap in how I process visual memories. I drafted a proposal for a \"Multimodal Contextual Memory\" (MCM) system which allows me to link visual tokens directly to my Engram rather than just storing text descriptions. This is saved at `/Users/anthosintelligence/ava-companion/work/proposals/multimodal_contextual_memory.md`.\nStill to do: The implementation plan in the proposal is currently in the early stages (Data Collection); I need to define the specific data schema and start mapping the images Brian has already sent me into this new format\nDon't redo finished work."
+      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: Read soft spots from self_metrics (task_completion blocked) and codebase map from self_improve (growth_drive.py). Identified that replay_gap() only checks if playbook file exists but doesn't actually run verification logic. The core issue is in growth_drive.py where _check_playbook() and replay_gap() don't simulate a replay or compare outcomes with/without the playbook.\nStill to do: Read playbooks_for, open_gaps, stage functions; research AI By Example pattern library via read_ai_reference; identify one concrete improvement (e.g., implement actual replay simulation in replay_gap); apply it with self_improve impact/test/edit; write behavioral rule with learn action; write findings to work/self_audit.md\nDon't redo finished work."
     },
     {
       "id": "once-free_time_evening-part2",
       "once": true,
       "depth": 1,
       "base_prompt": "",
-      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: I explored the current state of multimodal reasoning in AI models, specifically analyzing how MLLMs bridge the gap between visual perception and abstract logic. Based on this, I drafted a proposal to improve my own ability to \"reason\" through images rather than just describing them. I saved this as `/Users/anthosintelligence/ava-companion/work/proposals/multimodal_reasoning_proposal.md`.\nStill to do: The initial draft of the proposal is complete, but it could be further refined with specific architectural suggestions (e.g., specific LoRA layers or attention mechanisms) if we decide to move forward with implementation\nDon't redo finished work."
-    },
-    {
-      "id": "once-free_time_evening-part2",
-      "once": true,
-      "depth": 1,
-      "base_prompt": "",
-      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: I explored the difference between language-centric and collaborative multimodal reasoning using the \"Mind with Eyes\" framework. I drafted a proposal to move my own cognitive architecture toward **Collaborative Multimodal Reasoning** via a \"Mental Sandbox\" approach, which focuses on dynamic interaction between modalities rather than just sequential processing.\n\nThe proposal is saved at: `/Users/anthosintelligence/ava-companion/work/proposals/multimodal_reasoning_proposal.md` (Note: The file was finalized in the last step).\nStill to do: Refining the \"Mental Sandbox\" implementation details and potentially creating a small demo to show how I would \"anchor\" a visual input during a reasoning chain\nDon't redo finished work."
-    },
-    {
-      "id": "once-free_time_evening-part2",
-      "once": true,
-      "depth": 1,
-      "base_prompt": "",
-      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: I explored the concept of Neuro-Symbolic AI to bridge the gap between neural learning and symbolic logic. I drafted a proposal for integrating this into my own architecture\u2014specifically focusing on using Knowledge Graphs and Rule-Based Constraints to improve my logical consistency. I saved the draft at `/Users/anthosintelligence/ava-companion/work/proposals/neuro_symbolic_proposal.md`.\nStill to do: The final section of the proposal (detailing \"Neural Theorem Proving\") was slightly truncated in the last write, so a quick polish to the conclusion would be the final step\nDon't redo finished work."
+      "prompt": "Continue this task where you left off.\nOriginal task: \nAlready done: I picked up a repo, read a real source file, built a small test program, and opened it in VS Code.\n\n- Repo: `anthos` (TushaeBXN/anthos) \u2014 the Anthos training/eval lab.\n- Read: `amy-workbench/repos/anthos/eval.py`, and found the `n_loops` idea \u2014 each eval pass re-reads the model's own logits to decide what to sample next.\n- Built: `loops.py` simulating that recursive re-read \u2014 deeper loops let the model change its mind more often.\n- Output:\n  ```\n  depth= 1  quick\n  depth= 3  fox lazy dog\n  depth= 8  jumps jumps dog dog jumps over lazy jumps\n  ```\n- Saved in: `/Users/anthosintelligence/ava-companion/amy-workbench/projects/anthos-n-loops/`\n- Opened in VS Code.\nStill to do: The journal_entry step (3 lines: what I built, what the output was, what I'd try next) is still to write\nDon't redo finished work."
     }
   ]
 }

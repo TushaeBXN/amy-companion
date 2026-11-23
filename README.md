@@ -3,7 +3,7 @@
   <br><br>
 <img width="1026" height="1024" alt="Gemini_Generated_Image_v1lgi3v1lgi3v1lg" src="https://github.com/user-attachments/assets/f2531180-6af1-4e89-b17f-674ca120978a" />
 
-  ### a local AI companion
+  ### a local AI best friend and co-worker
 </div>
 
 Amy generates private thoughts when you're not watching. Not responses — just

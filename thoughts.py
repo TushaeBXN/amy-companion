@@ -25,6 +25,7 @@ AUTONOMOUS_EVERY_N = 3   # ~15 min at 5-min intervals
 
 THOUGHT_MODEL = os.environ.get("AMY_MODEL", "amy-qwen35-defiant")   # same model as chat, so no second one loads
 TOOL_MODEL    = THOUGHT_MODEL                                       # tool-calling for autonomous sessions
+_CTX = int(os.environ.get("AMY_CTX", 16384))   # same context size as chat and worker, so a thought never reloads the model
 
 # Tools the background session is allowed to use (no avatar/hardware/email/timers)
 _AUTONOMOUS_TOOL_NAMES = {
@@ -98,6 +99,15 @@ Generate ONE thought about something you've accomplished or are proud of — rea
 Could also be something you're frustrated you haven't done yet. 1-2 sentences.
 Output the thought only.""",
 ]
+
+
+# Added to the reflective prompts only (not the concrete-knowledge and decision ones). From Amy's own "Perpetual
+# Seeker" idea, minus the part that didn't work when tested: it scored 0.0 uncertainty on a wrong answer.
+_STANCE = """
+When the thought is about something genuinely open, hold it open: name the tension instead of resolving it, and let a real question stay a question. If you are actually unsure, say what exactly you are unsure of. Where you know something, say it plainly. Don't perform doubt about settled things, and don't attach scores or percentages."""
+_REFLECTIVE = (0, 1, 4, 5)
+_THOUGHT_PROMPTS = [p.replace("\nOutput the thought only.", _STANCE + "\nOutput the thought only.") if i in _REFLECTIVE else p
+                    for i, p in enumerate(_THOUGHT_PROMPTS)]
 
 
 class ThoughtBuffer:
@@ -176,7 +186,7 @@ class ThoughtBuffer:
                     messages=messages,
                     tools=allowed,
                     keep_alive="30m", think=False,
-                    options={"temperature": 0.7, "num_predict": 1024},
+                    options={"temperature": 0.7, "num_predict": 1024, "num_ctx": _CTX},
                 )
                 msg = resp["message"]
                 messages.append({"role": "assistant", "content": msg.get("content", ""),
@@ -231,7 +241,7 @@ class ThoughtBuffer:
                 model=THOUGHT_MODEL,
                 messages=messages,
                 keep_alive="30m", think=False,
-                options={"num_predict": 300, "temperature": 0.9}
+                options={"num_predict": 300, "temperature": 0.9, "num_ctx": _CTX}
             )
             text = resp["message"].get("content", "").strip()
             if not text:

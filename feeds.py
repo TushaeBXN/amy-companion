@@ -115,7 +115,7 @@ def reddit_hot(subreddit: str = "localllama", limit: int = 8) -> str:
     sub = _SUBS.get(subreddit.lower(), subreddit)
     r = _S.get(
         f"https://www.reddit.com/r/{sub}/hot.rss?limit={limit}",
-        headers={"User-Agent": "Amy-companion/1.0 (learning bot)"},
+        headers={"User-Agent": "Amy/1.0 (learning bot)"},
         timeout=10,
     )
     r.raise_for_status()

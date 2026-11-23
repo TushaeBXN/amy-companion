@@ -46,12 +46,26 @@ def _player():
     return None
 
 
+def _say_aiff(text):
+    """Fallback voice: macOS `say` → temp AIFF path (afplay plays it), or None."""
+    if not shutil.which("say"):
+        return None
+    try:
+        out = tempfile.NamedTemporaryFile(suffix=".aiff", delete=False).name
+        subprocess.run(["say", "-v", "Samantha", "-o", out, _phonetic(text)], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+        return out
+    except Exception as e:
+        print(f"  [voice] say fallback failed: {e}")
+        return None
+
+
 def _synthesize_wav(text):
     """Synthesize one piece of text → temp WAV path, or None on failure."""
     if not text or not re.sub(r'[^\w]', '', text):
         return None
     if not os.path.exists(VOICE):
-        return None
+        return _say_aiff(text)      # no Piper voice file: use the Mac's built-in voice instead of silence
     try:
         wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
         subprocess.run(
@@ -122,6 +136,10 @@ def speak(text, emotion="neutral"):
 _SENTENCE_RE = re.compile(r'(?<=[.!?])\s+')
 
 
+first_audio_at = 0.0   # when the most recent reply first started playing (for timing)
+last_spoken = ""   # the part of the last speak_streamed() reply that actually played before any interruption
+
+
 def speak_streamed(text, emotion="neutral", interruptible=False):
     """Pipelined TTS: synthesize next sentence while current one plays.
 
@@ -132,10 +150,13 @@ def speak_streamed(text, emotion="neutral", interruptible=False):
     cuts it short the moment the user starts talking (barge-in). Returns
     True if playback was interrupted, False otherwise.
     """
+    global last_spoken, first_audio_at
+    last_spoken = text or ""
+    first_audio_at = 0.0
     if not text:
         return False
     print(f"\nAmy ({emotion}): {text}")
-    if not os.path.exists(VOICE):
+    if not os.path.exists(VOICE) and not shutil.which("say"):
         return False
 
     monitor = None
@@ -145,6 +166,9 @@ def speak_streamed(text, emotion="neutral", interruptible=False):
         monitor.start()
 
     def _play(wav):
+        global first_audio_at
+        if not first_audio_at:
+            first_audio_at = time.time()
         if monitor is not None:
             return _play_wav_interruptible(wav, monitor)
         _play_wav(wav)
@@ -157,7 +181,10 @@ def speak_streamed(text, emotion="neutral", interruptible=False):
         if len(sentences) <= 1:
             # Single sentence — no pipeline benefit, just synthesize and play
             try:
-                return _play(_synthesize_wav(text))
+                cut = _play(_synthesize_wav(text))
+                if cut:
+                    last_spoken = ""
+                return cut
             except Exception as e:
                 print(f"  [voice] tts failed: {e}")
                 return False
@@ -175,6 +202,7 @@ def speak_streamed(text, emotion="neutral", interruptible=False):
         synth_thread.start()
 
         interrupted = False
+        played = 0
         while True:
             wav = wav_queue.get()
             if wav is None:
@@ -182,7 +210,9 @@ def speak_streamed(text, emotion="neutral", interruptible=False):
             try:
                 if _play(wav):
                     interrupted = True
+                    last_spoken = " ".join(sentences[:played])
                     break
+                played += 1
             except Exception as e:
                 print(f"  [voice] playback failed: {e}")
 
