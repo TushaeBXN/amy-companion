@@ -13,6 +13,9 @@ Amy is a locally-hosted AI best friend and co-worker with multiple input paths, 
 | **Storage** | 256 GB SSD |
 | **OS** | macOS Tahoe |
 | **Inference** | Ollama on M4 Neural Engine + GPU |
+| **Body (target)** | Unitree G1 EDU Ultimate B (U4) — 23 DOF, tactile hands, via `hardware_body.py` |
+| **Face (target)** | RealDoll robot platform — expression/gaze stubs in `avatar_*` tools |
+| **Compute (target)** | Nvidia Thor — onboard inference, replaces M4 Mac Mini + Ollama |
 
 ---
 
@@ -68,6 +71,9 @@ flowchart TD
     Core -->|TTS reply| Voice["**voice.py**\nPiper TTS · en_US-amy-medium\nspeed 0.85 · afplay"]
     Core -.->|spawn| Thoughts["**thoughts.py**\nbg thread"]
     Thoughts -.->|surface| Core
+
+    Tools -->|body_pose/gesture/walk/gaze/stop| Body["**hardware_body.py**\nUnitree G1 EDU\nunitree_sdk2py · DDS/Ethernet\nAMY_ROBOT=0|sim|1"]
+    State -.->|mood shift → express_mood()| Body
 ```
 
 ---

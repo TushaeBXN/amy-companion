@@ -37,9 +37,11 @@ GROUPS = {
               "prune_memory", "system_status", "read_event_log", "consult", "journal_entry", "read_journal"},
              r"yourself|your (own )?(code|persona|prompt|memory|rules|model|tools?|logs?)|learn|study|improve|anchor|"
              r"persona|journal|diary|metrics|status|health|log|skill|memory|consult|reflect|how are you running"),
-    "body": ({"speak", "avatar_expression", "avatar_gaze", "hardware_neck", "generate_image"},
+    "body": ({"speak", "avatar_expression", "avatar_gaze", "hardware_neck", "generate_image",
+              "body_pose", "body_gesture", "body_walk", "body_gaze", "body_stop", "body_status"},
              r"speak|say (it )?out loud|voice|avatar|face|look (at|up|left|right)|neck|turn your|image|picture|"
-             r"draw|generate|paint|photo of"),
+             r"draw|generate|paint|photo of|robot|g1|unitree|body|stand|sit|bow|wave|handshake|nod|walk|"
+             r"step (forward|back)|stop moving|freeze|battery"),
 }
 
 _COMPILED = {g: re.compile(r"\b(?:" + pat + r")", re.I) for g, (_, pat) in GROUPS.items()}

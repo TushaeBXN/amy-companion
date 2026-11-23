@@ -8,3 +8,4 @@ pypdf
 pyaudio>=0.2.14   # mic capture for /listen, /converse, and voice-mode barge-in — needs `brew install portaudio` first
 webrtcvad>=2.0.10  # voice-activity detection for the above
 setuptools<81     # webrtcvad's pkg_resources.get_distribution() call breaks on setuptools 81+
+unitree-sdk2py>=1.0.0,<2  # Unitree G1 embodiment bridge (hardware_body.py); install only when robot is present
