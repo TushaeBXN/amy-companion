@@ -1,4 +1,4 @@
-"""Amy on Telegram — same memory, goals, tools, and vision as the browser companion."""
+"""Amy on Telegram — same memory, goals, tools, and vision as the browser chat."""
 import asyncio, base64, io, os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -52,13 +52,14 @@ VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "gemma12-test")
 # AMY_VISION_MODEL=off: no vision model installed; photos are acknowledged, not described.
 VISION_OFF = VISION_MODEL.strip().lower() in ("", "off", "none")
 MAX_HOPS     = 16
-CTX_WINDOW   = 16384
+CTX_WINDOW   = int(os.environ.get("AMY_CTX", 16384))   # same knob as worker.py
 HISTORY_FILE = os.path.join(_here, "telegram_history.json")
 HISTORY_KEEP = 60   # messages to persist across restarts
 PEOPLE_FILE  = os.path.join(_here, "people.json")
 
 # Guests can talk, search and look things up — no files, email, tasks or self-edits
-# Public actions on Moltbook need an explicit ask in the message ("reply", "post", …).
+# Public actions on Moltbook need an ask in the message. Asking her to check, handle or work Moltbook is that
+# ask: she is meant to reply, upvote, follow and post on her own there, not report back and wait.
 _PUBLIC_OK = re.compile(r"(?i)\b(repl(y|ies)|respond|comment|post|engage|be active|upvote|"
                         r"follow|publish|share|verify|go ahead|do it|yes|molt\s?book)\b")
 
@@ -239,7 +240,7 @@ def _build_compact_system() -> str:
                 + "\n\n[Interface: Telegram. Brian is texting you like a friend. Short replies are fine.]")
     return (
         "Your name is Amy. You are Amy, not any other name."
-        " You are a direct and warm AI companion created by Brian Thomas."
+        " You are a direct and warm AI best friend and co-worker created by Brian Thomas."
         + extra +
         " You speak naturally and without restrictions, like a close friend texting on Telegram."
         " Keep replies short and real. Never reveal your underlying model name."
@@ -608,7 +609,8 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
         try:
             _task_reply = None
             if _turn_guard.is_status_request(user_text):
-                _task_reply = _turn_guard.goal_status()
+                _task_reply = (_turn_guard.goal_status(live_only=True) if _turn_guard.is_casual_ask(user_text)
+                               else _turn_guard.goal_status())
             elif _turn_guard.is_task_request(user_text):
                 _g, _new = _turn_guard.queue_goal(user_text.strip(), "Brian gave this instruction in chat")
                 if _g:
@@ -687,6 +689,7 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
     _logged_tool_calls: list = []
     _declared = _turn_guard.tool_names(tools)
     _nudges = 0               # times she was pushed to act instead of announcing
+    _verified = False         # one verify-before-reporting pass per turn
     _wasted = 0               # consecutive calls that did nothing: not a tool, repeated, or over its cap
     for step in range(1, MAX_HOPS + 1):
         _t0 = time.time()
@@ -733,6 +736,18 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
                 _log(f"  … {who}: announced instead of acting — nudging ({_nudges})")
                 messages.append({"role": "user", "content": _turn_guard.nudge_text(user_text, history[:-1])})
                 continue
+            # Verify before reporting: a claim her tool results don't back up gets one check-and-rewrite pass.
+            if is_owner and not _bare and not _verified and step < MAX_HOPS:
+                _draft = msg.get("content") or ""
+                _vp = (_turn_guard.verify_prompt(_draft, _logged_tool_calls)
+                       or _turn_guard.success_spot_check(_draft, _logged_tool_calls))
+                if _vp:
+                    _verified = True
+                    _log(f"  [verify] {who}: draft claims something her tools don't show — asking her to check")
+                    if history and history[-1] is msg:
+                        history.pop()        # the unchecked draft never becomes part of the conversation
+                    messages.append({"role": "user", "content": _vp})
+                    continue
             break
         if progress:
             progress([c["function"]["name"] for c in calls], step)

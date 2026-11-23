@@ -25,6 +25,7 @@ AUTONOMOUS_EVERY_N = 3   # ~15 min at 5-min intervals
 
 THOUGHT_MODEL = os.environ.get("AMY_MODEL", "amy-qwen35-defiant")   # same model as chat, so no second one loads
 TOOL_MODEL    = THOUGHT_MODEL                                       # tool-calling for autonomous sessions
+_CTX = int(os.environ.get("AMY_CTX", 16384))   # same context size as chat and worker, so a thought never reloads the model
 
 # Tools the background session is allowed to use (no avatar/hardware/email/timers)
 _AUTONOMOUS_TOOL_NAMES = {
@@ -185,7 +186,7 @@ class ThoughtBuffer:
                     messages=messages,
                     tools=allowed,
                     keep_alive="30m", think=False,
-                    options={"temperature": 0.7, "num_predict": 1024},
+                    options={"temperature": 0.7, "num_predict": 1024, "num_ctx": _CTX},
                 )
                 msg = resp["message"]
                 messages.append({"role": "assistant", "content": msg.get("content", ""),
@@ -240,7 +241,7 @@ class ThoughtBuffer:
                 model=THOUGHT_MODEL,
                 messages=messages,
                 keep_alive="30m", think=False,
-                options={"num_predict": 300, "temperature": 0.9}
+                options={"num_predict": 300, "temperature": 0.9, "num_ctx": _CTX}
             )
             text = resp["message"].get("content", "").strip()
             if not text:

@@ -16,6 +16,17 @@ _CLAIM = re.compile(r"\bI(?:'ve| have|'m| am)?\s+(?:just\s+|now\s+|already\s+)?(
                     r"scanned|identified|analy[sz]ed|studied|worked through|broke down|broken down|summari[sz]ed)\b", re.I)
 
 
+# Work she says is happening right now ("Here's what I'm doing", "I'm creating three accounts"). With no tool call
+# behind it, nothing is happening. Kept to action verbs so "I'm doing well" or "I'm thinking" never match.
+_DOING = re.compile(r"\b(?:here's what i'm doing|i'm (?:now |currently |already )?(?:running|creating|posting|sending|"
+                    r"deploying|launching|pulling up|setting up))\b", re.I)
+
+
+def _straight(text: str) -> str:
+    """The model types curly apostrophes (I’ve, I’ll); the patterns here are written with straight ones."""
+    return (text or "").replace("\u2019", "'").replace("\u2018", "'")
+
+
 def failed(result) -> bool:
     return str(result or "").strip().lower().startswith(_FAILED)
 
@@ -69,10 +80,92 @@ def not_a_tool(name: str, declared: set) -> str:
 
 def unbacked_claim_note(reply: str, calls: list) -> str:
     """If the reply says she did work but no working tool call did it, a plain note to append. Else ''."""
-    if not _CLAIM.search(reply or "") or real_work(calls):
+    text = _straight(reply)
+    if not (_CLAIM.search(text) or _DOING.search(text)) or real_work(calls):
         return ""
     return ("\n\n(Check on my own reply: no tool I called this turn actually did that work. "
             + work_summary(calls).replace("What your tools actually did this turn:", "What really happened:") + ")")
+
+
+# ── verify before reporting ──────────────────────────────────────────────────
+# She reported upvotes and comments the tool had refused (2026-11-20), and wrote "All cases correct" over output
+# that showed the code was wrong (2026-11-21). Before a report goes out, each claim is checked against what the
+# tools returned; if one doesn't hold, she gets one pass to check it and rewrite before Brian sees it.
+
+# Actions she reports in past tense, and the successful call each one needs: (tool, action arg or None).
+_ACTION_CLAIMS = [
+    (re.compile(r"\bupvot(?:ed|ing)\b", re.I), {("moltbook_engage", "upvote")}),
+    (re.compile(r"\bdownvot(?:ed|ing)\b", re.I), {("moltbook_engage", "downvote")}),
+    (re.compile(r"\b(?:commented|left a comment|replied to (?:a|the|his|her|their|an?) (?:post|thread|comment))\b", re.I),
+     {("moltbook_engage", "comment")}),
+    (re.compile(r"\bI(?:'ve| have)?\s+(?:just\s+|also\s+)?followed\b", re.I), {("moltbook_engage", "follow")}),
+    (re.compile(r"\b(?:emailed|sent (?:the |an |that )?(?:e-?mail|reply|message to))\b", re.I), {("send_email", None)}),
+    (re.compile(r"\bcommitted\b", re.I), {("git_commit", None)}),
+]
+# "It works / all correct / tests pass" said about code.
+_SUCCESS_CLAIM = re.compile(r"\b(?:all (?:cases|tests|checks) (?:are )?(?:correct|pass(?:ed)?|green)|"
+                            r"(?:it|everything|the (?:script|code|program|demo|test)s?) (?:works?|ran (?:fine|clean(?:ly)?)|"
+                            r"passe[sd])|works (?:as expected|correctly|perfectly)|no errors|ran successfully|"
+                            r"output (?:is|was|looks) (?:correct|right))\b", re.I)
+_RUN_FAILED = re.compile(r"traceback \(most recent call last\)|\b\w*error:|timed out after|exited with non-zero|"
+                         r"stderr: \S", re.I)
+
+
+def _call_ok(c: dict) -> bool:
+    return not failed(c.get("result_snippet")) and not _RUN_FAILED.search(str(c.get("result_snippet") or ""))
+
+
+def _has_ok_call(calls: list, need: set) -> bool:
+    for c in calls:
+        args = c.get("args") if isinstance(c.get("args"), dict) else {}
+        for tool, action in need:
+            if c["name"] == tool and (action is None or str(args.get("action", "")).lower() == action) and _call_ok(c):
+                return True
+    return False
+
+
+def claim_problems(reply: str, calls: list) -> list:
+    """What the reply claims that her tool results don't back up. Empty when the report is consistent."""
+    text = _straight(reply)
+    problems = []
+    for pat, need in _ACTION_CLAIMS:
+        m = pat.search(text)
+        if m and not _has_ok_call(calls, need):
+            tool = sorted(need)[0]
+            problems.append(f'You wrote "{m.group(0)}", but no {tool[0]}'
+                            + (f" {tool[1]}" if tool[1] else "") + " call succeeded this turn.")
+    m = _SUCCESS_CLAIM.search(text)
+    if m:
+        code_runs = [c for c in calls if c["name"] in ("run_code", "check_syntax")]
+        bad = [c for c in code_runs if not _call_ok(c)]
+        if bad and not _call_ok(code_runs[-1]):
+            problems.append(f'You wrote "{m.group(0)}", but your last {code_runs[-1]["name"]} result shows an error.')
+    if not problems and unbacked_claim_note(reply, calls):
+        problems.append("You describe work as done, but no tool that did real work succeeded this turn.")
+    return problems
+
+
+def verify_prompt(reply: str, calls: list) -> str:
+    """The check she gets before her report goes out, or '' when nothing in it contradicts her tool results."""
+    problems = claim_problems(reply, calls)
+    if not problems:
+        return ""
+    return ("[Before this goes to Brian, verify it. " + " ".join(problems) + "\n" + work_summary(calls) + "\n"
+            "Check each claim in your reply against those results. If something didn't happen, either do it now "
+            "with a real tool call, or rewrite your reply to say plainly what failed or wasn't done. If code output "
+            "is wrong for what the code should do, say so. Don't claim anything the results don't show.]")
+
+
+def success_spot_check(text: str, calls: list) -> str:
+    """A ran-clean script can still be wrong ("All cases correct" over wrong numbers). When she calls code output
+    correct, the check she gets once: work out the expected values and compare them line by line. '' if no claim."""
+    m = _SUCCESS_CLAIM.search(_straight(text))
+    if not m or not any(c["name"] == "run_code" for c in calls):
+        return ""
+    return (f'[Not saved yet. You wrote "{m.group(0)}". A script that runs without errors can still be wrong. '
+            "Take your last run_code output, work out by hand what each line should be from what the code is meant "
+            "to do, and compare. If any line is off, say which one and why (or fix the code and rerun). Then write "
+            "this again with only what you checked.]")
 
 
 # ── handing unfinished work to the goal system ───────────────────────────────
@@ -151,7 +244,7 @@ _ANNOUNCE = re.compile(r"(?i)\b(let me|i'?ll|i will|i'?m going to|i am going to|
 
 def announced_not_done(reply: str, user_text: str) -> bool:
     """She said what she would do next, on a real task, and stopped. (A question back to Brian is not a stall.)"""
-    reply = (reply or "").strip()
+    reply = _straight(reply).strip()
     if not reply or "?" in reply or len(reply) > 900:
         return False
     task = is_continue_word(user_text) or len((user_text or "").strip()) >= SUBSTANTIAL
@@ -254,11 +347,23 @@ def is_status_request(text: str) -> bool:
     return is_continue_word(t) or (len(t) < 90 and bool(_STATUS.search(t)))
 
 
-def goal_status(agent_state=None) -> str:
-    """Where the job really stands, from the goal record only. '' when there is no goal to report on."""
+_CASUAL_ASK = re.compile(r"(?i)\b(what are you (?:doing|working on)|how(?:'s| is) it going)\b")
+
+
+def is_casual_ask(text: str) -> bool:
+    """'What are you doing?' is small talk unless a job is actually running; it is not a request for a report
+    on a goal that got stuck days ago."""
+    return bool(_CASUAL_ASK.search(_straight(text))) and not re.search(r"(?i)\b(status|progress|update|stuck|blocked|goal|job)\b", text or "")
+
+
+def goal_status(agent_state=None, live_only: bool = False) -> str:
+    """Where the job really stands, from the goal record only. '' when there is no goal to report on.
+    live_only leaves out blocked goals, so a casual ask only gets a report when something is running or queued."""
     if agent_state is None:
         import agent_state
-    goals = agent_state.list_goals("active") + agent_state.list_goals("pending") + agent_state.list_goals("blocked")
+    goals = agent_state.list_goals("active") + agent_state.list_goals("pending")
+    if not live_only:
+        goals += agent_state.list_goals("blocked")
     goals = sorted(goals, key=lambda g: g.get("updated_at", ""), reverse=True)
     if not goals:
         return ""
@@ -274,8 +379,13 @@ def goal_status(agent_state=None) -> str:
     ev = g.get("evidence") or []
     if ev:
         last = ev[-1]
-        lines.append(f"Last check (step {last.get('step', 0) + 1}): {str(last.get('decision', '?')).upper()} - "
-                     f"{str(last.get('observed', ''))[:160]}")
+        if "skipped: chat message pending" in str(last.get("observed", "")):
+            # older records logged a chat interruption as a failed check; say what it really was
+            lines.append(f"Last check (step {last.get('step', 0) + 1}): paused because you messaged me mid-step "
+                         "(an interruption, not a failed attempt)")
+        else:
+            lines.append(f"Last check (step {last.get('step', 0) + 1}): {str(last.get('decision', '?')).upper()} - "
+                         f"{str(last.get('observed', ''))[:160]}")
     if g["status"] == "blocked":
         lines.append(f"Stuck: {str(g.get('next_action') or 'see the last check')[:200]}")
     return "\n".join(lines)

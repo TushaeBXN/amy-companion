@@ -24,3 +24,13 @@ def test_she_is_told_it_is_her_computer_with_one_fixed_edge():
     p = amy_persona.SYSTEM_PROMPT
     assert "This is your computer" in p and "~/amy-workbench" in p and "three different ways around it" in p
     assert "never to other people's systems" in p and "never hide it" in p.replace("; never hide it", "; never hide it")
+
+
+def test_background_work_can_use_the_machine_but_not_after_reading_strangers(monkeypatch, tmp_path):
+    import worker
+    monkeypatch.setattr(tools, "WORKBENCH", tmp_path / "bench")
+    assert "run_code" in worker.ALLOWED_TOOLS
+    monkeypatch.setattr(worker, "_stranger_input", False)
+    assert worker._guarded_dispatch("run_code", {"code": "print(6*7)"}) == "42"
+    monkeypatch.setattr(worker, "_stranger_input", True)
+    assert worker._guarded_dispatch("run_code", {"code": "print(1)"}).startswith("Not run")

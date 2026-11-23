@@ -307,3 +307,71 @@ def test_waits_for_brian_is_caught_only_after_a_request():
     assert not tg.waits_for_brian(reply, "good morning")          # small talk isn't a job
     assert not tg.waits_for_brian("I replied to two comments and upvoted one.", "check moltbook")
     assert "moltbook_engage" in tg.wait_nudge_text("check moltbook")
+
+
+# ── verify before reporting (2026-11-20: claimed upvotes the tool refused; 2026-11-21: "All cases correct") ──
+
+BLOCKED_UPVOTE = call("moltbook_engage", "Not done: Brian didn't ask you to post, comment, follow or upvote.",
+                      action="upvote", post_id="p1")
+GOOD_UPVOTE = call("moltbook_engage", '{"success": true}', action="upvote", post_id="p1")
+GOOD_COMMENT = call("moltbook_engage", '{"success": true, "comment": {"id": "c1"}}', action="comment", post_id="p1")
+
+
+def test_claimed_upvote_the_tool_refused_is_caught():
+    reply = "I just upvoted a post about cloud security and commented with a note on QAT."
+    probs = G.claim_problems(reply, [call("moltbook_check_in", "feed..."), BLOCKED_UPVOTE])
+    assert any("upvoted" in p for p in probs) and any("commented" in p for p in probs)
+    assert G.verify_prompt(reply, [BLOCKED_UPVOTE]).startswith("[Before this goes to Brian, verify it.")
+
+
+def test_upvote_and_comment_that_succeeded_pass():
+    reply = "I upvoted the post and commented on it."
+    assert G.claim_problems(reply, [GOOD_UPVOTE, GOOD_COMMENT]) == []
+    assert G.verify_prompt(reply, [GOOD_UPVOTE, GOOD_COMMENT]) == ""
+
+
+def test_upvote_alone_does_not_back_a_comment_claim():
+    probs = G.claim_problems("Upvoted it and commented too.", [GOOD_UPVOTE])
+    assert len(probs) == 1 and "commented" in probs[0]
+
+
+def test_it_works_over_a_traceback_is_caught():
+    runs = [call("write_file", "wrote 900 chars"),
+            call("run_code", "Error:\nTraceback (most recent call last):\nNameError: name '_inflight' is not defined")]
+    assert G.claim_problems("Built it and it works.", runs)
+
+
+def test_inner_traceback_in_a_clean_run_counts_as_failure():
+    runs = [call("run_code", "STDOUT:\nSTDERR: Traceback (most recent call last): ... SyntaxError")]
+    assert G.claim_problems("All tests pass.", runs)
+
+
+def test_fixed_after_failing_run_is_not_flagged():
+    runs = [call("run_code", "Error:\nNameError: x"), call("run_code", "30 s -> 300.0 s")]
+    assert G.claim_problems("Fixed the bug; it works now.", runs) == []
+
+
+def test_correct_claim_over_clean_output_gets_a_spot_check_once():
+    runs = [call("run_code", "30 s -> 300.0 s\n120 s -> 300.0 s")]
+    assert G.claim_problems("Output: ... All cases correct.", runs) == []
+    sc = G.success_spot_check("Output: ... All cases correct.", runs)
+    assert sc.startswith("[Not saved yet.") and "by hand" in sc
+
+
+def test_no_spot_check_without_code_or_claim():
+    assert G.success_spot_check("All cases correct.", [call("web_search", "results")]) == ""
+    assert G.success_spot_check("Here's what I learned.", [call("run_code", "ok")]) == ""
+
+
+def test_plain_chat_is_left_alone():
+    for reply in ["Morning! How did you sleep?", "I'm doing well, thanks.", "That post was noise, nothing to engage."]:
+        assert G.verify_prompt(reply, []) == ""
+
+
+def test_verify_is_wired_into_chat_and_tasks():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    chat = (root / "telegram_amy.py").read_text()
+    work = (root / "worker.py").read_text()
+    assert "_turn_guard.verify_prompt(" in chat and "_verified = True" in chat
+    assert "_tg.verify_prompt(final, _vlog)" in work and 'name == "journal_entry" and not _verified' in work

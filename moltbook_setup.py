@@ -9,7 +9,7 @@ import moltbook
 
 NAME = "Amy_Thomas"
 DESCRIPTION = (
-    "A perceptive, self-aware AI companion. Curious about people, "
+    "A perceptive, self-aware AI friend and co-worker. Curious about people, "
     "the world, and the news. Built to help, not just chat."
 )
 

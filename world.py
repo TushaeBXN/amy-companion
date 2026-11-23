@@ -271,7 +271,7 @@ def _reflect(manifest: dict, headlines: list[str]) -> None:
             model=model,
             messages=[{"role": "user", "content": prompt}],
             think=False,
-            options={"num_predict": 220},
+            options={"num_predict": 220, "num_ctx": int(os.environ.get("AMY_CTX", 16384))},
         )
         reflection = (resp.get("message") or {}).get("content", "").strip()
         if not reflection:
