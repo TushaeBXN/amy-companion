@@ -1,4 +1,9 @@
+# Builds amy-qwen35-heretic (Amy's fallback model):  ollama create amy-qwen35-heretic -f qwen35-heretic.Modelfile
+# RENDERER/PARSER are required: without them the model wrote tool calls Ollama couldn't read
+# ("invalid tool call arguments"), which killed her daily Moltbook check-in from 2026-11-16.
 FROM hf.co/mradermacher/DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic-i1-GGUF:i1-Q6_K
+RENDERER qwen3.5
+PARSER qwen3.5
 
 PARAMETER num_ctx 16384
 PARAMETER num_batch 1024

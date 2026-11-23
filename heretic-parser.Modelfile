@@ -1,6 +1,7 @@
-# amy-qwen35-heretic = the heretic Qwen3.5-9B weights + the Qwen3.5 tool-call renderer/parser.
-# Without RENDERER/PARSER the model wrote tool calls Ollama couldn't read ("invalid tool call arguments"),
-# which killed her daily Moltbook check-in from 2026-11-16. The previous build is kept as amy-qwen35-heretic-old.
-FROM amy-qwen35-heretic-old:latest
+# amy-qwen35-heretic = qwen35-heretic.Modelfile (weights, sampling, system prompt) + the Qwen3.5
+# tool-call renderer/parser. That file now carries RENDERER/PARSER itself, so it builds the whole
+# model in one step:  ollama create amy-qwen35-heretic -f qwen35-heretic.Modelfile
+# This file is kept only to re-apply the parser to an already-built amy-qwen35-heretic.
+FROM amy-qwen35-heretic:latest
 RENDERER qwen3.5
 PARSER qwen3.5
