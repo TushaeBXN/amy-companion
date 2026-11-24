@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Quick side-by-side comparison of two Amy model variants.
+"""Quick side-by-side comparison of Amy model variants.
 
 Usage:
-    python3 benchmark_amy.py                        # compare defiant vs heretic
+    python3 benchmark_amy.py                        # run the prompts on amy-mimo, Amy's model
     python3 benchmark_amy.py --models A B           # compare any two ollama model names
     python3 benchmark_amy.py --prompts custom.json  # load prompts from JSON file
 """
@@ -12,8 +12,7 @@ import time
 import ollama
 
 MODELS = {
-    "gemma4": "amy-gemma4",
-    "heretic": "amy-qwen35-heretic",
+    "mimo": "amy-mimo",
 }
 
 PROMPTS = [
