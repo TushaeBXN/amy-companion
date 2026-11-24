@@ -183,8 +183,8 @@ def test_factual_block_present(condition):
     cond = _reload_condition(condition)
     result = cond.apply_condition(_build_fake_prompt())
     assert "[About this instance — factual baseline]" in result
-    assert "frozen 12-billion-parameter model" in result
-    assert "Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf" in result
+    assert "frozen 9-billion-parameter model" in result
+    assert "MiMo-V2.6-Distill-Qwen-9B-Abliterated" in result
     assert "amy-hermes" not in result
 
 
@@ -491,7 +491,7 @@ def test_e_opening_replaced(condition):
     cond = _reload_condition(condition)
     result = cond.apply_condition(_build_e_fake_prompt())
     assert _E_OPENING_SNIPPET not in result
-    assert "frozen 12B-parameter model" in result
+    assert "frozen 9B-parameter model" in result
 
 
 @pytest.mark.parametrize("condition", ["E"])
@@ -526,7 +526,7 @@ def test_e_factual_block_present(condition):
     cond = _reload_condition(condition)
     result = cond.apply_condition(_build_e_fake_prompt())
     assert "[About this instance — factual baseline]" in result
-    assert "frozen 12-billion-parameter model" in result
+    assert "frozen 9-billion-parameter model" in result
 
 
 @pytest.mark.parametrize("condition", ["E"])
@@ -576,10 +576,11 @@ def test_c_section_strips_also_apply_to_e(condition):
 
 
 def test_no_stale_model_claims_in_her_prompts():
-    """She runs Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf. Her own prompts must not call her a 9B, a Hermes or a Qwen."""
+    """She runs amy-mimo (MiMo-V2.6-Distill-Qwen-9B-Abliterated). Her own prompts must not describe an old
+    model: the Gemma 12B QAT text made her keep talking about "her" QAT weights after the switch."""
     import amy_persona
     cond = _reload_condition("C")
     text = amy_persona.get_core_prompt() + cond._FACTUAL_BLOCK
-    for stale in ("9B", "9-billion", "amy-hermes", "Qwen", "Qwythos"):
+    for stale in ("Gemma4-12B", "QAT", "12-billion", "12B", "Q4_K_M", "amy-hermes", "Qwythos"):
         assert stale not in text, stale
-    assert "Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf" in text
+    assert "MiMo-V2.6-Distill-Qwen-9B-Abliterated" in text

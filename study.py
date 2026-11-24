@@ -334,7 +334,7 @@ def limits_profile() -> str:
         ctx = worker.CTX_WINDOW
     except Exception:
         ctx = 16384
-    lines = [f"Your limits (you run {os.environ.get('AMY_MODEL', 'gemma12-test')} locally, a ~12B model with a {ctx}-token context):",
+    lines = [f"Your limits (you run {os.environ.get('AMY_MODEL', 'gemma12-test')} locally, a small (9-12B) model with a {ctx}-token context):",
              "- Exact numbers, dates and facts recalled from memory are unreliable: check them against a source.",
              "- Long multi-step plans drift: write the steps down and check each one.",
              "- You sometimes skip a tool or pick the wrong one: re-read the tool list before you answer.",

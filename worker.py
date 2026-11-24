@@ -809,6 +809,10 @@ def _run_task(task):
             # Moltbook check-in read the inbox, ran out of room and ended without replying to anyone.
             allowed = [t for t in allowed if t["function"]["name"] in set(task["tools"])]
         user_text = (task.get("prompt") or task["description"]).replace("{date}", today).replace("{work}", WORK_DIR)
+        if task.get("id") in THOUGHT_TASKS:
+            rotation = _thought_rotation()
+            if rotation:
+                user_text += "\n\n" + rotation
         user_text += _learning_context(user_text)
         past_lessons = _lessons.recall(user_text, k=4)
         if past_lessons:
@@ -973,6 +977,8 @@ def _run_task(task):
             )
         except Exception:
             pass
+    if task.get("id") in THOUGHT_TASKS and final and not final.startswith("(task failed"):
+        _note_thought(final)
     voice_path = tools._pending_voice
     if voice_path:
         tools._pending_voice = None
@@ -991,6 +997,31 @@ def _run_task(task):
         print(f"  [worker] {task['id']} skipped, not worth a message: {final}", flush=True)
     else:
         _send(f"🛠 {task['id']}\n\n{final or '(finished, nothing to say)'}")
+
+
+THOUGHT_TASKS = {"evening_thought"}   # scheduled tasks that send Brian one thought
+
+
+def _thought_rotation() -> str:
+    """One story she read, and her last few thoughts to steer away from (see world.thought_seed)."""
+    if not _world:
+        return ""
+    try:
+        seed = _world.thought_seed()
+        if seed:
+            print(f"  [worker] thought starts from [{seed['area']}] {seed['title'][:70]}", flush=True)
+        return _world.thought_context(seed)
+    except Exception as e:
+        print(f"  [worker] thought rotation unavailable: {e}", flush=True)
+        return ""
+
+
+def _note_thought(text: str) -> None:
+    if _world:
+        try:
+            _world.note_thought(text)
+        except Exception:
+            pass
 
 
 def _schedule_next_spont():
@@ -1030,6 +1061,9 @@ def _spontaneous_thought():
             "Don't announce that it's a spontaneous thought. Just say the thing. "
             "No greeting, no sign-off."
         )
+        rotation = _thought_rotation()
+        if rotation:
+            prompt += "\n\n" + rotation
         resp = ollama_chat(
             model=_model,
             messages=[
@@ -1052,6 +1086,7 @@ def _spontaneous_thought():
 
         asyncio.run(_send())
         print(f"  [worker] spontaneous: {text[:80]}", flush=True)
+        _note_thought(text)
         if _memory:
             _memory.add("assistant", text, source="spontaneous")
     except Exception as e:

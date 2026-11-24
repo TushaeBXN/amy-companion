@@ -1,6 +1,7 @@
 """world.py — Amy's continuous world observation subsystem.
 
-Passively watches a small set of interest areas (tech, AI, news, startups) on
+Passively watches a set of interest areas (tech, AI, news, startups, geopolitics,
+science, health, environment, space, local elections) on
 a background cadence so Amy has a "current world model" to draw on in
 conversation — not just memories of past interactions.
 
@@ -28,6 +29,9 @@ REFLECT_AGE  = 7200   # seconds — don't reflect more often than 2 hours
 MAX_ITEMS    = 5      # items fetched per area
 MAX_KEEP     = 10     # newest items kept per area file; a story is never written twice
 SNIPPET_N    = 3      # bullet items shown per area in context_snippet()
+THOUGHTS     = os.path.join(WORLD_DIR, ".thought_rotation.json")
+SEEDS_KEPT   = 60     # stories already used to start a thought; none is used twice
+THOUGHTS_KEPT = 5     # her last few thoughts, shown so the next one picks a new subject
 
 
 # ── interest areas ─────────────────────────────────────────────────────────────
@@ -124,12 +128,82 @@ def _fetch_geopolitics() -> list[dict]:
     return items[:MAX_ITEMS]
 
 
+def _search_news(area: str, queries: list[str], per_query: int = 3) -> list[dict]:
+    """Week-old news for two of the area's queries, picked at random each time,
+    so the same area doesn't return the same handful of stories every hour."""
+    import random
+
+    items: list[dict] = []
+    try:
+        import web
+        for query in random.sample(queries, min(2, len(queries))):
+            for r in web.news(query, timelimit="w", max_results=per_query):
+                title = (r.get("title") or "").strip()
+                if title and len(title) > 10:
+                    items.append({"title": title, "url": r.get("url", "")})
+            if len(items) >= MAX_ITEMS:
+                break
+    except Exception as e:
+        print(f"  [world] {area}: {e}", flush=True)
+    return items[:MAX_ITEMS]
+
+
+def _fetch_science() -> list[dict]:
+    return _search_news("science", [
+        "scientific discovery study published",
+        "physics chemistry biology research breakthrough",
+        "archaeology human evolution new findings",
+        "neuroscience psychology human behavior study",
+    ])
+
+
+def _fetch_health() -> list[dict]:
+    return _search_news("health", [
+        "medical research new treatment",
+        "public health access healthcare costs",
+        "mental health research",
+        "stem cell gene therapy clinical trial",
+    ])
+
+
+def _fetch_environment() -> list[dict]:
+    return _search_news("environment", [
+        "climate science research",
+        "wildlife conservation biodiversity",
+        "renewable energy clean power",
+        "pollution environmental justice communities",
+    ])
+
+
+def _fetch_space() -> list[dict]:
+    return _search_news("space", [
+        "NASA ESA space mission",
+        "astronomy telescope discovery",
+        "orbital debris space junk cleanup",
+        "planetary science exoplanet",
+    ])
+
+
+def _fetch_elections() -> list[dict]:
+    return _search_news("elections", [
+        "local election results city council mayor",
+        "state ballot measure voters",
+        "school board county election",
+        "voting rights voter access",
+    ])
+
+
 AREAS: list[dict] = [
     {"name": "tech",        "label": "Tech & Software",       "fetch": _fetch_tech},
     {"name": "ai",          "label": "AI & Research",         "fetch": _fetch_ai},
     {"name": "news",        "label": "Current Events",        "fetch": _fetch_news},
     {"name": "startups",    "label": "Startups & Indie",      "fetch": _fetch_startups},
     {"name": "geopolitics", "label": "Geopolitics & Society", "fetch": _fetch_geopolitics},
+    {"name": "science",     "label": "Science",               "fetch": _fetch_science},
+    {"name": "health",      "label": "Health & Medicine",     "fetch": _fetch_health},
+    {"name": "environment", "label": "Environment & Climate", "fetch": _fetch_environment},
+    {"name": "space",       "label": "Space",                 "fetch": _fetch_space},
+    {"name": "elections",   "label": "Local Elections & Voting", "fetch": _fetch_elections},
 ]
 
 
@@ -412,6 +486,87 @@ class WorldObserver:
                 pass
 
         return "\n".join(lines)
+
+
+# ── thought rotation ───────────────────────────────────────────────────────────
+# Her unprompted thoughts used to get only her persona prompt, so the model kept
+# reaching for the most vivid thing in it (her own QAT weights) instead of what she
+# had read. Each thought now starts from one story she actually read, rotating
+# through the areas, and sees her last few thoughts so it moves on to a new subject.
+
+def _load_rotation() -> dict:
+    try:
+        with open(THOUGHTS) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_rotation(data: dict) -> None:
+    os.makedirs(WORLD_DIR, exist_ok=True)
+    tmp = THOUGHTS + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, THOUGHTS)
+
+
+def thought_seed(rng=None) -> dict | None:
+    """One recent story to start a thought from: {area, title, url}, or None.
+
+    Areas the last few thoughts started from go to the back of the line, and a
+    story that has already started a thought is never used again.
+    """
+    import random
+    rng = rng or random
+    data = _load_rotation()
+    used = [s for s in data.get("seeds", []) if isinstance(s, dict)]
+    used_hashes = {s.get("hash") for s in used}
+    recent_areas = [s.get("area") for s in used[-(len(AREAS) // 2):]]
+
+    areas = list(AREAS)
+    rng.shuffle(areas)
+    areas.sort(key=lambda a: a["name"] in recent_areas)   # stable: areas not used lately first
+    for area in areas:
+        fresh = [i for i in _read_items(area["name"])[:5] if _item_hash(i) not in used_hashes]
+        if not fresh:
+            continue
+        item = rng.choice(fresh)
+        used.append({"hash": _item_hash(item), "area": area["name"]})
+        data["seeds"] = used[-SEEDS_KEPT:]
+        _save_rotation(data)
+        return {"area": area["label"], "title": item["title"], "url": item.get("url", "")}
+    return None
+
+
+def note_thought(text: str) -> None:
+    """Remember a thought she sent, so the next one can steer away from it."""
+    text = " ".join((text or "").split())
+    if not text:
+        return
+    data = _load_rotation()
+    recent = [t for t in data.get("recent", []) if isinstance(t, str)]
+    recent.append(text[:240])
+    data["recent"] = recent[-THOUGHTS_KEPT:]
+    _save_rotation(data)
+
+
+def thought_context(seed: dict | None = None) -> str:
+    """The block added to a thought prompt: one story to start from, and her
+    last few thoughts to steer away from. Empty when there is neither."""
+    parts: list[str] = []
+    if seed:
+        line = f"{seed['title']} ({seed['url']})" if seed.get("url") else seed["title"]
+        parts.append(f"[Something you read recently — {seed['area']}]\n{line}\n"
+                     "Start from this: react to it, connect it to people's lives or to something else you know, "
+                     "or ask the question it raises. You don't need to repeat the headline.")
+    recent = [t for t in _load_rotation().get("recent", []) if isinstance(t, str)]
+    if recent:
+        parts.append("[Thoughts you already sent Brian (yours, not his) — this one should be about something else]\n"
+                     + "\n".join(f"- {t}" for t in recent))
+    if parts:
+        parts.append("Don't bring up your own model, weights or how you run unless the story is about that.")
+    return "\n\n".join(parts)
 
 
 # ── module-level singleton and shims ───────────────────────────────────────────
