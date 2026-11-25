@@ -690,6 +690,7 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
     _declared = _turn_guard.tool_names(tools)
     _nudges = 0               # times she was pushed to act instead of announcing
     _verified = False         # one verify-before-reporting pass per turn
+    _refreshed = False        # one rewrite per turn when a draft mostly repeats her recent replies
     _wasted = 0               # consecutive calls that did nothing: not a tool, repeated, or over its cap
     for step in range(1, MAX_HOPS + 1):
         _t0 = time.time()
@@ -747,6 +748,18 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
                     if history and history[-1] is msg:
                         history.pop()        # the unchecked draft never becomes part of the conversation
                     messages.append({"role": "user", "content": _vp})
+                    continue
+            # A draft that mostly reruns her last few replies gets one rewrite with the reused lines in front of her.
+            if not _bare and not _refreshed and step < MAX_HOPS:
+                _earlier = [_msg_to_dict(m).get("content") or "" for m in history[:-1]
+                            if _msg_to_dict(m).get("role") == "assistant"][-3:]
+                _fp = _turn_guard.fresh_angle_prompt(msg.get("content") or "", _earlier, user_text)
+                if _fp:
+                    _refreshed = True
+                    _log(f"  [style] {who}: draft repeats her recent replies — asking for a fresh angle")
+                    if history and history[-1] is msg:
+                        history.pop()        # the rerun never becomes part of the conversation
+                    messages.append({"role": "user", "content": _fp})
                     continue
             break
         if progress:

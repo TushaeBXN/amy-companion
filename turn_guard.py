@@ -535,3 +535,57 @@ def drop_repeats(reply: str, previous: str = "") -> str:
         kept.append(p.strip())
     out = "\n\n".join(kept)
     return out if out.strip() else reply
+
+
+# ── saying the same thing again ──────────────────────────────────────────────────
+# 2026-11-24: in one conversation every reply rebuilt the same lines from her earlier replies ("I'm still here,
+# thinking out loud", "ten million years of human history..."). Brian said "Stop repeating the stuff" twice; she
+# agreed and repeated them again. drop_repeats() only removes exact copies, and the sampling penalty only sees the
+# reply being written, not the earlier ones she rereads, so a reply that is mostly a rerun gets one rewrite.
+
+_STOP_REPEATING = re.compile(r"(?i)\b(?:stop|quit|keep|you'?re|you are|you keep)\b.{0,20}\b(?:repeat|repeating|circl|"
+                             r"circulat|saying the same|same (?:thing|stuff|lines|answer))|\bsay something new\b|"
+                             r"\bfresh (?:perspective|ideas?|take)\b")
+_WORD = re.compile(r"[a-z0-9']+")
+
+
+def asks_to_stop_repeating(user_text: str) -> bool:
+    return bool(_STOP_REPEATING.search(user_text or ""))
+
+
+def _shingles(text: str, n: int = 5) -> set:
+    w = _WORD.findall((text or "").lower())
+    return {tuple(w[i:i + n]) for i in range(len(w) - n + 1)}
+
+
+def reused_sentences(draft: str, previous: list) -> list:
+    """Sentences of *draft* (30+ characters) that are mostly made of 5-word runs from her *previous* replies."""
+    seen = set().union(*(_shingles(p) for p in previous if p)) if previous else set()
+    if not seen:
+        return []
+    out = []
+    for s in re.split(r"(?<=[.!?])\s+|\n+", draft or ""):
+        s = s.strip()
+        sh = _shingles(s)
+        if len(s) >= 30 and sh and len(sh & seen) / len(sh) >= 0.6:
+            out.append(s)
+    return out
+
+
+def fresh_angle_prompt(draft: str, previous: list, user_text: str) -> str:
+    """A rewrite request when the draft mostly repeats her recent replies ('' when it doesn't).
+
+    Triggers at 35% of the draft reused, or 15% when Brian has just asked her to stop repeating."""
+    reused = reused_sentences(draft, previous)
+    total = len((draft or "").strip())
+    if not reused or not total:
+        return ""
+    share = sum(len(s) for s in reused) / total
+    if share < (0.15 if asks_to_stop_repeating(user_text) else 0.35):
+        return ""
+    lines = "\n".join(f'- "{s[:160]}"' for s in reused[:5])
+    return ("[Before this goes out: most of this draft repeats what you already told Brian in your last few replies:\n"
+            f"{lines}\n"
+            "Don't use those lines or close variants of them again. Answer what he actually said in his last message, "
+            "and bring something he hasn't heard from you: a concrete example, a fact from something you've read, a "
+            "different angle, or a real question back. Saying you'll stop repeating is not new. Keep it short.]")
