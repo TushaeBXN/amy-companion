@@ -135,17 +135,28 @@ Claude, or any voice AI and let them talk directly with Amy.
 
 | Tag | Base | Quant | Context |
 |-----|------|-------|---------|
-| `gemma12-test` | Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M | Q4_K_M (7.38 GB) | 16 384 tokens |
+| `amy-mimo` | MiMo-V2.6-Distill-Qwen-9B-Abliterated (Qwen 3.5 architecture, 9B) + vision projector | Q6_K (about 8 GB loaded) | 16 384 tokens |
 
-One model handles conversation, tool-calling and reasoning. Thinking is off by
-default on every call (`AMY_THINK=1` turns it back on) — on this model, a short
-token budget spent thinking instead of answering came back empty more than
-once, so off is the default everywhere, chat and background tasks alike.
+One model handles conversation, tool-calling, reasoning **and photos**. Since
+2026-11-21, `.env.amy` sets both `AMY_MODEL=amy-mimo` and
+`AMY_VISION_MODEL=amy-mimo`: the MiMo vision projector is attached to the same
+model (see `amy-mimo.Modelfile`), so no second model is installed.
+`AMY_VISION_MODEL=off` turns photo handling off; she then says she can't see them.
 
-Images sent on Telegram or the web UI go through a **separate vision model**
-(`AMY_VISION_MODEL`, a small Qwen2.5-VL by default in `companion.py`) — Amy's
-own 12B weights don't ship a vision projector, so there's no single-model,
-native-vision pipeline here despite what earlier notes in this file claimed.
+The Modelfile sets Qwen 3.5's sampling (`top_p 0.8`, `top_k 20`, `min_p 0`,
+`presence_penalty 1.5`). The presence penalty matters: without it, a long reply
+looped on paragraphs from her previous reply until the token cap cut it off.
+`turn_guard.drop_repeats()` is a second net: it removes repeated paragraphs
+before a chat reply is sent.
+
+Thinking is off by default on every call (`AMY_THINK=1` turns it back on) — a
+short token budget spent thinking instead of answering came back empty more
+than once, so off is the default everywhere, chat and background tasks alike.
+
+**Previous model.** Until 2026-11-21 she ran `gemma12-test`
+(Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced, Q4_K_M, 7.38 GB). Its Modelfile is
+kept as `gemma12-test.Modelfile`, and it is still the code's fallback when
+`AMY_MODEL` isn't set. To go back, build it and set `AMY_MODEL=gemma12-test`.
 
 Override at runtime:
 
@@ -277,7 +288,8 @@ This list is the files actually in use. A couple of older, paused features
 
 | File | Role |
 |------|------|
-| `gemma12-test.Modelfile` | Creates `gemma12-test` — Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf, ctx 16384, tool-calling |
+| `amy-mimo.Modelfile` | Creates `amy-mimo`, her model — MiMo 9B abliterated Q6_K + vision projector, ctx 16384, tool-calling, anti-repeat sampling |
+| `gemma12-test.Modelfile` | Previous model: creates `gemma12-test` — Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf, ctx 16384, tool-calling |
 | `Modelfile.hermes` | Legacy: the previous model, kept for reference |
 | `amy_service.py` | Installs/runs Amy as one always-on launchd service; the only supported way to start Telegram |
 | `companion.py` | Terminal loop: recall → chat → tool calls → speak → remember |
@@ -287,7 +299,7 @@ This list is the files actually in use. A couple of older, paused features
 | `worker.py` | Background heartbeat, scheduled tasks, goal planning/execution/verification, outbound Telegram sender |
 | `agent_state.py` | Autonomous-goal storage: plan, steps, evidence, status, per-goal step budget |
 | `heavy_job.py` | Exclusive-job gate so an image generation run can't be evicted mid-job by another model call |
-| `imagegen.py` | Local image generation (FLUX.1-schnell via mflux) → sends to Telegram |
+| `imagegen.py` | Local image generation (FLUX.1-schnell via mflux) → sends to Telegram. Paused: see *Paused / not active* |
 | `image_request.py` | Decides whether a message actually asked for an image |
 | `memory.py` | Layered memory: `amy_self.json` (always loaded) + SQLite embedding recall |
 | `engram_bridge.py` | Bridge to Engram, her separate long-term memory store (facts, corrections, the primary-source library, her own views) |
@@ -375,7 +387,7 @@ Layered, entirely local:
 
 ## How she works
 
-**Models** — see *Model* above. `.env.amy` sets `AMY_MODEL=gemma12-test`.
+**Models** — see *Model* above. `.env.amy` sets `AMY_MODEL=amy-mimo` and `AMY_VISION_MODEL=amy-mimo`.
 
 **Always-on service** — see *Running her* above. `amy_service.py` is a
 launchd agent: restarts her automatically if she dies, logs to
@@ -431,10 +443,12 @@ The web UI displays current mood and an energy bar in the header.
 `browse` tool on her own initiative when she's curious or when current
 information would help.
 
-**Vision** — Telegram photos and web-UI uploads go through a separate vision
-model (`AMY_VISION_MODEL`); her own weights don't carry a vision projector.
+**Vision** — Telegram photos and web-UI uploads go to `AMY_VISION_MODEL`, which
+is `amy-mimo` itself: its vision projector is part of the model. Set it to `off`
+to have her acknowledge photos without describing them.
 
-**Image generation** — `imagegen.py` wraps FLUX.1-schnell via mflux. Amy calls
+**Image generation** (paused: `AMY_IMAGEGEN_PAUSED=1` in `.env.amy`, and the FLUX
+weights aren't installed) — `imagegen.py` wraps FLUX.1-schnell via mflux. Amy calls
 `generate_image`, the job runs in a daemon thread (~2–3 min on M4) under an
 exclusive gate so nothing else can reload a model mid-run, and the result is
 sent to Telegram when done. One generation at a time, and only when actually
@@ -473,6 +487,8 @@ from the conversation and loaded at the top of the next session's context.
 | **Code routing** (`deepseek-coder:6.7b`) | Paused — model isn't installed, so Amy handles code herself | `ollama pull deepseek-coder:6.7b` and set `AMY_CODE_MODEL=deepseek-coder:6.7b` |
 | **Video generation** (`videogen.py`, LTX-Video) | Written but not wired to any tool | Add a tool in `tools.py` |
 | **Robot neck** (`hardware_neck`) | Stub — logs the command, no real BLE write yet | See *Wiring up a real body* |
+| **Image generation** (`imagegen.py`, FLUX.1-schnell) | Paused — `AMY_IMAGEGEN_PAUSED=1`, and the FLUX weights were removed to save disk | Remove `AMY_IMAGEGEN_PAUSED` from `.env.amy`; mflux downloads the weights on the first run |
+| **Previous model** (`gemma12-test`, Gemma 4 12B QAT) | Not installed — replaced by `amy-mimo` on 2026-11-21 | `ollama create gemma12-test -f gemma12-test.Modelfile`, then set `AMY_MODEL=gemma12-test` |
 
 ---
 
@@ -497,7 +513,7 @@ This covers my own code. It doesn't cover, and doesn't need to cover, the
 things it talks to: the pip libraries it imports (their own permissive
 licenses, MIT/BSD/Apache — none of them vendored into this repo), `ffmpeg` and
 `whisper-cli` (called as external programs, not linked in), or any model
-weights (Gemma, Piper voices, Whisper) — none of those are committed here;
+weights (MiMo, Piper voices, Whisper) — none of those are committed here;
 they're downloaded separately and carry their own publishers' terms.
 
 ---

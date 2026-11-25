@@ -23,11 +23,15 @@ Amy is a locally-hosted AI best friend and co-worker with multiple input paths, 
 
 | Tag | Base | Quant | Context | Notes |
 |-----|------|-------|---------|-------|
-| `gemma12-test` | Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M | Q4_K_M (7.38 GB) | 16 384 | Tool-calling, reasoning, conversation |
+| `amy-mimo` | MiMo-V2.6-Distill-Qwen-9B-Abliterated (Qwen 3.5, 9B) + vision projector | Q6_K (about 8 GB loaded) | 16 384 | Tool-calling, reasoning, conversation, photos |
 
-One model handles conversation, tool-calling and reasoning. Images go through
-a separate small vision model (`AMY_VISION_MODEL`) — her own weights carry no
-vision projector, so this is not a true single-model vision pipeline.
+One model handles conversation, tool-calling, reasoning and photos: the MiMo
+vision projector is attached to `amy-mimo` (`amy-mimo.Modelfile`), and
+`.env.amy` sets both `AMY_MODEL` and `AMY_VISION_MODEL` to it. Its sampling
+includes `presence_penalty 1.5`, which keeps long replies from looping.
+
+Previous model (until 2026-11-21): `gemma12-test`, Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced
+Q4_K_M — kept as `gemma12-test.Modelfile` and still the code's fallback when `AMY_MODEL` is unset.
 
 ---
 
@@ -51,11 +55,11 @@ flowchart TD
     end
 
     Core -->|real instruction| TaskMode["**task mode**\nis_task_request() → agent_state.create_goal\nworker starts immediately, no chat round-trip"]
-    Core -->|tool turns| Hermes["**gemma12-test**\nGemma4-12B Q4_K_M\nctx=16384 · tools, thinking off by default"]
+    Core -->|tool turns| Hermes["**amy-mimo**\nMiMo 9B Q6_K + vision\nctx=16384 · tools, photos, thinking off by default"]
     Core -->|embed| Nomic["**nomic-embed-text**\nembeddings for RAG\ncosine sim ≥ 0.65"]
 
     Hermes -->|tool_calls| Tools["**tools.py**\n~76 tools · whitelisted dispatch\nweb · file · moltbook · books/study/anchor · browse · consult · run_code"]
-    Tools -->|generate_image| Flux["**imagegen.py**\nFLUX.1-schnell via mflux\n~2-3 min · daemon thread · exclusive gate (heavy_job.py)"]
+    Tools -->|generate_image| Flux["**imagegen.py** (paused)\nFLUX.1-schnell via mflux\n~2-3 min · daemon thread · exclusive gate (heavy_job.py)"]
     Flux -->|photo| TgOut["**Telegram**\nsendPhoto"]
     Core --- State["state.py\nInternalState\nlearnings.py"]
 
@@ -150,14 +154,14 @@ Both interfaces feed the same inference loop:
 1. **System prompt** is assembled from `amy_persona.py` (identity), recalled memory, and session learnings from the prior conversation.
 2. **Context window** is kept to the last 16 messages (sliding window) to prevent context bloat and verbatim regurgitation.
 3. **Task mode runs first.** A real instruction (not a question, not "yes"/"keep going") becomes a goal immediately — `turn_guard.is_task_request()` routes it to `agent_state.create_goal`, the worker starts without waiting for quiet, and the chat reply is composed from the goal record, not a model call.
-4. **Otherwise, one model handles the turn.** Images (webcam, uploads, Telegram attachments) go through a separate vision model, not `gemma12-test` itself.
+4. **Otherwise, one model handles the turn.** Images (webcam, uploads, Telegram attachments) go to `AMY_VISION_MODEL`, which is `amy-mimo` itself, so there's no second model. `AMY_VISION_MODEL=off` turns photos off.
 5. **Tool dispatch** runs up to 16 hops in Telegram, 14 as a floor for a goal step (up to 24 for a "deep" one): model emits `tool_calls[]`, `tools.py` executes them and injects results, model continues. A repeated identical call, a call to something that isn't a real tool, or three wasted calls in a row ends the loop early instead of burning the rest of the budget.
 
 ### Ollama model
 
 | Tag | Role | Context |
 |-----|------|---------|
-| `gemma12-test` | Reasoning, tools, conversation | 16 384 tokens |
+| `amy-mimo` | Reasoning, tools, conversation, photos | 16 384 tokens |
 
 Swap at runtime with `AMY_MODEL`. Thinking is off by default on every call
 (`AMY_THINK=1` restores it) — on this model, a short token budget spent
@@ -179,7 +183,7 @@ thinking instead of answering sometimes came back empty.
 
 ### Tools — `tools.py`
 
-~76 whitelisted tools dispatched by `gemma12-test`. Live chat only sends
+~76 whitelisted tools dispatched by `amy-mimo`. Live chat only sends
 `tools.chat_tools()` — the ~57 of them actually used in conversation, grounded
 in logged chat-turn history; the rest (income research, agent-to-agent
 contact, channel/media tools) stay fully reachable through a goal via
@@ -196,7 +200,7 @@ anyway. Key tools:
 | `study` / `anchor` | Topics with closed-book drills scored by code; lessons with limits and computed confidence |
 | `remember_fact` / `engram_memory` | Writes to L2 recall DB / Engram |
 | `create_autonomous_goal` | Starts a goal directly (task mode usually does this for you) |
-| `generate_image` | FLUX.1-schnell via mflux, daemon thread → Telegram, only when asked |
+| `generate_image` | FLUX.1-schnell via mflux, daemon thread → Telegram, only when asked. Paused (`AMY_IMAGEGEN_PAUSED=1`) |
 | `moltbook_*` | Check in, post, comment, follow, solve math challenges |
 | `journal_entry` / `read_journal` | Journal write + read |
 | `self_improve` | Guided self-edit with blast-radius check |
@@ -210,11 +214,11 @@ anyway. Key tools:
 
 **Always-on service** (`amy_service.py`) — Telegram runs as one launchd agent, not a bare process: it restarts automatically if it dies, logs to `~/Library/Logs/amy/`, and a manual `telegram_amy.py` start is refused while it's running so two copies can't kill each other.
 
-**Spontaneous behavior** — on Telegram, a timer inside `worker.py` (45 min–3 h idle) sends an unprompted message. In the web UI/terminal, a separate `companion.py` thread checks every 15 seconds and does the same after 2+ minutes idle, with a mood-keyed tone.
+**Spontaneous behavior** — on Telegram, a timer inside `worker.py` (45 min–3 h idle) sends an unprompted message. Each one, and the 8 pm `evening_thought`, starts from one story she read (`world.thought_seed()`): areas the last few thoughts used go to the back of the line, no story is used twice, and her last 5 thoughts are shown so the next is about something else. She reads 10 areas: tech, AI, current events, startups, geopolitics, science, health, environment, space, and local elections. In the web UI/terminal, a separate `companion.py` thread checks every 15 seconds and does the same after 2+ minutes idle, with a mood-keyed tone.
 
 **Thought buffer** (`thoughts.py`) — a second background thread generates private thoughts every 90 seconds while idle. These are not responses; they're genuine internal monologue. They surface naturally in the next reply and accumulate in `amy_thoughts.log` as fine-tune data.
 
-**Image generation** (`imagegen.py`) — FLUX.1-schnell via mflux (~2-3 min on M4). `generate_image` fires a daemon thread under an exclusive gate (`heavy_job.py`) so nothing else can reload a model mid-run, and calls `sendPhoto` when done. One generation at a time.
+**Image generation** (`imagegen.py`, paused: `AMY_IMAGEGEN_PAUSED=1`, FLUX weights not installed) — FLUX.1-schnell via mflux (~2-3 min on M4). `generate_image` fires a daemon thread under an exclusive gate (`heavy_job.py`) so nothing else can reload a model mid-run, and calls `sendPhoto` when done. One generation at a time.
 
 **Daily brief** (`brief.py`) — fetches live weather (wttr.in) and news in code; Amy writes the summary. Runs on demand or on a morning schedule from Telegram.
 
@@ -237,7 +241,7 @@ user input (web | Telegram | terminal | voice)
   → [text | image | transcript]
     → is it a real instruction? → yes: agent_state.create_goal, worker starts now, reply = goal record
                                  → no: core assembles system prompt (persona + memory recall + learnings)
-                                     → gemma12-test → tool calls → tools.py (chat_tools(), ≤16 hops)
+                                     → amy-mimo → tool calls → tools.py (chat_tools(), ≤16 hops)
                                        → reply
           → nomic-embed-text → store in amy_memory.db
           → voice.py → afplay (spoken aloud)          [web/terminal only]
@@ -245,7 +249,7 @@ user input (web | Telegram | terminal | voice)
           → [background] thoughts.py generates private thoughts
           → [background] spontaneous check-in (Telegram: 45min-3h idle; web/terminal: 2+ min)
           → [background] worker.py heartbeat: next scheduled task, or next goal step + verification (60s tick)
-          → [background] imagegen.py FLUX job if generate_image was called
+          → [background] imagegen.py FLUX job if generate_image was called (paused)
 ```
 
 Everything stays on the machine. No API calls home.
