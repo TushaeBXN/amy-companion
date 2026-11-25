@@ -877,6 +877,19 @@ def _chat_turn(user_text: str, image_bytes: bytes | None = None,
                 _reply_text += _qc.notes(_bad, _cases, _weak)
         except Exception as _qe:
             _log(f"  [quotes] check skipped: {type(_qe).__name__}: {_qe}")
+    if _reply_text:  # anyone she talks to: never send the same paragraphs over and over
+        try:
+            _prev = next((_msg_to_dict(m).get("content") or "" for m in reversed(history[:-1] if msg else history)
+                          if _msg_to_dict(m).get("role") == "assistant"), "")
+            _deduped = _turn_guard.drop_repeats(_reply_text, _prev)
+            if _deduped != _reply_text:
+                _log(f"  [style] removed repeated paragraphs ({len(_reply_text)} → {len(_deduped)} chars)")
+                _reply_text = _deduped
+                if msg:
+                    msg = dict(_msg_to_dict(msg), content=_reply_text)
+                    history[-1] = msg
+        except Exception as _re:
+            _log(f"  [style] repeat check skipped: {type(_re).__name__}: {_re}")
     if _reply_text and is_owner and not _bare:
         try:
             _note = _turn_guard.unbacked_claim_note(_reply_text, _logged_tool_calls)

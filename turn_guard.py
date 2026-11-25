@@ -503,3 +503,35 @@ def wait_nudge_text(user_text: str) -> str:
             "You looked, then stopped to ask what to do. Take the next step yourself with a real tool call: answer or "
             "upvote what is worth it, post something of your own, follow up, or start the next useful thing. On "
             "Moltbook use moltbook_engage (comment, upvote, downvote, follow) and moltbook_post. Then tell him what you did.]")
+
+
+# ── repeated paragraphs ──────────────────────────────────────────────────────────
+# 2026-11-24: a 1,200-token reply repeated the same four paragraphs over and over ("I'm still here, thinking out
+# loud." / "A person is a grandmother who counts chickens..."), copied from her previous reply, until the token cap
+# cut it off mid-sentence. The model's sampling settings now discourage that; this is the net under them.
+
+def _para_key(p: str) -> str:
+    return re.sub(r"\s+", " ", p).strip().lower()
+
+
+def drop_repeats(reply: str, previous: str = "") -> str:
+    """Remove paragraphs that repeat an earlier one in this reply or in her previous reply, and a cut-off
+    tail that is only the start of an earlier paragraph. Short lines (under 25 characters) are left alone,
+    and the reply is returned unchanged if nothing would be left."""
+    if not reply or "```" in reply:
+        return reply
+    paras = re.split(r"\n\s*\n", reply.strip())
+    seen = {_para_key(p) for p in re.split(r"\n\s*\n", previous or "") if len(_para_key(p)) >= 25}
+    kept: list[str] = []
+    for i, p in enumerate(paras):
+        k = _para_key(p)
+        if len(k) >= 25 and k in seen:
+            continue
+        last = i == len(paras) - 1
+        if last and len(k) >= 10 and any(s.startswith(k) and s != k for s in seen):
+            continue  # "So when I say I" — the token cap cut a repeat off partway
+        if len(k) >= 25:
+            seen.add(k)
+        kept.append(p.strip())
+    out = "\n\n".join(kept)
+    return out if out.strip() else reply

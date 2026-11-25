@@ -610,6 +610,20 @@ MEMORY_CONTEXT_SKIP_WINGS = tuple(
     w.strip() for w in os.environ.get("AMY_MEMORY_SKIP_WINGS", "library,default").split(",") if w.strip())
 
 
+def _memory_skip_wings() -> list:
+    """The wings her per-message recall leaves out: the configured ones, plus every ``wt-*`` wing.
+
+    Those hold copies of repo files mined from temporary git worktrees (wt-docs, wt-thoughts, ...). The
+    worktrees are gone and the copies go stale: an old README in one kept telling her she runs on a
+    Gemma 12B QAT model after she had moved to amy-mimo. The real files are in the project's own wing."""
+    skip = list(MEMORY_CONTEXT_SKIP_WINGS)
+    try:
+        skip += [w.name for w in _PALACE.list_wings() if w.name.startswith("wt-") and w.name not in skip]
+    except Exception:
+        pass
+    return skip
+
+
 def memory_context(query: str) -> str:
     """Saved memories that clearly match *query*, ready to put in Amy's context ('' if none).
 
@@ -624,7 +638,7 @@ def memory_context(query: str) -> str:
         _init()
         from engram.recall import recall
         cfg = {**_SEARCHER.config, "recall": True, "recall_max": 3,
-               "recall_exclude_wings": list(MEMORY_CONTEXT_SKIP_WINGS)}
+               "recall_exclude_wings": _memory_skip_wings()}
         note = recall(query, searcher=_SEARCHER, cfg=cfg, remember=False)
     except Exception:  # older Engram, or the index is unavailable: carry on without it
         return ""
