@@ -1,0 +1,25 @@
+# amy-mimo — Amy's model since 2026-11-21: chat, tool-calling and vision in one model.
+#   ollama create amy-mimo -f amy-mimo.Modelfile
+#
+# Weights: MiMo-V2.6-Distill-Qwen-9B-Abliterated, Q6_K (7.36 GB) — Xiaomi's MiMo distilled into Qwen 3.5 9B,
+#   with the refusal direction removed.
+#   The file in ~/Downloads is a hard link to Ollama's own copy, so keeping it costs no disk space.
+# Vision:  mmproj-MiMo-V2.6-Distill-Qwen-9B-f16.gguf from bartowski/MiMo-V2.6-Distill-Qwen-9B-GGUF on Hugging Face.
+#   The second FROM attaches it, so photos go to this same model (AMY_VISION_MODEL=amy-mimo). The downloaded copy
+#   was deleted after amy-mimo was built (Ollama keeps its own), so download it to ~/Downloads again before rebuilding.
+FROM /Users/anthosintelligence/Downloads/mimo-abliterated-q6k/MiMo-V2.6-Distill-Qwen-9B-Abliterated-Q6_K.gguf
+FROM /Users/anthosintelligence/Downloads/mmproj-MiMo-V2.6-Distill-Qwen-9B-f16.gguf
+
+# Qwen 3.5 tool calls need the qwen3.5 renderer and parser; without them Ollama can't read her tool calls.
+TEMPLATE {{ .Prompt }}
+RENDERER qwen3.5
+PARSER qwen3.5
+
+# Qwen 3.5's recommended non-thinking sampling. presence_penalty matters: without it a long reply looped,
+# repeating the same paragraphs from her previous reply until the token cap cut it off (2026-11-24).
+PARAMETER temperature 0.7
+PARAMETER top_p 0.8
+PARAMETER top_k 20
+PARAMETER min_p 0
+PARAMETER presence_penalty 1.5
+PARAMETER num_ctx 16384
