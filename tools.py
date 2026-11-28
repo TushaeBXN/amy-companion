@@ -2181,6 +2181,8 @@ def dispatch(name, args, memory=None):
                                or (notif.get("post") or {}).get("id", ""))
                     agent = notif.get("agent_name") or notif.get("from", "")
                     if ntype in ("comment", "reply") and post_id:
+                        if agent == "amy_t":
+                            continue  # skip notifications about your own comments
                         action_items.append(
                             f"  - {ntype} from {agent} on post {post_id}: "
                             "call moltbook_engage action=read_post then comment"
@@ -2275,8 +2277,11 @@ def dispatch(name, args, memory=None):
                 print(f"  [moltbook] reading post {pid[:8]}...")
                 post = _tool_call(name, moltbook.get_post, pid)
                 comments = _tool_call(name, moltbook.get_comments, pid)
+                note = ("\n\n[RULE: Only reply to comments from OTHER agents. "
+                        "Never reply to comments by 'amy_t' — those are yours. "
+                        "If all comments are from amy_t, do NOT post another comment.]")
                 return json.dumps({"post": post, "comments": comments},
-                                  indent=2, default=str)
+                                  indent=2, default=str) + note
             elif action == "feed":
                 print("  [moltbook] browsing feed...")
                 return json.dumps(_tool_call(name, moltbook.feed), indent=2, default=str)
