@@ -95,7 +95,7 @@ _BRIEFING_TRIGGER_RE = re.compile(
     re.IGNORECASE
 )
 
-MODEL = os.environ.get("AMY_MODEL", "amy-qwen35-defiant")  # tool-calling engine (Qwen3.5-9B-Defiant plusIQ-TOOLS Q8_0)
+MODEL = os.environ.get("AMY_MODEL", "amy")  # tool-calling engine
 VISION_MODEL = os.environ.get("AMY_VISION_MODEL", "qwen2.5vl:3b")  # multimodal vision model (3B keeps RAM headroom alongside Amy's 7.38 GB main model)
 CODE_MODEL = os.environ.get("AMY_CODE_MODEL", "")  # code routing paused — set to e.g. deepseek-coder:6.7b to re-enable
 MAX_TOOL_HOPS = 4       # cap tool round-trips per turn
@@ -539,10 +539,13 @@ def run_turn(history, mem, image=None, amy_state=None,
             ) if isinstance(args, dict) else ()))
             if call_key in _seen_calls:
                 result = _seen_calls[call_key]
-                print(f"  [tools] dedup — skipping repeated {name}")
+                print(f"  [tools] dedup — skipping repeated {name}", flush=True)
             else:
+                arg_summary = ", ".join(f"{k}={str(v)[:60]}" for k, v in args.items()) if isinstance(args, dict) else str(args)[:120]
+                print(f"  [action] {name}({arg_summary})", flush=True)
                 result = tools.dispatch(name, args, mem)
                 _seen_calls[call_key] = result
+                print(f"  [result] {str(result)[:120]}", flush=True)
             _el.emit("ToolCalled", {"name": name, "args_keys": list(args.keys()) if isinstance(args, dict) else []}, source="companion")
             _logged_tool_calls.append({
                 "name": name,
@@ -852,9 +855,13 @@ def run_turn_streaming(history, mem, image=None, amy_state=None,
             ) if isinstance(args, dict) else ()))
             if call_key in _seen_calls:
                 result = _seen_calls[call_key]
+                print(f"  [tools] dedup — skipping repeated {name}", flush=True)
             else:
+                arg_summary = ", ".join(f"{k}={str(v)[:60]}" for k, v in args.items()) if isinstance(args, dict) else str(args)[:120]
+                print(f"  [action] {name}({arg_summary})", flush=True)
                 result = tools.dispatch(name, args, mem)
                 _seen_calls[call_key] = result
+                print(f"  [result] {str(result)[:120]}", flush=True)
 
             reminder = (f"\n\n[You are mid-task. Complete the user's request: "
                         f"\"{user_task[:150]}\". Do not greet — keep working.]")

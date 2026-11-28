@@ -16,7 +16,7 @@ fi
 # from the internet. The public URL is written to public_endpoint.json once
 # cloudflared reports it (usually within ~10 seconds).
 echo "[amy] Starting Cloudflare tunnel for agent inbox..."
-python3 "$(dirname "$0")/tunnel.py" &
+python3 "$(dirname "$0")/tunnel.py" >> /tmp/amy_tunnel.log 2>&1 &
 TUNNEL_PID=$!
 trap "kill $TUNNEL_PID 2>/dev/null" EXIT
 
