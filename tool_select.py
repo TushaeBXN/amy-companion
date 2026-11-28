@@ -19,9 +19,9 @@ GROUPS = {
                r"remember|recall|memor|forgot|forget|last time|earlier|we (talked|discussed)|before|what did|did i|"
                r"told you|you said|history|yesterday|last (week|night)"),
     "files": ({"read_file", "write_file", "list_files", "read_pdf", "write_knowledge_file", "read_deliverable",
-               "list_work", "check_syntax", "git_status", "git_commit", "git_push"},
+               "list_work", "check_syntax", "git_status", "git_commit", "git_push", "github_read"},
               r"file|folder|director|read|open|pdf|document|save|write|edit|code|script|repo|git|commit|push|branch|"
-              r"workbench|project|deliverable|syntax|bug|fix|build"),
+              r"workbench|project|deliverable|syntax|bug|fix|build|github|look at|review"),
     "web": ({"browse", "research_current", "read_feed", "books", "search_books"},
             r"browse|website|web ?page|site|link|url|http|news|feed|latest|today|current|research|book|read about|"
             r"look up|find out|google"),
