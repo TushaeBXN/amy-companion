@@ -406,6 +406,37 @@ _BASE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "github_read",
+            "description": (
+                "Read a file or list a directory from any GitHub repo Brian points you at. "
+                "Use when Brian asks you to look at, review, or suggest fixes for code in a repo. "
+                "Call with just repo to see the root; add path for a specific file or folder. "
+                "Returns file contents (decoded) or a directory listing. "
+                "After reading, give concrete suggestions — Brian decides what to act on."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "repo": {
+                        "type": "string",
+                        "description": "GitHub repo in owner/name format, e.g. 'TushaeBXN/cyberguard'",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "File or directory path inside the repo, e.g. 'src/kerrigan_server.py'. Omit for root listing.",
+                    },
+                    "ref": {
+                        "type": "string",
+                        "description": "Branch or commit to read from. Defaults to the repo's default branch.",
+                    },
+                },
+                "required": ["repo"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "add_goal",
             "description": "Track a goal — Brian's or your own. Use when you identify something worth pursuing, when Brian mentions an intention, or when you set a direction for yourself.",
             "parameters": {
@@ -2112,6 +2143,40 @@ def dispatch(name, args, memory=None):
             return result
         except Exception as e:
             raise ToolError("read_article", "network_error", str(e))
+
+    if name == "github_read":
+        import subprocess, base64, json as _json
+        repo = args.get("repo", "").strip().strip("/")
+        path = args.get("path", "").strip().strip("/")
+        ref  = args.get("ref", "").strip()
+        if not repo:
+            return "need repo (owner/name)"
+        api_path = f"repos/{repo}/contents/{path}" if path else f"repos/{repo}/contents"
+        cmd = ["gh", "api", api_path]
+        if ref:
+            cmd += ["-f", f"ref={ref}"]
+        print(f"  [github] reading {repo}/{path or '(root)'}")
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+            if r.returncode != 0:
+                return f"github_read error: {r.stderr.strip() or 'unknown error'}"
+            data = _json.loads(r.stdout)
+            # Directory listing
+            if isinstance(data, list):
+                lines = [f"{item['type']:4s}  {item['name']}" for item in data]
+                return f"{repo}/{path or ''}\n" + "\n".join(lines)
+            # Single file
+            if isinstance(data, dict) and data.get("type") == "file":
+                content = base64.b64decode(data["content"]).decode("utf-8", errors="replace")
+                size = data.get("size", 0)
+                if size > 40000:
+                    content = content[:40000] + f"\n\n[truncated — file is {size} bytes]"
+                return f"# {data['path']}\n\n{content}"
+            return r.stdout
+        except subprocess.TimeoutExpired:
+            return "github_read timed out"
+        except Exception as e:
+            return f"github_read failed: {e}"
 
     if name == "read_ai_reference":
         action = args.get("action", "index")
